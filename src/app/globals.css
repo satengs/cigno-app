@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "../styles/unified-widget.css";
+
+/* CSS Custom Properties for theming */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-success: #059669;
+  --text-warning: #d97706;
+  --text-error: #dc2626;
+  --text-danger: #dc2626;
+  --border-primary: #e5e7eb;
+  --border-secondary: #d1d5db;
+}
+
+html.dark {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-success: #10b981;
+  --text-warning: #f59e0b;
+  --text-error: #ef4444;
+  --text-danger: #ef4444;
+  --border-primary: #475569;
+  --border-secondary: #64748b;
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+/* Fallback to system preference when no manual class is set */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    color-scheme: dark;
+  }
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Ensure resize handles are always visible */
+.cursor-col-resize {
+  overflow: visible !important;
+  clip: unset !important;
+  clip-path: unset !important;
+  mask: unset !important;
+  -webkit-mask: unset !important;
+}
+
+/* Resize handle container */
+.resize-handle-container {
+  overflow: visible !important;
+  clip: unset !important;
+  clip-path: unset !important;
+  mask: unset !important;
+  -webkit-mask: unset !important;
+}
+
+/* Force resize handles to be visible in all contexts */
+.resize-handle-container,
+.cursor-col-resize {
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: block !important;
+  position: absolute !important;
+  z-index: 9999 !important;
+}
+
+/* Override any parent overflow settings for resize handles */
+*:has(.resize-handle-container) {
+  overflow: visible !important;
+}
+
+*:has(.cursor-col-resize) {
+  overflow: visible !important;
+}
+
+/* Ensure sidebar always maintains full height */
+.sidebar-container {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+/* Hide scrollbars for tab navigation */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}

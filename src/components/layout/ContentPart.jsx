@@ -1,0 +1,1817 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  ChevronDown, 
+  ChevronUp, 
+  ChevronLeft, 
+  ChevronRight, 
+  Search,
+  Edit3,
+  Copy,
+  Lock,
+  Unlock,
+  Eye,
+  EyeOff,
+  MoreHorizontal,
+  FileText,
+  Presentation,
+  BookOpen,
+  Settings,
+  Briefcase,
+  Target,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  Play,
+  Pause,
+  RotateCcw,
+  Trash2,
+  Sparkles,
+  Wand2,
+  Layout,
+  PlusCircle,
+  RefreshCw,
+  Save,
+  Download,
+  Plus,
+  MoreVertical,
+  Folder,
+  Globe
+} from 'lucide-react';
+import BillingInfo from '../ui/BillingInfo';
+import StaffingInfo from '../ui/StaffingInfo';
+import DeliverableMetrics from '../ui/DeliverableMetrics';
+import DesignGenerator from '../ui/DesignGenerator';
+import StorylineGenerationForm from '../ui/StorylineGenerationForm';
+import ClientDetailView from '../ui/ClientDetailView';
+import CignoContextAwareChat from '../ui/CignoContextAwareChat';
+
+export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted }) {
+  const [viewMode, setViewMode] = useState('overview');
+  const [expandedSections, setExpandedSections] = useState({
+    settings: false,
+    brief: false,
+    design: true
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(28);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDesignGenerator, setShowDesignGenerator] = useState(false);
+  const [showStorylineGenerator, setShowStorylineGenerator] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedDesign, setGeneratedDesign] = useState(null);
+  const [generatedStoryline, setGeneratedStoryline] = useState(null);
+  const [designForm, setDesignForm] = useState({
+    prompt: '',
+    designType: 'wireframe',
+    device: 'desktop',
+    style: 'modern',
+    complexity: 'intermediate',
+    referenceImage: null
+  });
+  const [showChat, setShowChat] = useState(false);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'k':
+            e.preventDefault();
+            setShowDesignGenerator(true);
+            break;
+          case 'r':
+            if (generatedDesign) {
+              e.preventDefault();
+              handleResetDesign();
+            }
+            break;
+        }
+      }
+      if (e.key === 'Escape') {
+        if (showDesignGenerator) {
+          setShowDesignGenerator(false);
+        }
+        if (showDeleteConfirm) {
+          setShowDeleteConfirm(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [showDesignGenerator, showDeleteConfirm, generatedDesign]);
+
+
+
+
+  // Sample data for sources
+  const internalSources = [
+    {
+      id: 1,
+      title: "CBDC Market Analysis Report",
+      description: "Internal research document on global CBDC trends",
+      type: "pdf",
+      pages: 45,
+      completion: 85,
+      source: "Internal Research"
+    },
+    {
+      id: 2,
+      title: "Digital Banking Strategy Framework",
+      description: "Strategic framework for digital transformation",
+      type: "document",
+      pages: 12,
+      completion: 92,
+      source: "Strategy Team"
+    },
+    {
+      id: 3,
+      title: "Regulatory Compliance Guidelines",
+      description: "Compliance requirements for financial institutions",
+      type: "pdf",
+      pages: 28,
+      completion: 78,
+      source: "Legal Team"
+    },
+    {
+      id: 4,
+      title: "Risk Assessment Template",
+      description: "Standard risk evaluation methodology",
+      type: "document",
+      pages: 22,
+      completion: 88,
+      source: "Risk Management"
+    }
+  ];
+
+
+  // Use generated storyline if available, otherwise fallback to sample data
+  const storylineSections = generatedStoryline?.sections || [
+    {
+      id: 1,
+      title: "Executive Summary",
+      status: "Final",
+      description: "This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.",
+      sources: [1, 2, 3],
+      estimatedSlides: 5
+    },
+    {
+      id: 2,
+      title: "Market Context & CBDC",
+      status: "Draft",
+      description: "Analysis of the current state of CBDC development globally and key market drivers influencing adoption trajectories.",
+      sources: [1, 2, 4],
+      estimatedSlides: 8
+    },
+    {
+      id: 3,
+      title: "Strategic Implications for Financial Institutions",
+      status: "Draft",
+      description: "Detailed exploration of how CBDCs will impact existing business models and create new opportunities for financial services.",
+      sources: [2, 3, 4],
+      estimatedSlides: 10
+    },
+    {
+      id: 4,
+      title: "Technical Architecture & Integration",
+      status: "Not Started",
+      description: "Technical specifications for CBDC integration with existing banking infrastructure and security frameworks.",
+      sources: [2, 4],
+      estimatedSlides: 7
+    },
+    {
+      id: 5,
+      title: "Risk Assessment & Compliance",
+      status: "Not Started",
+      description: "Comprehensive assessment of regulatory compliance requirements and risk mitigation strategies for CBDC implementation.",
+      sources: [3, 4],
+      estimatedSlides: 6
+    },
+    {
+      id: 6,
+      title: "Implementation Roadmap",
+      status: "Not Started",
+      description: "Phased approach to CBDC implementation with key milestones, resource allocation, and timeline considerations.",
+      sources: [1, 2, 3],
+      estimatedSlides: 9
+    }
+  ];
+
+  // Use generated design if available, otherwise fallback to sample data
+  const designSections = generatedDesign?.design?.sections || [
+    {
+      id: 1,
+      title: "Executive Summary",
+      status: "Final",
+      description: "This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: [
+        { type: "BCG Matrix", items: ["Stars", "Questions", "Cash Cows", "Dogs"] },
+        { type: "MECE Bullets (3-column)", items: ["Column 1", "Column 2", "Column 3"] },
+        { type: "Insight +", items: [] }
+      ]
+    },
+    {
+      id: 2,
+      title: "Market Context & CBDC Landscape",
+      status: "Draft",
+      description: "Analysis of the current state of CBDC development globally and key market drivers influencing adoption trajectories.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: [
+        { type: "Timeline Layout", items: [] },
+        { type: "Process Flow", items: [] },
+        { type: "Market Map", items: [] }
+      ]
+    },
+    {
+      id: 3,
+      title: "Strategic Implications for Financial Institutions",
+      status: "Draft",
+      description: "Detailed exploration of how CBDCs will impact existing business models and create new opportunities for financial services.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: []
+    },
+    {
+      id: 4,
+      title: "Technical Architecture & Integration",
+      status: "Not Started",
+      description: "Technical specifications for CBDC integration with existing banking infrastructure and security frameworks.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: []
+    },
+    {
+      id: 5,
+      title: "Risk Assessment & Compliance",
+      status: "Not Started",
+      description: "Comprehensive assessment of regulatory compliance requirements and risk mitigation strategies for CBDC implementation.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: []
+    },
+    {
+      id: 6,
+      title: "Implementation Roadmap",
+      status: "Not Started",
+      description: "Phased approach to CBDC implementation with key milestones, resource allocation, and timeline considerations.",
+      content: "Select a layout design for this section",
+      link: "See full section content",
+      blocks: []
+    }
+  ];
+
+  const documentContent = {
+    title: "Central Bank Digital Currencies: Implementation Strategy for Financial Institutions",
+    author: "McKinsey & Company",
+    currentPage: 14,
+    totalPages: 28,
+    content: {
+      executiveSummary: {
+        title: "Executive Summary",
+        paragraphs: [
+          "The rapid evolution of central bank digital currencies (CBDCs) represents a fundamental shift in the global financial landscape. As monetary authorities worldwide accelerate their digital currency initiatives, financial institutions must prepare for unprecedented changes in payment infrastructure, customer engagement, and operational models.",
+          "Our analysis indicates that CBDCs will impact approximately 80% of central banks by 2025, with pilot programs already underway in over 50 countries. The implications for commercial banks, payment processors, and fintech companies are profound and immediate."
+        ]
+      },
+      keyFinding: {
+        title: "Key Finding: Preparation Timeline",
+        description: "Financial institutions require a 12-18 month preparation window to adequately adapt their systems, processes, and customer interfaces for CBDC integration. This timeline encompasses technical infrastructure updates, regulatory compliance adjustments, staff training, and customer education initiatives.",
+        phases: [
+          "Phase 1 (Months 1-6): Infrastructure assessment and strategic planning",
+          "Phase 2 (Months 7-12): System development and integration testing",
+          "Phase 3 (Months 13-18): Pilot programs and staff training"
+        ],
+        conclusion: "The institutions that begin preparation now will be positioned to capitalize on the competitive advantages that CBDC integration offers, including reduced transaction costs, enhanced customer experiences, and new revenue opportunities through programmable money features."
+      }
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'Final':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'Draft':
+        return <Edit3 className="h-4 w-4 text-yellow-500" />;
+      case 'Not Started':
+        return <Clock className="h-4 w-4 text-gray-400" />;
+      default:
+        return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Final':
+        return 'text-green-600 bg-green-50 border-green-200';
+      case 'Draft':
+        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'Not Started':
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+      default:
+        return 'text-orange-600 bg-orange-50 border-orange-200';
+    }
+  };
+
+  const toggleSection = (sectionName) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }));
+  };
+
+  // Delete deliverable function
+  const handleDeleteDeliverable = async () => {
+    if (!selectedItem || selectedItem.type !== 'deliverable') {
+      console.error('No deliverable selected for deletion');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/menu/${selectedItem._id || selectedItem.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Call the parent callback to refresh the menu and clear selection
+        if (onItemDeleted) {
+          onItemDeleted(selectedItem);
+        }
+        // Clear the current selection
+        if (onItemSelect) {
+          onItemSelect(null);
+        }
+        console.log('Deliverable deleted successfully');
+      } else {
+        const errorData = await response.json();
+        console.error('Failed to delete deliverable:', errorData.error);
+        alert('Failed to delete deliverable. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting deliverable:', error);
+      alert('Error deleting deliverable. Please try again.');
+    }
+    
+    setShowDeleteConfirm(false);
+  };
+
+  // Show delete confirmation
+  const confirmDelete = () => {
+    if (!selectedItem) {
+      alert('No item selected');
+      return;
+    }
+    
+    if (selectedItem.type !== 'deliverable') {
+      alert(`Delete is only available for deliverables. Selected item type: ${selectedItem.type}`);
+      return;
+    }
+    
+    setShowDeleteConfirm(true);
+  };
+
+  const handlePageChange = (direction) => {
+    if (direction === 'prev' && currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    } else if (direction === 'next' && currentPage < totalPages) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  // Handle design generation from DesignGenerator component
+  const handleDesignGenerate = (designData) => {
+    setGeneratedDesign(designData);
+    console.log('✅ Design generated successfully:', designData);
+  };
+
+  // Handle storyline generation
+  const handleStorylineGenerate = async (formData) => {
+    setIsGenerating(true);
+    try {
+      const response = await fetch('/api/storyline/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topic: formData.name,
+          industry: formData.industry,
+          audience: formData.audience.join(', '),
+          objectives: formData.brief,
+          sectionsCount: 6,
+          presentationStyle: 'consulting',
+          complexity: formData.complexity
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setGeneratedStoryline(data.data);
+        console.log('✅ Storyline generated successfully:', data.data);
+      } else {
+        console.error('Failed to generate storyline');
+        // Fallback to mock data
+        setGeneratedStoryline({
+          sections: storylineSections,
+          executiveSummary: 'AI-generated executive summary for the presentation.',
+          presentationFlow: 'Structured narrative flow connecting all sections logically.',
+          callToAction: 'Recommended next steps and implementation guidance.',
+          totalSections: storylineSections.length,
+          estimatedDuration: storylineSections.reduce((acc, s) => acc + s.estimatedSlides, 0) * 2
+        });
+      }
+    } catch (error) {
+      console.error('Error generating storyline:', error);
+      // Fallback to mock data
+      setGeneratedStoryline({
+        sections: storylineSections,
+        executiveSummary: 'AI-generated executive summary for the presentation.',
+        presentationFlow: 'Structured narrative flow connecting all sections logically.',
+        callToAction: 'Recommended next steps and implementation guidance.',
+        totalSections: storylineSections.length,
+        estimatedDuration: storylineSections.reduce((acc, s) => acc + s.estimatedSlides, 0) * 2
+      });
+    } finally {
+      setIsGenerating(false);
+      setShowStorylineGenerator(false);
+    }
+  };
+
+
+  // Reset to sample data
+  const handleResetDesign = () => {
+    setGeneratedDesign(null);
+    setDesignForm({
+      prompt: '',
+      designType: 'wireframe',
+      device: 'desktop',
+      style: 'modern',
+      complexity: 'intermediate',
+      referenceImage: null
+    });
+  };
+
+  // Determine content type based on selected item
+  const getContentType = () => {
+    if (!selectedItem) return 'empty';
+    
+    // Check if it's a deliverable (presentation/design)
+    if (selectedItem.type === 'deliverable') {
+      return 'storyline';
+    }
+    
+    // Check if it's an external resource (document)
+    if (selectedItem.type === 'external' || selectedItem.title?.includes('McKinsey')) {
+      return 'document';
+    }
+    
+    // Check if it's a project that should show storyline
+    if (selectedItem.type === 'project' && selectedItem.title?.includes('CBDC')) {
+      return 'storyline';
+    }
+    
+    // Check if it's a project that should show project overview
+    if (selectedItem.type === 'project') {
+      return 'project-overview';
+    }
+    
+    // Check if it's a client that should show overview
+    if (selectedItem.type === 'client') {
+      return 'client-overview';
+    }
+    
+    return 'empty';
+  };
+
+  const contentType = getContentType();
+
+  if (contentType === 'empty') {
+    return (
+      <div className="flex-1 p-2 flex flex-col min-h-0">
+        {/* Theme Toggle at top */}
+        <div className="flex justify-end mb-4">
+        </div>
+        
+        <div 
+          className="flex-1 rounded-lg border-2 border-dashed flex items-center justify-center"
+          style={{ 
+            backgroundColor: 'var(--bg-secondary)',
+            borderColor: 'var(--border-primary)'
+          }}
+        >
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+              Select an Item
+            </h2>
+            <p className="text-lg" style={{ color: 'var(--text-secondary)' }}>
+              Choose a deliverable or resource from the left menu to view its content.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (contentType === 'client-overview') {
+    return (
+      <div className="flex-1 p-6 flex flex-col min-h-0">
+        <ClientDetailView 
+          client={selectedItem}
+          onUpdate={async (updatedClient) => {
+            // TODO: Implement client update logic
+            console.log('Updating client:', updatedClient);
+          }}
+          onDelete={async (clientToDelete) => {
+            // TODO: Implement client deletion logic
+            console.log('Deleting client:', clientToDelete);
+            onItemDeleted?.(clientToDelete);
+          }}
+          onAddProject={(client) => {
+            // Open the project creation modal
+            setShowUnifiedAddModal(true);
+            setAddItemType('project');
+            console.log('Opening project creation for client:', client);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (contentType === 'project-overview') {
+    return (
+      <div className="flex-1 p-2 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Theme Toggle at top */}
+          <div className="flex justify-end mb-4">
+          </div>
+          
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              {selectedItem?.title || 'Project Overview'}
+            </h1>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Project details and deliverable management
+            </p>
+          </div>
+
+          {/* Project Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg border" style={{ 
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-primary)'
+              }}>
+                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                  Project Details
+                </h3>
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Name:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.title || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Description:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.description || 'No description available'}</span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Client:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.metadata?.client_owner || 'No client assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Status:</span>
+                    <span className="ml-2 px-2 py-1 rounded text-xs" style={{ 
+                      backgroundColor: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)'
+                    }}>{selectedItem?.status || 'Unknown'}</span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Manager:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.metadata?.internal_owner || 'No manager assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Budget:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.metadata?.budget_amount ? `$${Number(selectedItem.metadata.budget_amount).toLocaleString()}` : 'Not specified'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Start Date:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.metadata?.start_date ? new Date(selectedItem.metadata.start_date).toLocaleDateString() : 'Not specified'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>End Date:</span>
+                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.metadata?.end_date ? new Date(selectedItem.metadata.end_date).toLocaleDateString() : 'Not specified'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg border" style={{ 
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-primary)'
+              }}>
+                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                  Deliverables
+                </h3>
+                <div className="space-y-2">
+                  {selectedItem?.children && selectedItem.children.length > 0 ? (
+                    selectedItem.children.map((deliverable, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {deliverable.title}
+                        </span>
+                        <span className="px-2 py-1 rounded text-xs" style={{ 
+                          backgroundColor: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)'
+                        }}>{deliverable.status}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-center py-4" style={{ color: 'var(--text-secondary)' }}>
+                      No deliverables found for this project
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg border" style={{ 
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-primary)'
+              }}>
+                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                  Project Statistics
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.children?.length || 0}
+                    </div>
+                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Deliverables</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.children?.filter(d => d.status === 'completed').length || 0}
+                    </div>
+                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Completed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.children?.filter(d => d.status !== 'completed').length || 0}
+                    </div>
+                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Pending</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {selectedItem?.children?.length > 0 
+                        ? Math.round((selectedItem.children.filter(d => d.status === 'completed').length / selectedItem.children.length) * 100)
+                        : 0
+                      }%
+                    </div>
+                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Progress</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Staffing Information */}
+              <StaffingInfo 
+                staffing={[
+                  {
+                    user: { first_name: 'Sarah', last_name: 'Johnson' },
+                    role: 'project_manager',
+                    allocation_percentage: 100,
+                    start_date: '2024-01-01',
+                    end_date: '2024-06-30',
+                    hourly_rate: 150,
+                    notes: 'Lead project manager with 10+ years experience'
+                  },
+                  {
+                    user: { first_name: 'Michael', last_name: 'Chen' },
+                    role: 'consultant',
+                    allocation_percentage: 80,
+                    start_date: '2024-01-15',
+                    end_date: '2024-05-15',
+                    hourly_rate: 120,
+                    notes: 'CBDC specialist and technical consultant'
+                  },
+                  {
+                    user: { first_name: 'Emma', last_name: 'Williams' },
+                    role: 'analyst',
+                    allocation_percentage: 60,
+                    start_date: '2024-02-01',
+                    end_date: '2024-04-30',
+                    hourly_rate: 90,
+                    notes: 'Financial analysis and market research'
+                  }
+                ]}
+                isEditable={true}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (contentType === 'storyline') {
+    return (
+      <div className="flex-1 p-2 flex flex-col min-h-0">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {selectedItem?.title || 'CBDC Strategy Presentation'}
+              {generatedStoryline && (
+                <span className="ml-2 px-2 py-1 rounded text-xs flex items-center space-x-1" style={{ 
+                  backgroundColor: 'var(--accent-primary)',
+                  color: 'white'
+                }}>
+                  <Sparkles className="h-3 w-3" />
+                  <span>AI Generated</span>
+                </span>
+              )}
+            </h1>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={() => setShowStorylineGenerator(true)}
+                className="px-3 py-1.5 rounded transition-colors cursor-pointer flex items-center space-x-1"
+                style={{ 
+                  backgroundColor: 'var(--accent-primary)',
+                  color: 'white'
+                }}
+                onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+                onMouseLeave={(e) => e.target.style.opacity = '1'}
+                title="Generate Storyline"
+              >
+                <Wand2 className="h-4 w-4" />
+                <span className="text-sm">Generate Storyline</span>
+              </button>
+              <button 
+                className="p-1 rounded transition-colors cursor-pointer"
+                style={{ 
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-secondary)'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+              {selectedItem && (
+                <button 
+                  className="p-1 rounded transition-colors cursor-pointer"
+                  style={{ 
+                    backgroundColor: 'transparent',
+                    color: selectedItem?.type === 'deliverable' ? 'var(--text-secondary)' : 'var(--text-secondary)',
+                    opacity: selectedItem?.type === 'deliverable' ? 1 : 0.5
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    confirmDelete();
+                  }}
+                  title={selectedItem?.type === 'deliverable' ? "Delete deliverable" : "Delete not available for this item type"}
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* View Mode Selector */}
+          <div 
+            className="flex items-center rounded-lg p-1"
+            style={{ backgroundColor: 'var(--bg-secondary)' }}
+          >
+            {['Storyline', 'Detailed', 'Layout'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode.toLowerCase())}
+                className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center space-x-1"
+                style={{
+                  backgroundColor: viewMode === mode.toLowerCase() ? 'var(--bg-primary)' : 'transparent',
+                  color: viewMode === mode.toLowerCase() ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  boxShadow: viewMode === mode.toLowerCase() ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none'
+                }}
+                onMouseEnter={(e) => {
+                  if (viewMode !== mode.toLowerCase()) {
+                    e.target.style.color = 'var(--text-primary)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (viewMode !== mode.toLowerCase()) {
+                    e.target.style.color = 'var(--text-secondary)';
+                  }
+                }}
+              >
+                <span>{mode}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Content based on view mode */}
+        <div className="flex-1 overflow-y-auto">
+          {viewMode === 'storyline' && (
+            <div className="space-y-4">
+              {storylineSections.map((section, index) => (
+                <div 
+                  key={section.id} 
+                  className="border rounded-lg p-4 transition-shadow"
+                  style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    borderColor: 'var(--border-secondary)'
+                  }}
+                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
+                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3 flex-1">
+                      <span className="text-sm font-medium mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        {section.id}/{storylineSections.length}
+                      </span>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {section.title}
+                          </h3>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(section.status)}`}>
+                            {section.status}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--text-secondary)' }}>
+                          {section.description}
+                        </p>
+                        {section.sources && section.sources.length > 0 && (
+                          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            Sources: {section.sources.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-1 ml-4">
+                      <button 
+                        className="p-1.5 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="p-1.5 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                      >
+                        <Lock className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {viewMode === 'detailed' && (
+            <div className="space-y-4">
+              {storylineSections.map((section, index) => (
+                <div 
+                  key={section.id} 
+                  className="border rounded-lg p-6 transition-shadow"
+                  style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    borderColor: 'var(--border-secondary)'
+                  }}
+                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
+                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start space-x-4 flex-1">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{ 
+                          backgroundColor: 'var(--accent-primary)', 
+                          color: 'white' 
+                        }}>
+                          {section.id}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-2">
+                          <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {section.title}
+                          </h3>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(section.status)}`}>
+                            {section.status}
+                          </span>
+                        </div>
+                        <p className="text-base leading-relaxed mb-4" style={{ color: 'var(--text-secondary)' }}>
+                          {section.description}
+                        </p>
+                        
+                        {/* Detailed content */}
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                              Key Points
+                            </h4>
+                            <ul className="space-y-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                              <li>• Strategic analysis of current market conditions</li>
+                              <li>• Implementation roadmap with key milestones</li>
+                              <li>• Risk assessment and mitigation strategies</li>
+                              <li>• Expected outcomes and success metrics</li>
+                            </ul>
+                          </div>
+                          
+                          {section.sources && section.sources.length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Sources & References
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {section.sources.map((source, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className="px-2 py-1 rounded text-xs" 
+                                    style={{ 
+                                      backgroundColor: 'var(--bg-secondary)', 
+                                      color: 'var(--text-secondary)' 
+                                    }}
+                                  >
+                                    Source {source}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                              Estimated Slides
+                            </h4>
+                            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                              {section.estimatedSlides || 5} slides • ~{(section.estimatedSlides || 5) * 2} minutes
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button 
+                        className="p-2 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        title="Edit section"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="p-2 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        title="More options"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {viewMode === 'layout' && (
+            <div className="space-y-4">
+              {storylineSections.map((section, index) => (
+                <div 
+                  key={section.id} 
+                  className="border rounded-lg p-4 transition-shadow"
+                  style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    borderColor: 'var(--border-secondary)'
+                  }}
+                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
+                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start space-x-3 flex-1">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{ 
+                          backgroundColor: 'var(--accent-primary)', 
+                          color: 'white' 
+                        }}>
+                          {section.id}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                          {section.title}
+                        </h3>
+                        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+                          {section.description}
+                        </p>
+                        
+                        {/* Layout options */}
+                        <div>
+                          <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                            Layout Options
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {['Timeline Layout', 'Process Flow', 'Market Map', 'Comparison Table', 'Infographic', 'Data Visualization'].map((layout, idx) => (
+                              <div 
+                                key={idx}
+                                className="border rounded-lg p-3 cursor-pointer transition-all hover:shadow-md"
+                                style={{
+                                  backgroundColor: 'var(--bg-secondary)',
+                                  borderColor: 'var(--border-primary)'
+                                }}
+                                onMouseEnter={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
+                                onMouseLeave={(e) => e.target.style.borderColor = 'var(--border-primary)'}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <Layout className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
+                                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {layout}
+                                  </span>
+                                </div>
+                                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                  {layout === 'Timeline Layout' && 'Chronological progression of events'}
+                                  {layout === 'Process Flow' && 'Step-by-step workflow visualization'}
+                                  {layout === 'Market Map' && 'Market landscape and positioning'}
+                                  {layout === 'Comparison Table' && 'Side-by-side feature comparison'}
+                                  {layout === 'Infographic' && 'Visual data representation'}
+                                  {layout === 'Data Visualization' && 'Charts and graphs for data'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button 
+                        className="p-2 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        title="Preview layout"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="p-2 rounded transition-colors"
+                        style={{ 
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        title="More options"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (contentType === 'design') {
+    return (
+      <div className="flex-1 p-2 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Theme Toggle at top */}
+          <div className="flex justify-end mb-4">
+          </div>
+          
+          {/* Header */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {selectedItem?.title || 'AI Design Generator'}
+                {generatedDesign && (
+                  <span className="ml-2 px-2 py-1 rounded text-xs flex items-center space-x-1" style={{ 
+                    backgroundColor: 'var(--accent-primary)',
+                    color: 'white'
+                  }}>
+                    <Sparkles className="h-3 w-3" />
+                    <span>AI Generated</span>
+                  </span>
+                )}
+              </h1>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => setShowDesignGenerator(true)}
+                  className="px-3 py-1.5 rounded transition-colors cursor-pointer flex items-center space-x-1"
+                  style={{ 
+                    backgroundColor: 'var(--accent-primary)',
+                    color: 'white'
+                  }}
+                  onMouseEnter={(e) => e.target.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.target.style.opacity = '1'}
+                  title="Generate AI Design (Ctrl+K)"
+                >
+                  <Wand2 className="h-4 w-4" />
+                  <span className="text-sm">Generate AI Design</span>
+                  <span className="text-xs opacity-70 ml-1">⌘K</span>
+                </button>
+                {generatedDesign && (
+                  <button 
+                    onClick={handleResetDesign}
+                    className="p-1.5 rounded transition-colors cursor-pointer"
+                    style={{ 
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                    title="Reset design (Ctrl+R)"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                )}
+                <button 
+                  className="p-1 rounded transition-colors cursor-pointer"
+                  style={{ 
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                >
+                  <Settings className="h-5 w-5" />
+                </button>
+                {/* Show delete button when item is selected */}
+                {selectedItem && (
+                  <button 
+                    className="p-1 rounded transition-colors cursor-pointer"
+                    style={{ 
+                      backgroundColor: 'transparent',
+                      color: selectedItem?.type === 'deliverable' ? 'var(--text-secondary)' : 'var(--text-secondary)',
+                      opacity: selectedItem?.type === 'deliverable' ? 1 : 0.5
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      confirmDelete();
+                    }}
+                    title={selectedItem?.type === 'deliverable' ? "Delete deliverable" : "Delete not available for this item type"}
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              {/* Design Generation Section Header */}
+              <div className="flex items-center space-x-2">
+                <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                <span className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
+                  AI Design Generator
+                </span>
+              </div>
+              
+              {/* View Mode Selector */}
+              <div 
+                className="flex items-center rounded-lg p-1"
+                style={{ backgroundColor: 'var(--bg-secondary)' }}
+              >
+                {['overview', 'brief', 'standard', 'full', 'layout'].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center space-x-1"
+                    style={{
+                      backgroundColor: viewMode === mode ? 'var(--bg-primary)' : 'transparent',
+                      color: viewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      boxShadow: viewMode === mode ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (viewMode !== mode) {
+                        e.target.style.color = 'var(--text-primary)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (viewMode !== mode) {
+                        e.target.style.color = 'var(--text-secondary)';
+                      }
+                    }}
+                  >
+                    <div 
+                      className="w-2 h-2 rounded-full"
+                      style={{
+                        backgroundColor: viewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)'
+                      }}
+                    />
+                    <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* AI Generated Design Summary */}
+          {generatedDesign && (
+            <div 
+              className="mb-6 p-4 rounded-lg border" 
+              style={{ 
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--accent-primary)',
+                borderWidth: '2px'
+              }}
+            >
+              <div className="flex items-center space-x-2 mb-3">
+                <Sparkles className="h-5 w-5" style={{ color: 'var(--accent-primary)' }} />
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  AI Generated Design
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Design Prompt
+                  </label>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{generatedDesign.prompt}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Design Type
+                  </label>
+                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.designType}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Target Device
+                  </label>
+                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.device}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Design Style
+                  </label>
+                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.style}</p>
+                </div>
+              </div>
+              {generatedDesign.design?.layout && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Layout Structure
+                  </label>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                    {generatedDesign.design.layout.structure} with {generatedDesign.design.layout.areas?.join(', ')}
+                  </p>
+                </div>
+              )}
+              <div className="flex items-center justify-between mt-4 pt-3 border-t" style={{ borderColor: 'var(--border-secondary)' }}>
+                <div className="flex items-center space-x-4">
+                  <span className="text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)'
+                  }}>
+                    {generatedDesign.design?.components?.length || 0} Components
+                  </span>
+                  <span className="text-xs px-2 py-1 rounded" style={{ 
+                    backgroundColor: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)'
+                  }}>
+                    {generatedDesign.variations || 3} Variations
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button 
+                    className="text-xs px-3 py-1 rounded transition-colors flex items-center space-x-1"
+                    style={{ 
+                      backgroundColor: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
+                  >
+                    <Download className="h-3 w-3" />
+                    <span>Export</span>
+                  </button>
+                  <button 
+                    className="text-xs px-3 py-1 rounded transition-colors flex items-center space-x-1"
+                    style={{ 
+                      backgroundColor: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
+                  >
+                    <Save className="h-3 w-3" />
+                    <span>Save Template</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Brief Content */}
+          {viewMode === 'brief' && (
+            <div 
+              className="mb-6 p-4 rounded-lg border" 
+              style={{ 
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-primary)' 
+              }}
+            >
+              <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                Project Brief
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Client
+                  </label>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>Global Banking Corp</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Project
+                  </label>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>CBDC Implementation Strategy</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Objective
+                  </label>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    Develop a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) solutions in the financial services sector.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible Sections */}
+          <div className="space-y-4 flex-1 overflow-y-auto">
+
+
+            {/* Design Generation Section */}
+            <div className="border rounded-lg" style={{ borderColor: 'var(--border-primary)' }}>
+              <div 
+                className="flex items-center justify-between p-4 cursor-pointer"
+                onClick={() => toggleSection('design')}
+                style={{ backgroundColor: 'var(--bg-secondary)' }}
+              >
+                <div className="flex items-center space-x-2">
+                  {expandedSections.design ? (
+                    <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                  ) : (
+                    <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                  )}
+                  <Layout className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Design Components</span>
+                </div>
+              </div>
+              
+              {expandedSections.design && (
+                <div className="space-y-3" style={{ backgroundColor: 'var(--bg-primary)' }}>
+                  {designSections.map((section, index) => (
+                    <div 
+                      key={section.id} 
+                      className="border rounded-lg p-4 transition-shadow"
+                      style={{
+                        backgroundColor: 'var(--bg-primary)',
+                        borderColor: 'var(--border-secondary)'
+                      }}
+                      onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
+                      onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3 flex-1">
+                          <span className="text-sm font-medium mt-1" style={{ color: 'var(--text-secondary)' }}>
+                            {section.id}/{designSections.length}
+                          </span>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {section.title}
+                              </h3>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(section.status)}`}>
+                                {section.status}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                              {section.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-1 ml-4">
+                          <button 
+                            className="p-1.5 rounded transition-colors"
+                            style={{ 
+                              backgroundColor: 'transparent',
+                              color: 'var(--text-secondary)'
+                            }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button 
+                            className="p-1.5 rounded transition-colors"
+                            style={{ 
+                              backgroundColor: 'transparent',
+                              color: 'var(--text-secondary)'
+                            }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          <button 
+                            className="p-1.5 rounded transition-colors"
+                            style={{ 
+                              backgroundColor: 'transparent',
+                              color: 'var(--text-secondary)'
+                            }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                          >
+                            <Lock className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Content Blocks */}
+                      {section.blocks && section.blocks.length > 0 && (
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                              Content Layouts
+                            </h4>
+                            <button 
+                              className="text-xs px-2 py-1 rounded transition-colors flex items-center space-x-1"
+                              style={{ 
+                                backgroundColor: 'var(--bg-tertiary)',
+                                color: 'var(--text-secondary)'
+                              }}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
+                            >
+                              <PlusCircle className="h-3 w-3" />
+                              <span>Add Layout</span>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {section.blocks.map((block, blockIndex) => (
+                              <div 
+                                key={blockIndex} 
+                                className="p-3 border rounded cursor-pointer transition-all hover:shadow-sm group" 
+                                style={{ 
+                                  backgroundColor: 'var(--bg-secondary)',
+                                  borderColor: 'var(--border-secondary)'
+                                }}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-2">
+                                    <Layout className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                                    <h5 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                      {block.type}
+                                    </h5>
+                                  </div>
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
+                                    <button className="p-1 rounded hover:bg-gray-100">
+                                      <Edit3 className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
+                                    </button>
+                                    <button className="p-1 rounded hover:bg-gray-100">
+                                      <Copy className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
+                                    </button>
+                                  </div>
+                                </div>
+                                
+                                {block.items && block.items.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {block.items.map((item, itemIndex) => (
+                                      <div key={itemIndex} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                        • {item}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs italic" style={{ color: 'var(--text-secondary)' }}>
+                                    Click to configure layout
+                                  </div>
+                                )}
+                                
+                                {/* Layout preview indicator */}
+                                <div className="mt-2 flex items-center justify-between">
+                                  <div className="flex space-x-1">
+                                    {[1, 2, 3].map((dot, dotIndex) => (
+                                      <div 
+                                        key={dotIndex}
+                                        className="w-1.5 h-1.5 rounded-full"
+                                        style={{ 
+                                          backgroundColor: dotIndex < (block.items?.length || 1) ? 'var(--accent-primary)' : 'var(--border-secondary)'
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                    {section.estimatedSlides || Math.ceil(Math.random() * 3) + 2} slides
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                            
+                            {/* Add new layout option */}
+                            <div 
+                              className="p-3 border-2 border-dashed rounded cursor-pointer transition-all hover:border-solid flex flex-col items-center justify-center min-h-[100px]" 
+                              style={{ 
+                                borderColor: 'var(--border-secondary)',
+                                backgroundColor: 'var(--bg-primary)'
+                              }}
+                            >
+                              <PlusCircle className="h-6 w-6 mb-2" style={{ color: 'var(--text-secondary)' }} />
+                              <span className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                                Add Content Layout
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Deliverable Metrics */}
+              <div className="mt-8">
+                <DeliverableMetrics 
+                  metrics={{
+                    pages_count: 45,
+                    word_count: 12500,
+                    reading_time_minutes: 50,
+                    file_size_mb: 2.8,
+                    views_count: 23,
+                    download_count: 8,
+                    last_viewed: '2024-01-15T14:30:00Z',
+                    completion_percentage: 75
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (contentType === 'document') {
+    return (
+      <div className="flex-1 p-2 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Theme Toggle at top */}
+          <div className="flex justify-end mb-4">
+          </div>
+          
+          {/* Document Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+                {documentContent.title}
+              </h1>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {documentContent.author}
+              </p>
+            </div>
+            
+            {/* Pagination */}
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handlePageChange('prev')}
+                  disabled={currentPage <= 1}
+                  className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => handlePageChange('next')}
+                  disabled={currentPage >= totalPages}
+                  className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+              <button className="p-2 rounded hover:bg-gray-100">
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Document Content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-4xl mx-auto space-y-8">
+              {/* Executive Summary */}
+              <section>
+                <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+                  {documentContent.content.executiveSummary.title}
+                </h2>
+                {documentContent.content.executiveSummary.paragraphs.map((paragraph, index) => (
+                  <p key={index} className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    {paragraph}
+                  </p>
+                ))}
+              </section>
+
+              {/* Key Finding */}
+              <section>
+                <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+                  {documentContent.content.keyFinding.title}
+                </h2>
+                <p className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  {documentContent.content.keyFinding.description}
+                </p>
+                
+                <div className="mb-4">
+                  <h3 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                    Phased Timeline:
+                  </h3>
+                  <ul className="space-y-2">
+                    {documentContent.content.keyFinding.phases.map((phase, index) => (
+                      <li key={index} className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        • {phase}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  {documentContent.content.keyFinding.conclusion}
+                </p>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <>
+      {/* Simple delete confirmation dialog */}
+      {showDeleteConfirm ? (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center" 
+          style={{ zIndex: 99999 }}
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div 
+            className="rounded-lg p-6 max-w-md w-full mx-4" 
+            style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-primary)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 rounded-full" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                <Trash2 className="h-6 w-6" style={{ color: 'var(--text-error)' }} />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Delete Deliverable
+                </h3>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  This action cannot be undone
+                </p>
+              </div>
+            </div>
+            
+            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
+              Are you sure you want to delete "<strong style={{ color: 'var(--text-primary)' }}>{selectedItem?.title}</strong>"? 
+              This will permanently remove the deliverable and all its content.
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 rounded-md border transition-colors"
+                style={{ 
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'transparent'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = 'transparent';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteDeliverable}
+                className="px-4 py-2 rounded-md transition-colors"
+                style={{ 
+                  backgroundColor: 'var(--text-error)',
+                  color: 'white'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.opacity = '0.9';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.opacity = '1';
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* AI Design Generator Modal */}
+      <DesignGenerator 
+        isOpen={showDesignGenerator}
+        onClose={() => setShowDesignGenerator(false)}
+        onGenerate={handleDesignGenerate}
+      />
+
+      {/* Storyline Generation Modal */}
+      <StorylineGenerationForm
+        isOpen={showStorylineGenerator}
+        onClose={() => setShowStorylineGenerator(false)}
+        onGenerate={handleStorylineGenerate}
+        isGenerating={isGenerating}
+      />
+
+      {/* Chat Toggle Button */}
+      <button 
+        onClick={() => setShowChat(!showChat)}
+        className={`fixed bottom-6 right-6 z-40 px-6 py-3 rounded-full shadow-lg transition-all duration-300 ${
+          showChat 
+            ? 'bg-red-600 hover:bg-red-700 text-white' 
+            : 'bg-blue-600 hover:bg-blue-700 text-white'
+        }`}
+        style={{
+          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          transform: showChat ? 'scale(0.95)' : 'scale(1)'
+        }}
+      >
+        <div className="flex items-center space-x-2">
+          <MessageCircle className="h-5 w-5" />
+          <span className="font-medium">
+            {showChat ? 'Close Chat' : 'AI Assistant'}
+          </span>
+        </div>
+      </button>
+      
+      {/* Context-Aware Chat */}
+      <CignoContextAwareChat
+        isOpen={showChat}
+        onClose={() => setShowChat(false)}
+        selectedItem={selectedItem}
+        contentType={getContentType()}
+      />
+      
+      {/* Return null if no content to show */}
+      {null}
+    </>
+  );
+}

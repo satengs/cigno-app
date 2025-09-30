@@ -1,0 +1,329 @@
+/**
+ * Unified Widget CSS
+ * Comprehensive styling for chat widgets and narrative messages
+ * Supports both light and dark modes
+ */
+
+/* CSS Variables for theming */
+:root {
+  /* Light mode colors */
+  --narrative-success-bg: #f0f9ff;
+  --narrative-success-border: #0ea5e9;
+  --narrative-success-text: #0c4a6e;
+  
+  --narrative-progress-bg: #eff6ff;
+  --narrative-progress-border: #3b82f6;
+  --narrative-progress-text: #1e40af;
+  
+  --narrative-warning-bg: #fffbeb;
+  --narrative-warning-border: #f59e0b;
+  --narrative-warning-text: #92400e;
+  
+  --narrative-error-bg: #fef2f2;
+  --narrative-error-border: #ef4444;
+  --narrative-error-text: #991b1b;
+  
+  --narrative-info-bg: #f8fafc;
+  --narrative-info-border: #64748b;
+  --narrative-info-text: #334155;
+  
+  --narrative-timestamp-color: #64748b;
+  --narrative-container-bg: #ffffff;
+  --narrative-container-border: #e2e8f0;
+}
+
+/* Dark mode colors */
+[data-theme="dark"] {
+  --narrative-success-bg: #0f172a;
+  --narrative-success-border: #0ea5e9;
+  --narrative-success-text: #7dd3fc;
+  
+  --narrative-progress-bg: #1e293b;
+  --narrative-progress-border: #3b82f6;
+  --narrative-progress-text: #93c5fd;
+  
+  --narrative-warning-bg: #292524;
+  --narrative-warning-border: #f59e0b;
+  --narrative-warning-text: #fbbf24;
+  
+  --narrative-error-bg: #2d1b1b;
+  --narrative-error-border: #ef4444;
+  --narrative-error-text: #fca5a5;
+  
+  --narrative-info-bg: #1e293b;
+  --narrative-info-border: #64748b;
+  --narrative-info-text: #cbd5e1;
+  
+  --narrative-timestamp-color: #94a3b8;
+  --narrative-container-bg: #0f172a;
+  --narrative-container-border: #334155;
+}
+
+/* Narrative Container */
+.narrative-container {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 1rem;
+  background: var(--narrative-container-bg);
+  border: 1px solid var(--narrative-container-border);
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Narrative Items */
+.narrative-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.375rem;
+  border-left: 3px solid;
+  transition: all 0.2s ease-in-out;
+  animation: slideIn 0.3s ease-out;
+}
+
+.narrative-item:hover {
+  transform: translateX(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Success Narratives */
+.narrative-success {
+  background: var(--narrative-success-bg);
+  border-color: var(--narrative-success-border);
+  color: var(--narrative-success-text);
+}
+
+.narrative-success .narrative-text {
+  color: var(--narrative-success-text);
+  font-weight: 500;
+}
+
+/* Progress Narratives */
+.narrative-progress {
+  background: var(--narrative-progress-bg);
+  border-color: var(--narrative-progress-border);
+  color: var(--narrative-progress-text);
+}
+
+.narrative-progress .narrative-text {
+  color: var(--narrative-progress-text);
+  font-weight: 500;
+}
+
+/* Warning/Transition Narratives */
+.narrative-warning {
+  background: var(--narrative-warning-bg);
+  border-color: var(--narrative-warning-border);
+  color: var(--narrative-warning-text);
+}
+
+.narrative-warning .narrative-text {
+  color: var(--narrative-warning-text);
+  font-weight: 500;
+}
+
+/* Error Narratives */
+.narrative-error {
+  background: var(--narrative-error-bg);
+  border-color: var(--narrative-error-border);
+  color: var(--narrative-error-text);
+}
+
+.narrative-error .narrative-text {
+  color: var(--narrative-error-text);
+  font-weight: 600;
+}
+
+/* Info Narratives */
+.narrative-info {
+  background: var(--narrative-info-bg);
+  border-color: var(--narrative-info-border);
+  color: var(--narrative-info-text);
+}
+
+.narrative-info .narrative-text {
+  color: var(--narrative-info-text);
+  font-weight: 400;
+}
+
+/* Narrative Text */
+.narrative-text {
+  flex: 1;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+/* Narrative Timestamp */
+.narrative-timestamp {
+  font-size: 0.75rem;
+  color: var(--narrative-timestamp-color);
+  opacity: 0.8;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* Status Indicator */
+.status-indicator {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: var(--narrative-container-bg);
+  border: 1px solid var(--narrative-container-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-width: 300px;
+  display: none;
+}
+
+.status-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.status-message {
+  font-size: 0.875rem;
+  color: var(--narrative-info-text);
+  font-weight: 500;
+}
+
+.status-progress {
+  width: 100%;
+  height: 4px;
+  background: var(--narrative-container-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--narrative-progress-border);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Streaming Message */
+.streaming-message {
+  padding: 0.75rem;
+  background: var(--narrative-info-bg);
+  border: 1px solid var(--narrative-info-border);
+  border-radius: 0.375rem;
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--narrative-info-text);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.message-complete {
+  animation: none;
+  background: var(--narrative-success-bg);
+  border-color: var(--narrative-success-border);
+  color: var(--narrative-success-text);
+}
+
+/* Error Message */
+.error-message {
+  background: var(--narrative-error-bg) !important;
+  border-color: var(--narrative-error-border) !important;
+  color: var(--narrative-error-text) !important;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .narrative-container {
+    max-height: 300px;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+  }
+  
+  .narrative-item {
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .narrative-text {
+    font-size: 0.8rem;
+  }
+  
+  .narrative-timestamp {
+    font-size: 0.7rem;
+  }
+  
+  .status-indicator {
+    bottom: 0.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    max-width: none;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .narrative-item {
+    animation: none;
+    transition: none;
+  }
+  
+  .streaming-message {
+    animation: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .narrative-item {
+    border-width: 2px;
+  }
+  
+  .narrative-text {
+    font-weight: 600;
+  }
+}
+
+/* Print styles */
+@media print {
+  .narrative-container {
+    max-height: none;
+    overflow: visible;
+    border: 1px solid #000;
+    background: #fff;
+  }
+  
+  .narrative-item {
+    break-inside: avoid;
+    border: 1px solid #000;
+    background: #fff;
+    color: #000;
+  }
+  
+  .status-indicator {
+    display: none;
+  }
+}
