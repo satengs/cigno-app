@@ -90,7 +90,11 @@ export default function NewClientModal({
   ];
 
   const ownerOptions = [
-    { value: '', label: 'No owner assigned' }
+    { value: '', label: 'Select owner...' },
+    { value: 'john-doe', label: 'John Doe' },
+    { value: 'jane-smith', label: 'Jane Smith' },
+    { value: 'mike-johnson', label: 'Mike Johnson' },
+    { value: 'sarah-wilson', label: 'Sarah Wilson' }
   ];
 
   const roleOptions = [
