@@ -15,27 +15,12 @@ export class MenuManager {
    * Initialize the default menu structure
    */
   initializeDefaultMenu() {
-    // Create root sections
+    // Create empty root sections
     const clientSection = MenuItem.createSection('CLIENT', 'users');
     const projectSection = MenuItem.createSection('PROJECT', 'folder');
     const deliverableSection = MenuItem.createSection('DELIVERABLE', 'file-text');
 
-    // Add default items
-    const globalBanking = MenuItem.createClient('Global Banking Corp', 'Financial Services Client');
-    clientSection.addChild(globalBanking);
-
-    const cbdcProject = MenuItem.createProject('CBDC Implementation Strategy', 'Central Bank Digital Currency Strategy');
-    projectSection.addChild(cbdcProject);
-
-    const presentation = MenuItem.createDeliverable('CBDC Strategy Presentation', 'Executive presentation', 'active');
-    const report = MenuItem.createDeliverable('Technical Report', 'Technical implementation details', 'not-started');
-    const roadmap = MenuItem.createDeliverable('Implementation Roadmap', 'Project timeline and milestones', 'not-started');
-    
-    deliverableSection.addChild(presentation);
-    deliverableSection.addChild(report);
-    deliverableSection.addChild(roadmap);
-
-    // Set root items
+    // Set root items with no default children
     this.rootItems = [clientSection, projectSection, deliverableSection];
     
     // Expand all sections by default

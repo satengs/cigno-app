@@ -36,54 +36,18 @@ const DeliverableList = ({ projectId, onDeliverableSelect }) => {
         }
         
         const data = await response.json();
-        setDeliverables(data.deliverables || []);
+        const deliverables = (data.data?.deliverables || []).map(deliverable => ({
+          ...deliverable,
+          id: deliverable._id || deliverable.id,
+          assigned_to: deliverable.assigned_to || [],
+          completion_percentage: deliverable.metrics?.completion_percentage || 0
+        }));
+        setDeliverables(deliverables);
         setError(null);
       } catch (err) {
         console.error('Error fetching deliverables:', err);
         setError(err.message);
-        // Mock data for development
-        setDeliverables([
-          {
-            id: '1',
-            name: 'Strategy Presentation',
-            type: 'Presentation',
-            status: 'In Progress',
-            priority: 'High',
-            due_date: new Date('2024-01-15'),
-            assigned_to: [
-              { id: '1', name: 'Sarah Johnson', role: 'Project Manager' },
-              { id: '2', name: 'Mike Chen', role: 'Consultant' }
-            ],
-            completion_percentage: 75,
-            created_at: new Date('2024-01-01')
-          },
-          {
-            id: '2',
-            name: 'Technical Report',
-            type: 'Report',
-            status: 'Planning',
-            priority: 'Medium',
-            due_date: new Date('2024-01-20'),
-            assigned_to: [
-              { id: '3', name: 'Emma Wilson', role: 'Analyst' }
-            ],
-            completion_percentage: 25,
-            created_at: new Date('2024-01-05')
-          },
-          {
-            id: '3',
-            name: 'Implementation Roadmap',
-            type: 'Strategy',
-            status: 'Completed',
-            priority: 'High',
-            due_date: new Date('2024-01-10'),
-            assigned_to: [
-              { id: '1', name: 'Sarah Johnson', role: 'Project Manager' }
-            ],
-            completion_percentage: 100,
-            created_at: new Date('2023-12-20')
-          }
-        ]);
+        setDeliverables([]);
       } finally {
         setLoading(false);
       }

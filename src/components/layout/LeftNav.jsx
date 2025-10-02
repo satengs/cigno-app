@@ -255,7 +255,7 @@ export default function LeftNav({
           case 'deliverable':
             apiEndpoint = '/api/deliverables';
             requestBody = {
-              name: itemData.title,
+              name: itemData.title || itemData.name || 'New Deliverable',
               type: itemData.metadata?.type || 'Report', // Use correct enum value (capitalized)
               description: itemData.description || '',
               status: itemData.status || 'draft', // Use correct enum value (lowercase)
@@ -300,8 +300,13 @@ export default function LeftNav({
       // Step 2: Create/Update the menu item
       console.log('📋 Creating/updating menu item...');
       const menuApiEndpoint = '/api/menu';
-      const menuRequestBody = editId ? { ...itemData, id: editId } : {
+      
+      // Ensure title is not empty (use same fallback logic as deliverable name)
+      const menuTitle = itemData.title || itemData.name || 'New Deliverable';
+      
+      const menuRequestBody = editId ? { ...itemData, id: editId, title: menuTitle } : {
         ...itemData,
+        title: menuTitle,
         // If we created a business entity, link it in the metadata
         metadata: {
           ...itemData.metadata,
@@ -354,6 +359,13 @@ export default function LeftNav({
 
   const updateItem = async (itemId, updates) => {
     console.log('🔄 Updating item:', itemId, updates);
+    
+    // Guard against boolean IDs
+    if (typeof itemId === 'boolean') {
+      console.log('🚨 Boolean ID detected, skipping update:', itemId);
+      return;
+    }
+    
     const itemType = updates.type;
     
     try {
@@ -1359,7 +1371,8 @@ export default function LeftNav({
                                                                 onClick={() => {
                                                                   toggleActionMenu(null);
                                                                   // Extract business entity ID from metadata for proper deletion
-                                                                  const businessEntityId = deliverable.metadata?.business_entity_id || 
+                                                                  const businessEntityId = deliverable.metadata?.deliverableId || 
+                                                                                          deliverable.metadata?.business_entity_id || 
                                                                                           deliverable.metadata?.deliverable_id || 
                                                                                           deliverable._id || 
                                                                                           deliverable.id;

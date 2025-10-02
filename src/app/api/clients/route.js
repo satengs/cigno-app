@@ -53,7 +53,15 @@ export async function POST(request) {
       industry: clientData.industry || clientData.metadata?.industry
     });
     
-    // Get default user and organisation if not provided  
+    // Validate required fields
+    if (!clientName) {
+      return NextResponse.json({ 
+        error: 'Client name is required',
+        details: 'Please provide a client name' 
+      }, { status: 400 });
+    }
+
+    // Validate user and organization are provided
     let defaultUser = clientData.metadata?.owner || clientData.owner || clientData.created_by;
     let defaultOrganisation = clientData.organisation;
     
@@ -73,34 +81,22 @@ export async function POST(request) {
         defaultUser = foundUser._id;
         console.log('Found user:', defaultUser);
       } else {
-        defaultUser = null; // Will fallback to first user
+        defaultUser = null;
       }
     }
     
     if (!defaultUser) {
-      const firstUser = await User.findOne().select('_id');
-      if (firstUser) {
-        defaultUser = firstUser._id;
-        console.log('Using default user:', defaultUser);
-      } else {
-        return NextResponse.json({ 
-          error: 'No user found',
-          details: 'Please create a user first or provide user ID' 
-        }, { status: 400 });
-      }
+      return NextResponse.json({ 
+        error: 'User is required',
+        details: 'Please provide a valid owner, created_by user ID, or create a user first' 
+      }, { status: 400 });
     }
     
     if (!defaultOrganisation) {
-      const firstOrg = await Organisation.findOne().select('_id');
-      if (firstOrg) {
-        defaultOrganisation = firstOrg._id;
-        console.log('Using default organisation:', defaultOrganisation);
-      } else {
-        return NextResponse.json({ 
-          error: 'No organisation found',
-          details: 'Please create an organisation first or provide organisation ID' 
-        }, { status: 400 });
-      }
+      return NextResponse.json({ 
+        error: 'Organisation is required',
+        details: 'Please provide a valid organisation ID or create an organisation first' 
+      }, { status: 400 });
     }
     
     // Extract data from metadata if present
@@ -167,13 +163,25 @@ export async function PUT(request) {
       industry: clientData.industry
     });
     
-    // Get default user if needed
+    // Validate updated_by user if provided
     let defaultUser = clientData.updated_by;
-    if (!defaultUser) {
-      const firstUser = await User.findOne().select('_id');
-      if (firstUser) {
-        defaultUser = firstUser._id;
+    if (defaultUser && typeof defaultUser === 'string' && !defaultUser.match(/^[0-9a-fA-F]{24}$/)) {
+      // Look up user if it's not an ObjectId
+      const foundUser = await User.findOne({ 
+        $or: [
+          { username: defaultUser },
+          { email_address: defaultUser }
+        ]
+      }).select('_id');
+      
+      if (!foundUser) {
+        return NextResponse.json({ 
+          error: 'Invalid user',
+          details: `User not found: ${defaultUser}` 
+        }, { status: 400 });
       }
+      
+      defaultUser = foundUser._id;
     }
 
     // Update the client

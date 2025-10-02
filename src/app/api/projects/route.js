@@ -49,8 +49,8 @@ export async function POST(request) {
       client_owner: projectData.client_owner
     });
     
-    // Helper function to find or create user by name/identifier
-    const findOrCreateUser = async (identifier) => {
+    // Helper function to find user by name/identifier
+    const findUser = async (identifier) => {
       if (!identifier) return null;
       
       // If it's already an ObjectId, return it
@@ -71,12 +71,7 @@ export async function POST(request) {
         ]
       }).select('_id');
       
-      if (user) {
-        return user._id;
-      }
-      
-      // Return null if not found - we'll use default
-      return null;
+      return user ? user._id : null;
     };
 
     // Helper function to find client by name/identifier
@@ -105,145 +100,79 @@ export async function POST(request) {
     // Resolve user and client references
     let clientId = await findClient(projectData.client_owner);
     
-    // If no client found but project requires one, create a default client
+    // Validate that client exists
     if (!clientId && projectData.client_owner) {
-      console.log('Client not found, creating default client for:', projectData.client_owner);
-      try {
-        const defaultClient = new Client({
-          name: projectData.client_owner,
-          location: 'Unknown',
-          industry: 'Other',
-          status: 'active',
-          priority: 'medium',
-          owner: null, // We'll set this after we get a default user
-          organisation: null, // We'll set this after we get default org
-          company_size: 'medium',
-          tags: [],
-          notes: `Auto-created for project: ${projectData.name}`,
-          created_by: null, // We'll set this after we get a default user
-          updated_by: null // We'll set this after we get a default user
-        });
-        
-        // Get defaults first
-        let tempDefaultUser = null;
-        let tempDefaultOrg = null;
-        
-        const firstUser = await User.findOne().select('_id');
-        if (firstUser) {
-          tempDefaultUser = firstUser._id;
-        }
-        
-        const firstOrg = await Organisation.findOne().select('_id');
-        if (firstOrg) {
-          tempDefaultOrg = firstOrg._id;
-        }
-        
-        // Set the defaults
-        defaultClient.owner = tempDefaultUser;
-        defaultClient.organisation = tempDefaultOrg;
-        defaultClient.created_by = tempDefaultUser;
-        defaultClient.updated_by = tempDefaultUser;
-        
-        const savedClient = await defaultClient.save();
-        clientId = savedClient._id;
-        console.log('Created default client with ID:', clientId);
-      } catch (clientError) {
-        console.error('Failed to create default client:', clientError);
-        // Continue without client - we'll handle this later
-      }
+      return NextResponse.json({ 
+        error: 'Client not found',
+        details: `No client found with identifier: ${projectData.client_owner}. Please create the client first or use a valid client ID.` 
+      }, { status: 400 });
     }
     
-    const internalOwnerId = await findOrCreateUser(projectData.internal_owner);
-    const createdById = await findOrCreateUser(projectData.created_by);
-    const updatedById = await findOrCreateUser(projectData.updated_by);
+    const internalOwnerId = await findUser(projectData.internal_owner);
+    const createdById = await findUser(projectData.created_by);
+    const updatedById = await findUser(projectData.updated_by);
 
-    // Get default values if not provided
-    let defaultUser = internalOwnerId || createdById;
-    let defaultOrganisation = projectData.organisation;
-    
-    if (!defaultUser) {
-      const firstUser = await User.findOne().select('_id');
-      if (firstUser) {
-        defaultUser = firstUser._id;
-        console.log('Using default user:', defaultUser);
-      } else {
-        return NextResponse.json({ 
-          error: 'No user found',
-          details: 'Please create a user first or provide user ID' 
-        }, { status: 400 });
-      }
+    // Validate required fields
+    if (!projectData.name) {
+      return NextResponse.json({ 
+        error: 'Project name is required',
+        details: 'Please provide a project name' 
+      }, { status: 400 });
     }
-    
-    if (!defaultOrganisation) {
-      const firstOrg = await Organisation.findOne().select('_id');
-      if (firstOrg) {
-        defaultOrganisation = firstOrg._id;
-        console.log('Using default organisation:', defaultOrganisation);
-      } else {
-        return NextResponse.json({ 
-          error: 'No organisation found',
-          details: 'Please create an organisation first or provide organisation ID' 
-        }, { status: 400 });
-      }
-    }
-    
-    // Default dates if not provided
-    const defaultStartDate = projectData.start_date || new Date();
-    const defaultEndDate = projectData.end_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-    
-    // Ensure we have a client (required field)
+
     if (!clientId) {
-      console.log('No client specified, creating default client');
-      try {
-        const defaultClient = new Client({
-          name: 'Default Client',
-          location: 'Unknown',
-          industry: 'Other',
-          status: 'active',
-          priority: 'medium',
-          owner: defaultUser,
-          organisation: defaultOrganisation,
-          company_size: 'medium',
-          tags: [],
-          notes: `Auto-created for project: ${projectData.name || 'Untitled Project'}`,
-          created_by: defaultUser,
-          updated_by: defaultUser
-        });
-        
-        const savedClient = await defaultClient.save();
-        clientId = savedClient._id;
-        console.log('Created fallback default client with ID:', clientId);
-      } catch (clientError) {
-        console.error('Failed to create fallback client:', clientError);
-        return NextResponse.json({ 
-          error: 'Failed to create project',
-          details: 'Could not create required client. Please create a client first or provide a valid client name.' 
-        }, { status: 400 });
-      }
+      return NextResponse.json({ 
+        error: 'Client is required',
+        details: 'Please provide a valid client ID or create a client first' 
+      }, { status: 400 });
     }
 
-    // Create the new project
+    if (!internalOwnerId && !createdById) {
+      return NextResponse.json({ 
+        error: 'User is required',
+        details: 'Please provide a valid internal_owner or created_by user ID' 
+      }, { status: 400 });
+    }
+
+    if (!projectData.organisation) {
+      return NextResponse.json({ 
+        error: 'Organisation is required',
+        details: 'Please provide a valid organisation ID' 
+      }, { status: 400 });
+    }
+
+    // Validate dates
+    if (!projectData.start_date || !projectData.end_date) {
+      return NextResponse.json({ 
+        error: 'Start and end dates are required',
+        details: 'Please provide valid start_date and end_date' 
+      }, { status: 400 });
+    }
+
+    const defaultUser = internalOwnerId || createdById;
+
+    // Create the new project (all required fields validated above)
     const newProject = new Project({
-      name: projectData.name || 'Untitled Project',
-      description: projectData.description || 'Project description',
-      start_date: defaultStartDate,
-      end_date: defaultEndDate,
-      status: projectData.status || 'Planning',
-      client: clientId, // Use resolved client ObjectId (now guaranteed to exist)
-      client_owner: clientId, // Use resolved client ObjectId (now guaranteed to exist)
-      internal_owner: internalOwnerId || defaultUser,
-      organisation: defaultOrganisation,
+      name: projectData.name,
+      description: projectData.description,
+      start_date: new Date(projectData.start_date),
+      end_date: new Date(projectData.end_date),
+      status: projectData.status,
+      client: clientId,
+      client_owner: clientId,
+      internal_owner: defaultUser,
+      organisation: projectData.organisation,
       reference_documents: projectData.reference_documents || [],
       budget: projectData.budget || { amount: projectData.budget_amount || 0, currency: projectData.budget_currency || 'USD', allocated: 0, spent: 0 },
       team_members: projectData.team_members || [],
       staffing: projectData.staffing || [],
       tags: projectData.tags || [],
-      priority: projectData.priority || 'medium',
-      project_type: projectData.project_type || 'consulting',
+      priority: projectData.priority,
+      project_type: projectData.project_type,
       communication_preferences: projectData.communication_preferences || {},
       notes: projectData.notes || '',
-      created_by: createdById || defaultUser,
-      updated_by: updatedById || defaultUser
+      created_by: defaultUser,
+      updated_by: defaultUser
     });
     
     const savedProject = await newProject.save();
@@ -292,8 +221,8 @@ export async function POST(request) {
       }
       
       const menuItemData = {
-        title: savedProject.name || 'Untitled Project',
-        description: savedProject.description || '',
+        title: savedProject.name,
+        description: savedProject.description,
         type: 'project',
         status: menuStatus,
         parentId: parentMenuItemId,

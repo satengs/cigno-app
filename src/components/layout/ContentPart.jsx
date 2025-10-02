@@ -10,22 +10,12 @@ import {
   Edit3,
   Copy,
   Lock,
-  Unlock,
   Eye,
-  EyeOff,
   MoreHorizontal,
-  FileText,
-  Presentation,
-  BookOpen,
   Settings,
-  Briefcase,
-  Target,
   CheckCircle,
   Clock,
   AlertTriangle,
-  Play,
-  Pause,
-  RotateCcw,
   Trash2,
   Sparkles,
   Wand2,
@@ -33,19 +23,15 @@ import {
   PlusCircle,
   RefreshCw,
   Save,
-  Download,
-  Plus,
-  MoreVertical,
-  Folder,
-  Globe
+  Download
 } from 'lucide-react';
-import BillingInfo from '../ui/BillingInfo';
 import StaffingInfo from '../ui/StaffingInfo';
 import DeliverableMetrics from '../ui/DeliverableMetrics';
 import DesignGenerator from '../ui/DesignGenerator';
 import StorylineGenerationForm from '../ui/StorylineGenerationForm';
 import ClientDetailView from '../ui/ClientDetailView';
 import CignoContextAwareChat from '../ui/CignoContextAwareChat';
+import DeliverableSettingsPage from '../deliverables/DeliverableSettingsPage';
 
 export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted }) {
   const [viewMode, setViewMode] = useState('overview');
@@ -72,6 +58,103 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     referenceImage: null
   });
   const [showChat, setShowChat] = useState(false);
+  const [showDeliverableSettings, setShowDeliverableSettings] = useState(false);
+  const [deliverableForSettings, setDeliverableForSettings] = useState(null);
+  
+  // Deliverable form state
+  const [documentLength, setDocumentLength] = useState(25);
+  const [selectedFormat, setSelectedFormat] = useState('PPT');
+  const [audiences, setAudiences] = useState(['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)']);
+  const [deliverableName, setDeliverableName] = useState(selectedItem?.title || 'CBDC Implementation Strategy for Global Banking');
+  const [deliverableType, setDeliverableType] = useState('Strategy Presentation');
+  const [dueDate, setDueDate] = useState('15.02.2025');
+  const [briefText, setBriefText] = useState(selectedItem?.description || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.');
+  
+  // Tab switching state
+  const [activeTab, setActiveTab] = useState('detailed'); // 'storyline', 'detailed', 'layout'
+
+  // Helper functions
+  const removeAudience = (index) => {
+    setAudiences(audiences.filter((_, i) => i !== index));
+  };
+
+  const handleGenerateStoryline = async () => {
+    setIsGenerating(true);
+    
+    try {
+      const deliverableData = {
+        name: deliverableName,
+        type: deliverableType,
+        audience: audiences,
+        brief: briefText,
+        format: selectedFormat,
+        documentLength: documentLength,
+        dueDate: dueDate
+      };
+
+      const response = await fetch('/api/storyline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ deliverableData }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setGeneratedStoryline(result.storyline);
+        // You could also navigate to storyline view or show success message
+        console.log('Storyline generated successfully:', result.storyline);
+      } else {
+        console.error('Failed to generate storyline:', result.error);
+      }
+    } catch (error) {
+      console.error('Error calling storyline API:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleImproveBrief = async () => {
+    setIsGenerating(true);
+    
+    try {
+      const briefData = {
+        currentBrief: briefText,
+        deliverableName: deliverableName,
+        deliverableType: deliverableType,
+        audience: audiences,
+        format: selectedFormat,
+        documentLength: documentLength,
+        dueDate: dueDate
+      };
+
+      const response = await fetch('/api/improve-brief', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ briefData }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setBriefText(result.improvedBrief);
+        console.log('Brief improved successfully:', {
+          qualityScore: result.qualityScore,
+          improvements: result.improvements
+        });
+      } else {
+        console.error('Failed to improve brief:', result.error);
+      }
+    } catch (error) {
+      console.error('Error calling improve brief API:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -333,7 +416,10 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     }
 
     try {
-      const response = await fetch(`/api/menu/${selectedItem._id || selectedItem.id}`, {
+      // Get the deliverable ID from either the item itself or its metadata
+      const deliverableId = selectedItem.metadata?.deliverableId || selectedItem._id || selectedItem.id;
+      
+      const response = await fetch(`/api/deliverables?id=${deliverableId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -376,6 +462,60 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     }
     
     setShowDeleteConfirm(true);
+  };
+
+  // Handle opening deliverable settings
+  const handleOpenDeliverableSettings = async () => {
+    if (!selectedItem || selectedItem.type !== 'deliverable') {
+      console.log('Settings only available for deliverables');
+      return;
+    }
+
+    try {
+      // Get the deliverable ID from the selected item
+      const deliverableId = selectedItem.metadata?.deliverableId || 
+                           selectedItem.metadata?.business_entity_id || 
+                           selectedItem._id || 
+                           selectedItem.id;
+
+      console.log('📋 Opening settings for deliverable:', deliverableId);
+
+      // Fetch the full deliverable data
+      const response = await fetch(`/api/deliverables/${deliverableId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch deliverable: ${response.status}`);
+      }
+      
+      const deliverableData = await response.json();
+      console.log('✅ Deliverable data fetched:', deliverableData);
+      
+      setDeliverableForSettings(deliverableData);
+      setShowDeliverableSettings(true);
+    } catch (error) {
+      console.error('❌ Error fetching deliverable for settings:', error);
+      alert('Failed to load deliverable settings. Please try again.');
+    }
+  };
+
+  // Handle saving deliverable settings
+  const handleSaveDeliverableSettings = (updatedDeliverable) => {
+    console.log('💾 Deliverable settings saved:', updatedDeliverable);
+    // Update the selected item if needed
+    if (onItemSelect) {
+      onItemSelect({
+        ...selectedItem,
+        ...updatedDeliverable
+      });
+    }
+    setShowDeliverableSettings(false);
+    setDeliverableForSettings(null);
+  };
+
+  // Handle closing deliverable settings
+  const handleCloseDeliverableSettings = () => {
+    setShowDeliverableSettings(false);
+    setDeliverableForSettings(null);
   };
 
   const handlePageChange = (direction) => {
@@ -465,7 +605,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     
     // Check if it's a deliverable (presentation/design)
     if (selectedItem.type === 'deliverable') {
-      return 'storyline';
+      return 'deliverable-overview';
     }
     
     // Check if it's an external resource (document)
@@ -492,6 +632,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
   };
 
   const contentType = getContentType();
+
+  // Show deliverable settings page if requested
+  if (showDeliverableSettings && deliverableForSettings) {
+    return (
+      <div className="flex-1 p-0 flex flex-col min-h-0">
+        <DeliverableSettingsPage
+          deliverable={deliverableForSettings}
+          onSave={handleSaveDeliverableSettings}
+          onBack={handleCloseDeliverableSettings}
+        />
+      </div>
+    );
+  }
 
   if (contentType === 'empty') {
     return (
@@ -726,6 +879,388 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     );
   }
 
+  if (contentType === 'deliverable-overview') {
+    return (
+      <div className="flex-1 p-6 overflow-y-auto" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            {selectedItem?.title || 'CBDC Strategy Presentation'}
+          </h1>
+          <div className="flex space-x-2">
+            <button
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-primary)'
+              }}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDeleteDeliverable}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-danger)',
+                border: '1px solid var(--border-primary)'
+              }}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6">
+          {[
+            { id: 'storyline', label: 'Storyline' },
+            { id: 'detailed', label: 'Detailed' },
+            { id: 'layout', label: 'Layout' }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: activeTab === tab.id ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                color: activeTab === tab.id ? 'var(--bg-primary)' : 'var(--text-primary)',
+                border: activeTab === tab.id ? 'none' : '1px solid var(--border-primary)'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'detailed' && (
+        <div className="space-y-6">
+          {/* Name Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              Name
+            </label>
+            <input
+              type="text"
+              value={deliverableName}
+              onChange={(e) => setDeliverableName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border text-sm"
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-primary)',
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+
+          {/* Audience and Type Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Audience */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                Audience
+              </label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {audiences.map((audience, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
+                    style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                  >
+                    {audience}
+                    <button
+                      onClick={() => removeAudience(index)}
+                      className="ml-2 text-xs"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <input
+                type="text"
+                placeholder="Add audience..."
+                className="w-full px-3 py-2 rounded-lg border text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-secondary)'
+                }}
+              />
+            </div>
+
+            {/* Type */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                Type
+              </label>
+              <select
+                value={deliverableType}
+                onChange={(e) => setDeliverableType(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                <option value="Strategy Presentation">Strategy Presentation</option>
+                <option value="Technical Report">Technical Report</option>
+                <option value="Executive Summary">Executive Summary</option>
+                <option value="Implementation Plan">Implementation Plan</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Format and Due Date Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Format */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                Format
+              </label>
+              <div className="flex space-x-2">
+                {['PPT', 'DOC', 'XLS'].map((format) => (
+                  <button
+                    key={format}
+                    onClick={() => setSelectedFormat(format)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border"
+                    style={{
+                      backgroundColor: selectedFormat === format ? 'var(--accent-primary)' : 'var(--bg-primary)',
+                      borderColor: selectedFormat === format ? 'var(--accent-primary)' : 'var(--border-primary)',
+                      color: selectedFormat === format ? 'white' : 'var(--text-primary)'
+                    }}
+                  >
+                    {format}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Due Date */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                Due Date
+              </label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border text-sm"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-primary)'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Document Length */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              Document Length
+            </label>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <span>2 pages</span>
+                <span>25 pages</span>
+                <span>200 pages</span>
+              </div>
+              <input
+                type="range"
+                min="2"
+                max="200"
+                value={documentLength}
+                onChange={(e) => setDocumentLength(parseInt(e.target.value))}
+                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                style={{ backgroundColor: 'var(--border-primary)' }}
+              />
+              <div className="text-center text-sm" style={{ color: 'var(--text-primary)' }}>
+                {documentLength} pages
+              </div>
+            </div>
+          </div>
+
+          {/* Brief */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              Brief
+            </label>
+            <div className="relative">
+              <textarea
+                value={briefText}
+                onChange={(e) => setBriefText(e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 rounded-lg border text-sm resize-none"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  borderColor: 'var(--border-primary)',
+                  color: 'var(--text-primary)'
+                }}
+              />
+              <button
+                onClick={handleImproveBrief}
+                disabled={isGenerating}
+                className="absolute bottom-3 right-3 text-xs px-2 py-1 rounded flex items-center space-x-1"
+                style={{ 
+                  backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--bg-secondary)',
+                  color: isGenerating ? 'var(--text-secondary)' : 'var(--text-secondary)',
+                  border: '1px solid var(--border-primary)',
+                  opacity: isGenerating ? 0.7 : 1,
+                  cursor: isGenerating ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isGenerating && (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                )}
+                <span>{isGenerating ? 'Improving...' : 'Improve Brief'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Brief Quality Score */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              Brief Quality Score
+            </label>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 h-2 rounded-full mr-4" style={{ backgroundColor: 'var(--border-primary)' }}>
+                  <div 
+                    className="h-full rounded-full" 
+                    style={{ 
+                      backgroundColor: 'var(--accent-primary)', 
+                      width: '75%' 
+                    }}
+                  />
+                </div>
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  7.5 / 10
+                </span>
+              </div>
+              <div className="text-sm space-y-1">
+                <div style={{ color: 'var(--text-primary)' }}>
+                  <span className="font-medium">Strengths:</span> Technical requirements well defined
+                </div>
+                <div style={{ color: 'var(--text-primary)' }}>
+                  <span className="font-medium">Improve:</span> Add geographical scope and timeline constraints
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Generate Storyline Button */}
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={handleGenerateStoryline}
+              disabled={isGenerating}
+              className="px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
+              style={{
+                backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--text-primary)',
+                color: 'var(--bg-primary)',
+                opacity: isGenerating ? 0.7 : 1,
+                cursor: isGenerating ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isGenerating && (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              )}
+              <span>{isGenerating ? 'Generating...' : 'Generate Storyline'}</span>
+            </button>
+          </div>
+        </div>
+        )}
+
+        {/* Storyline Tab */}
+        {activeTab === 'storyline' && (
+        <div className="space-y-4">
+          {generatedStoryline ? (
+            <div>
+              {/* Executive Summary */}
+              <div className="mb-6 p-4 rounded-lg border" style={{ borderColor: 'var(--border-primary)' }}>
+                <div className="flex items-center mb-3">
+                  <span className="text-sm font-bold mr-2 px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}>
+                    1/42
+                  </span>
+                  <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>Executive Summary</h3>
+                  <span className="ml-auto text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                    Final
+                  </span>
+                </div>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.
+                </p>
+              </div>
+
+              {/* Main Sections */}
+              {generatedStoryline.mainSections?.map((section, index) => (
+                <div key={index} className="mb-6 p-4 rounded-lg border" style={{ borderColor: 'var(--border-primary)' }}>
+                  <div className="flex items-center mb-3">
+                    <span className="text-sm font-bold mr-2 px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}>
+                      {index + 2}/42
+                    </span>
+                    <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>{section.title}</h3>
+                    <span className="ml-auto text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                      {index < 2 ? 'Draft' : 'Not Started'}
+                    </span>
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {section.keyMessages?.[0] || 'Section content will be generated based on the storyline.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+                No storyline generated yet. Click "Generate Storyline" to create a structured outline.
+              </p>
+              <button
+                onClick={handleGenerateStoryline}
+                disabled={isGenerating}
+                className="px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2 mx-auto"
+                style={{
+                  backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--accent-primary)',
+                  color: 'white',
+                  opacity: isGenerating ? 0.7 : 1,
+                  cursor: isGenerating ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isGenerating && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                <span>{isGenerating ? 'Generating...' : 'Generate Storyline'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* Layout Tab */}
+        {activeTab === 'layout' && (
+        <div className="space-y-6">
+          <div className="text-center py-12">
+            <Layout className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-secondary)' }} />
+            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+              Layout Designer
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Visual layout and design tools for your deliverable will be available here.
+            </p>
+          </div>
+        </div>
+        )}
+
+      </div>
+    );
+  }
+
   if (contentType === 'storyline') {
     return (
       <div className="flex-1 p-2 flex flex-col min-h-0">
@@ -767,6 +1302,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
                 }}
                 onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
                 onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                onClick={handleOpenDeliverableSettings}
+                title="Deliverable Settings"
               >
                 <Settings className="h-5 w-5" />
               </button>

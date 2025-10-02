@@ -16,14 +16,14 @@ export default function CreateDeliverableModal({
 }) {
   const [formData, setFormData] = useState({
     name: '',
-    type: 'Strategy Presentation',
-    format: 'PPT',
+    type: 'Presentation',
+    format: 'PPTX',
     audience: ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
     due_date: '',
     size: '25 slides',
     description: '',
-    priority: 'Medium',
-    status: 'Planning',
+    priority: 'medium',
+    status: 'draft',
     estimated_hours: 0,
     notes: ''
   });
@@ -39,24 +39,17 @@ export default function CreateDeliverableModal({
       // Edit mode - populate with existing data
       setFormData({
         name: editItem.name || '',
-        type: editItem.type || 'Strategy Presentation',
-        format: editItem.format || 'PPT',
+        type: editItem.type || 'Presentation',
+        format: editItem.format || 'PPTX',
         audience: editItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
         due_date: editItem.due_date ? new Date(editItem.due_date).toISOString().split('T')[0] : '',
         size: editItem.size || '25 slides',
         description: editItem.description || '',
-        priority: editItem.priority || 'Medium',
-        status: editItem.status || 'Planning',
+        priority: editItem.priority || 'medium',
+        status: editItem.status || 'draft',
         estimated_hours: editItem.estimated_hours || 0,
         notes: editItem.notes || ''
       });
-    } else {
-      // Set default values with pre-populated data for new deliverables
-      setFormData(prev => ({
-        ...prev,
-        name: 'CBDC Implementation Strategy for Global Banking',
-        due_date: '2025-02-15'
-      }));
     }
   }, [editItem]);
 
@@ -142,6 +135,11 @@ export default function CreateDeliverableModal({
       return;
     }
     
+    if (loading) {
+      console.log('Already submitting, ignoring duplicate submission');
+      return;
+    }
+    
     setLoading(true);
     setErrors({});
 
@@ -149,9 +147,6 @@ export default function CreateDeliverableModal({
       const deliverableData = {
         name: formData.name,
         type: formData.type,
-        format: formData.format,
-        audience: formData.audience,
-        size: formData.size,
         description: formData.description,
         project: projectId,
         due_date: formData.due_date,
@@ -190,19 +185,19 @@ export default function CreateDeliverableModal({
   };
 
   const formatOptions = [
-    { value: 'PPT', label: 'PPT' },
-    { value: 'DOC', label: 'DOC' },
-    { value: 'XLS', label: 'XLS' }
+    { value: 'PPTX', label: 'PPTX' },
+    { value: 'DOCX', label: 'DOCX' },
+    { value: 'XLSX', label: 'XLSX' }
   ];
 
   const typeOptions = [
-    { value: 'Strategy Presentation', label: 'Strategy Presentation' },
-    { value: 'Technical Report', label: 'Technical Report' },
-    { value: 'Market Analysis', label: 'Market Analysis' },
-    { value: 'Implementation Roadmap', label: 'Implementation Roadmap' },
-    { value: 'Business Case', label: 'Business Case' },
-    { value: 'Risk Assessment', label: 'Risk Assessment' },
-    { value: 'Financial Model', label: 'Financial Model' },
+    { value: 'Presentation', label: 'Strategy Presentation' },
+    { value: 'Report', label: 'Technical Report' },
+    { value: 'Analysis', label: 'Market Analysis' },
+    { value: 'Strategy', label: 'Implementation Roadmap' },
+    { value: 'Strategy', label: 'Business Case' },
+    { value: 'Analysis', label: 'Risk Assessment' },
+    { value: 'Analysis', label: 'Financial Model' },
     { value: 'Presentation', label: 'Presentation' },
     { value: 'Report', label: 'Report' },
     { value: 'Other', label: 'Other' }
@@ -217,22 +212,22 @@ export default function CreateDeliverableModal({
   ];
 
   const statusOptions = [
-    { value: 'Planning', label: 'Planning' },
-    { value: 'In Progress', label: 'In Progress' },
-    { value: 'In Review', label: 'In Review' },
-    { value: 'Approved', label: 'Approved' },
-    { value: 'Completed', label: 'Completed' },
-    { value: 'Delivered', label: 'Delivered' },
-    { value: 'On Hold', label: 'On Hold' },
-    { value: 'Cancelled', label: 'Cancelled' },
-    { value: 'Rejected', label: 'Rejected' }
+    { value: 'draft', label: 'Planning' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'in_review', label: 'In Review' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'delivered', label: 'Delivered' },
+    { value: 'draft', label: 'On Hold' },
+    { value: 'draft', label: 'Cancelled' },
+    { value: 'rejected', label: 'Rejected' }
   ];
 
   const priorityOptions = [
-    { value: 'Low', label: 'Low' },
-    { value: 'Medium', label: 'Medium' },
-    { value: 'High', label: 'High' },
-    { value: 'Critical', label: 'Critical' }
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+    { value: 'critical', label: 'Critical' }
   ];
 
   const languageOptions = [
@@ -258,7 +253,7 @@ export default function CreateDeliverableModal({
 
   return (
     <Modal
-      isOpen={true}
+      isOpen={isOpen}
       onClose={onClose}
       title={editItem ? "Edit Deliverable" : "Create New Deliverable"}
       subtitle={editItem ? "Update deliverable information" : "These fields are pre-populated from project documents"}
