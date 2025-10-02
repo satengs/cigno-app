@@ -191,15 +191,13 @@ export default function CreateDeliverableModal({
   ];
 
   const typeOptions = [
-    { value: 'Presentation', label: 'Strategy Presentation' },
-    { value: 'Report', label: 'Technical Report' },
-    { value: 'Analysis', label: 'Market Analysis' },
-    { value: 'Strategy', label: 'Implementation Roadmap' },
-    { value: 'Strategy', label: 'Business Case' },
-    { value: 'Analysis', label: 'Risk Assessment' },
-    { value: 'Analysis', label: 'Financial Model' },
     { value: 'Presentation', label: 'Presentation' },
     { value: 'Report', label: 'Report' },
+    { value: 'Strategy', label: 'Strategy' },
+    { value: 'Analysis', label: 'Analysis' },
+    { value: 'Design', label: 'Design' },
+    { value: 'Code', label: 'Code' },
+    { value: 'Documentation', label: 'Documentation' },
     { value: 'Other', label: 'Other' }
   ];
 
@@ -212,14 +210,12 @@ export default function CreateDeliverableModal({
   ];
 
   const statusOptions = [
-    { value: 'draft', label: 'Planning' },
+    { value: 'draft', label: 'Draft' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'in_review', label: 'In Review' },
     { value: 'approved', label: 'Approved' },
     { value: 'completed', label: 'Completed' },
     { value: 'delivered', label: 'Delivered' },
-    { value: 'draft', label: 'On Hold' },
-    { value: 'draft', label: 'Cancelled' },
     { value: 'rejected', label: 'Rejected' }
   ];
 

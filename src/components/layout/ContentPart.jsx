@@ -1009,10 +1009,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
                   color: 'var(--text-primary)'
                 }}
               >
-                <option value="Strategy Presentation">Strategy Presentation</option>
-                <option value="Technical Report">Technical Report</option>
-                <option value="Executive Summary">Executive Summary</option>
-                <option value="Implementation Plan">Implementation Plan</option>
+                <option value="Presentation">Presentation</option>
+                <option value="Report">Report</option>
+                <option value="Strategy">Strategy</option>
+                <option value="Analysis">Analysis</option>
+                <option value="Design">Design</option>
+                <option value="Code">Code</option>
+                <option value="Documentation">Documentation</option>
+                <option value="Other">Other</option>
               </select>
             </div>
           </div>

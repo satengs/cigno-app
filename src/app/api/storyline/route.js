@@ -81,22 +81,24 @@ Make sure the storyline is:
 async function generateStorylineWithAgent(prompt) {
   const AGENT_ID = '68dddd9ac1b3b5cc990ad5f0';
   
+  // Check if agent API is configured
+  if (!process.env.AGENT_API_URL || !process.env.AGENT_API_KEY) {
+    console.log('Agent API not configured, using mock storyline generation');
+    return generateMockStoryline();
+  }
+  
   try {
-    // Call your custom agent API with the specific agent ID
-    const agentResponse = await fetch(`${process.env.AGENT_API_URL || 'https://api.your-agent-service.com'}/agents/${AGENT_ID}/generate`, {
+    // Call Vave AI custom agent API with the specific agent ID
+    const agentResponse = await fetch(`${process.env.AGENT_API_URL}/api/custom-agents/${AGENT_ID}/execute`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.AGENT_API_KEY}`,
+        'x-api-key': process.env.AGENT_API_KEY,
       },
       body: JSON.stringify({
-        prompt: prompt,
-        agentId: AGENT_ID,
-        settings: {
-          temperature: 0.7,
-          maxTokens: 2000,
-          format: 'structured_json'
-        }
+        message: prompt,
+        temperature: 0.7,
+        maxTokens: 2000
       }),
     });
 
@@ -119,9 +121,21 @@ async function generateStorylineWithAgent(prompt) {
 // Parse agent response into structured format
 function parseAgentResponse(agentResult) {
   try {
-    // Assuming the agent returns structured data
-    // Adjust this based on your actual agent response format
-    return agentResult.storyline || agentResult.data || agentResult;
+    // Vave AI typically returns response in 'response' or 'content' field
+    const content = agentResult.response || agentResult.content || agentResult.message || agentResult;
+    
+    // Try to parse as JSON if it's a string
+    if (typeof content === 'string') {
+      try {
+        return JSON.parse(content);
+      } catch {
+        // If not valid JSON, return mock storyline for now
+        console.log('Agent response was not valid JSON, using mock storyline');
+        return generateMockStoryline();
+      }
+    }
+    
+    return content;
   } catch (error) {
     console.error('Error parsing agent response:', error);
     return generateMockStoryline();

@@ -61,7 +61,7 @@ export async function PATCH(request, { params }) {
       id,
       { ...updates, updated_at: new Date() },
       { new: true, runValidators: true }
-    ).populate('assigned_team', 'first_name last_name');
+    ).lean();
 
     if (!deliverable) {
       return NextResponse.json(
