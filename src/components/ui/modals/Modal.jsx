@@ -8,6 +8,7 @@ const Modal = ({
   title,
   subtitle,
   children,
+  footer,
   size = 'md',
   showCloseButton = true,
   customCloseIcon = null,
@@ -54,7 +55,7 @@ const Modal = ({
       <div className="flex min-h-full items-center justify-center p-4">
         <div 
           className={clsx(
-            'relative w-full rounded-xl shadow-2xl transform transition-all',
+            'relative w-full rounded-xl shadow-2xl transform transition-all flex flex-col max-h-[90vh]',
             sizes[size],
             className
           )}
@@ -62,9 +63,9 @@ const Modal = ({
           onClick={(e) => e.stopPropagation()}
           {...props}
         >
-          {/* Header */}
+          {/* Header - Fixed */}
           {(title || subtitle) && (
-            <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+            <div className="px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-primary)' }}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   {title && (
@@ -94,10 +95,19 @@ const Modal = ({
             </div>
           )}
           
-          {/* Content */}
-          <div className="px-6 py-4">
-            {children}
+          {/* Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="px-6 py-4">
+              {children}
+            </div>
           </div>
+
+          {/* Footer - Fixed */}
+          {footer && (
+            <div className="border-t px-6 py-4 flex-shrink-0" style={{ borderColor: 'var(--border-primary)' }}>
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>

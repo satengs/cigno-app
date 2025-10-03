@@ -21,7 +21,27 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   const handleItemSelect = (item) => {
-    setSelectedItem(item);
+    console.log('🎯 Dashboard handleItemSelect called with:', {
+      item,
+      itemId: item?._id || item?.id,
+      itemType: item?.type,
+      previousSelectedItem: selectedItem
+    });
+    
+    // Handle different item selection scenarios
+    if (item && typeof item === 'object' && (item.type === 'deliverable' || item.type === 'client' || item.type === 'project') && (item._id || item.id)) {
+      console.log('✅ Setting selectedItem for', item.type + ':', item._id || item.id);
+      setSelectedItem(item);
+    } else if (item === null || item === undefined) {
+      console.log('🔄 Clearing selectedItem');
+      setSelectedItem(null);
+    } else if (item === false || typeof item !== 'object') {
+      console.log('⚠️ Invalid item type, ignoring selection change. Item:', item);
+      // Don't change selectedItem for invalid items like false, strings, etc.
+    } else {
+      console.log('⚠️ Unsupported item type, maintaining current selection. Type:', item?.type);
+      // Don't change selectedItem for unsupported item types
+    }
   };
 
   const handleItemDeleted = (deletedItem) => {

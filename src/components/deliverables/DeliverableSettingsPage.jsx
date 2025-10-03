@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Button from '../ui/buttons/Button';
-import { FileText, Wand2, Save, ArrowLeft, X } from 'lucide-react';
+import ImproveBriefModal from '../ui/ImproveBriefModal';
+import { FileText, Wand2, Save, ArrowLeft, X, Sparkles } from 'lucide-react';
 
 export default function DeliverableSettingsPage({ 
   deliverable,
@@ -18,6 +19,7 @@ export default function DeliverableSettingsPage({
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [showImproveBriefModal, setShowImproveBriefModal] = useState(false);
 
   useEffect(() => {
     if (deliverable) {
@@ -156,6 +158,46 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
     }
   };
 
+  const handleImproveBriefSave = async (improvedBrief) => {
+    try {
+      // Update the form data with the improved brief
+      setFormData(prev => ({ 
+        ...prev, 
+        brief: improvedBrief,
+        briefQuality: 9.0 // Set a high quality score for AI-improved brief
+      }));
+      
+      // Automatically save the improved brief to the database
+      const deliverableId = deliverable._id || deliverable.id;
+      const response = await fetch('/api/deliverables', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: deliverableId,
+          brief: improvedBrief
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save improved brief');
+      }
+
+      const result = await response.json();
+      
+      if (onSave) {
+        onSave(result.data.deliverable);
+      }
+      
+      console.log('✅ Improved brief saved successfully');
+    } catch (error) {
+      console.error('❌ Error saving improved brief:', error);
+      throw error; // Re-throw to let the modal handle the error
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -257,26 +299,42 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
               <FileText className="w-4 h-4 inline mr-2" />
               Project Brief
             </label>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={generateBrief}
-              disabled={isGeneratingBrief}
-              className="flex items-center space-x-2"
-            >
-              <Wand2 className={`w-4 h-4 ${isGeneratingBrief ? 'animate-spin' : ''}`} />
-              <span>{isGeneratingBrief ? 'Generating...' : 'AI Generate'}</span>
-            </Button>
+            <div className="flex space-x-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={generateBrief}
+                disabled={isGeneratingBrief}
+                className="flex items-center space-x-2"
+              >
+                <Wand2 className={`w-4 h-4 ${isGeneratingBrief ? 'animate-spin' : ''}`} />
+                <span>{isGeneratingBrief ? 'Generating...' : 'AI Generate'}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowImproveBriefModal(true)}
+                disabled={!formData.brief.trim()}
+                className="flex items-center space-x-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Improve Brief</span>
+              </Button>
+            </div>
           </div>
           
-          <textarea
-            value={formData.brief}
-            onChange={(e) => handleInputChange('brief', e.target.value)}
-            placeholder="Enter the project brief describing objectives, scope, and requirements..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-vertical"
-            rows={8}
-          />
+          <div
+            className="w-full min-h-[200px] p-4 border border-gray-300 rounded-lg bg-gray-50 whitespace-pre-wrap"
+            style={{ lineHeight: '1.6' }}
+          >
+            {formData.brief || (
+              <span className="text-gray-500 italic">
+                No brief content yet. Click "AI Generate" to create one or add your own content.
+              </span>
+            )}
+          </div>
           
           {formData.briefQuality > 0 && (
             <div className="mt-2 flex items-center space-x-2">
@@ -440,6 +498,16 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
           </Button>
         </div>
       </form>
+
+      {/* Improve Brief Modal */}
+      <ImproveBriefModal
+        isOpen={showImproveBriefModal}
+        onClose={() => setShowImproveBriefModal(false)}
+        onSave={handleImproveBriefSave}
+        currentBrief={formData.brief}
+        deliverable={deliverable}
+        projectData={{}}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Modal from './modals/Modal';
 import Button from './buttons/Button';
+import UploadDocumentModal from './UploadDocumentModal';
 import { 
   Type, 
   Upload, 
@@ -18,6 +19,7 @@ export default function CreateNewProjectModal({
 }) {
   const [selectedOption, setSelectedOption] = useState(null);
   const [showDescriptionForm, setShowDescriptionForm] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [description, setDescription] = useState('');
 
   const projectOptions = [
@@ -26,35 +28,45 @@ export default function CreateNewProjectModal({
       title: 'Type in a project description',
       description: 'Start with a brief description and we\'ll help you structure the project details',
       icon: Type,
-      color: 'blue'
+      color: 'blue',
+      disabled: false
     },
     {
       id: 'upload-document',
       title: 'Upload a document',
       description: 'Upload a client brief, RFP, or project outline to extract key information automatically',
       icon: Upload,
-      color: 'green'
+      color: 'green',
+      disabled: false
     },
     {
       id: 'browse-knowledge',
       title: 'Browse your knowledge',
       description: 'Select from existing documents and resources in your knowledge base to create the project',
       icon: Search,
-      color: 'purple'
+      color: 'purple',
+      disabled: true
     }
   ];
 
   const handleOptionClick = (option) => {
+    if (option.disabled) return;
     setSelectedOption(option.id);
     // Show description form immediately for "type-description"
     if (option.id === 'type-description') {
       setShowDescriptionForm(true);
+    }
+    // Show upload modal immediately for "upload-document"
+    if (option.id === 'upload-document') {
+      setShowUploadModal(true);
     }
   };
 
   const handleContinue = () => {
     if (selectedOption === 'type-description') {
       setShowDescriptionForm(true);
+    } else if (selectedOption === 'upload-document') {
+      setShowUploadModal(true);
     } else if (selectedOption) {
       onOptionSelect(selectedOption);
     }
@@ -68,23 +80,65 @@ export default function CreateNewProjectModal({
 
   const handleBack = () => {
     setShowDescriptionForm(false);
+    setShowUploadModal(false);
     setSelectedOption(null);
     setDescription('');
   };
 
+  const handleDocumentProcessed = (processedData) => {
+    console.log('Document processed:', processedData);
+    setShowUploadModal(false);
+    
+    // Transform the processed data into project format
+    const projectData = {
+      name: processedData.projectData.projectName || 'Document-Based Project',
+      description: processedData.projectData.description || 'Project created from uploaded documents',
+      objectives: processedData.projectData.objectives || [],
+      deliverables: processedData.projectData.deliverables || [],
+      requirements: processedData.projectData.requirements || [],
+      scope: processedData.projectData.scope || '',
+      budget_amount: processedData.projectData.budget?.amount || 0,
+      budget_currency: processedData.projectData.budget?.currency || 'USD',
+      budget_type: processedData.projectData.budget?.type || 'Fixed',
+      start_date: processedData.projectData.timeline?.startDate || '',
+      end_date: processedData.projectData.timeline?.endDate || '',
+      client_name: processedData.projectData.clientInfo?.name || '',
+      client_industry: processedData.projectData.clientInfo?.industry || '',
+      status: 'Planning',
+      extractionMethod: processedData.projectData.extractionMethod,
+      sourceFiles: processedData.files.map(f => f.name),
+      analyzedAt: processedData.processedAt,
+      isDocumentBased: true
+    };
+    
+    // Pass the processed data to the parent
+    onOptionSelect('upload-document', projectData);
+  };
+
   const getOptionStyles = (option) => {
     const isSelected = selectedOption === option.id;
-    const baseStyles = "w-full p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 hover:shadow-md";
+    const isDisabled = option.disabled;
+    const baseStyles = "w-full p-4 rounded-lg border-2 transition-all duration-200";
     
-    if (isSelected) {
-      return `${baseStyles} border-blue-500 bg-blue-50 shadow-md`;
+    if (isDisabled) {
+      return `${baseStyles} border-gray-200 bg-gray-50 cursor-not-allowed opacity-60`;
     }
     
-    return `${baseStyles} border-gray-200 bg-white hover:border-gray-300`;
+    if (isSelected) {
+      return `${baseStyles} border-blue-500 bg-blue-50 shadow-md cursor-pointer hover:shadow-md`;
+    }
+    
+    return `${baseStyles} border-gray-200 bg-white hover:border-gray-300 cursor-pointer hover:shadow-md`;
   };
 
   const getIconStyles = (option) => {
     const isSelected = selectedOption === option.id;
+    const isDisabled = option.disabled;
+    
+    if (isDisabled) {
+      return 'text-gray-400';
+    }
+    
     const colorMap = {
       blue: isSelected ? 'text-blue-600' : 'text-blue-500',
       green: isSelected ? 'text-green-600' : 'text-green-500',
@@ -203,7 +257,7 @@ export default function CreateNewProjectModal({
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={() => onOptionSelect('upload-document')}
+                  onClick={() => setShowUploadModal(true)}
                   className="flex items-center justify-center w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
                 >
                   <Upload className="w-4 h-4 mr-2" />
@@ -211,8 +265,8 @@ export default function CreateNewProjectModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onOptionSelect('browse-knowledge')}
-                  className="flex items-center justify-center w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
+                  disabled
+                  className="flex items-center justify-center w-full px-4 py-2 text-sm text-gray-400 bg-gray-50 rounded-lg cursor-not-allowed opacity-60"
                 >
                   <Search className="w-4 h-4 mr-2" />
                   Browse your knowledge
@@ -241,6 +295,14 @@ export default function CreateNewProjectModal({
           </div>
         </div>
       )}
+      
+      {/* Upload Document Modal */}
+      <UploadDocumentModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onDocumentProcessed={handleDocumentProcessed}
+        loading={loading}
+      />
     </Modal>
   );
 }

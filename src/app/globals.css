@@ -14,6 +14,7 @@
   --text-danger: #dc2626;
   --border-primary: #e5e7eb;
   --border-secondary: #d1d5db;
+  --accent-primary: #3b82f6;
 }
 
 html.dark {
@@ -28,6 +29,7 @@ html.dark {
   --text-danger: #ef4444;
   --border-primary: #475569;
   --border-secondary: #64748b;
+  --accent-primary: #60a5fa;
   color-scheme: dark;
 }
 
@@ -100,4 +102,36 @@ body {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;  /* Safari and Chrome */
+}
+
+/* Custom slider styling */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-ms-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  cursor: pointer;
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }

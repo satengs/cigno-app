@@ -30,3 +30,4 @@ export { default as NewClientModal } from './NewClientModal';
 export { default as DeliverableStatus } from './DeliverableStatus';
 export { default as BriefEditor } from './BriefEditor';
 export { default as DeliverableSettings } from './DeliverableSettings';
+export { default as ImproveBriefModal } from './ImproveBriefModal';

@@ -149,6 +149,23 @@ clientSchema.virtual('contactCount').get(function() {
   return this.contacts ? this.contacts.length : 0;
 });
 
+// Virtual for key persons
+clientSchema.virtual('keyPersons', {
+  ref: 'KeyPerson',
+  localField: '_id',
+  foreignField: 'client',
+  match: { is_active: true }
+});
+
+// Virtual for primary key person
+clientSchema.virtual('primaryKeyPerson', {
+  ref: 'KeyPerson',
+  localField: '_id',
+  foreignField: 'client',
+  justOne: true,
+  match: { is_active: true, is_primary: true }
+});
+
 // Pre-save middleware to update updated_at
 clientSchema.pre('save', function(next) {
   this.updated_at = new Date();
@@ -168,6 +185,18 @@ clientSchema.methods.addContact = function(contactId) {
 clientSchema.methods.removeContact = function(contactId) {
   this.contacts = this.contacts.filter(id => !id.equals(contactId));
   return this.save();
+};
+
+// Instance method to get key persons
+clientSchema.methods.getKeyPersons = function() {
+  const KeyPerson = mongoose.model('KeyPerson');
+  return KeyPerson.findByClient(this._id);
+};
+
+// Instance method to get primary key person
+clientSchema.methods.getPrimaryKeyPerson = function() {
+  const KeyPerson = mongoose.model('KeyPerson');
+  return KeyPerson.findPrimaryForClient(this._id);
 };
 
 // Check if model is already compiled

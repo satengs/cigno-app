@@ -44,9 +44,29 @@ export default function LeftNav({
 
   // Handle item selection
   const handleItemClick = (item) => {
-    setSelectedItem(item);
+    console.log('🎯 LeftNav handleItemClick called with:', {
+      item,
+      itemId: item?._id || item?.id,
+      itemType: item?.type,
+      hasMetadata: !!item?.metadata
+    });
+    
+    // Ensure the item has a consistent ID structure
+    const normalizedItem = {
+      ...item,
+      id: item._id || item.id, // Ensure id field exists
+      _id: item._id || item.id  // Ensure _id field exists
+    };
+    
+    console.log('🎯 LeftNav normalized item:', {
+      id: normalizedItem.id,
+      _id: normalizedItem._id,
+      type: normalizedItem.type
+    });
+    
+    setSelectedItem(normalizedItem);
     if (onItemSelect) {
-      onItemSelect(item);
+      onItemSelect(normalizedItem);
     }
   };
 
@@ -213,17 +233,17 @@ export default function LeftNav({
             apiEndpoint = '/api/clients';
             requestBody = {
               name: itemData.title,
-              industry: itemData.metadata?.industry || '',
-              location: itemData.metadata?.location || '',
-              website: itemData.metadata?.website || '',
+              industry: itemData.industry || itemData.metadata?.industry || '',
+              location: itemData.location || itemData.metadata?.location || '',
+              website: itemData.website || itemData.metadata?.website || '',
               description: itemData.description || '',
               status: itemData.status || 'active',
-              priority: itemData.metadata?.priority || 'medium',
-              owner: itemData.metadata?.owner || null,
-              organisation: itemData.metadata?.organisation || null,
-              company_size: itemData.metadata?.company_size || 'medium',
-              tags: itemData.metadata?.tags || [],
-              notes: itemData.metadata?.notes || '',
+              priority: itemData.priority || itemData.metadata?.priority || 'medium',
+              owner: itemData.owner || itemData.metadata?.owner || null,
+              organisation: itemData.organisation || itemData.metadata?.organisation || null,
+              company_size: itemData.company_size || itemData.metadata?.company_size || 'medium',
+              tags: itemData.tags || itemData.metadata?.tags || [],
+              notes: itemData.notes || itemData.metadata?.notes || '',
               // created_by and updated_by will be set by API using defaults
               // created_by: null,
               // updated_by: null

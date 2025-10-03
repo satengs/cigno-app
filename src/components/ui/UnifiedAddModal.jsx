@@ -536,8 +536,32 @@ export default function UnifiedAddModal({
               } finally {
                 setLoading(false);
               }
+            } else if (option === 'upload-document' && description) {
+              // Handle upload document with extracted data
+              setProjectCreationStep('form');
+              const transformedData = {
+                name: description.name || 'Document-Based Project',
+                description: description.description || 'Project created from uploaded documents',
+                status: 'Planning',
+                start_date: description.start_date || '',
+                end_date: description.end_date || '',
+                budget_amount: description.budget_amount || 0,
+                budget_currency: description.budget_currency || 'USD',
+                budget_type: description.budget_type || 'Fixed',
+                client_name: description.client_name || '',
+                client_industry: description.client_industry || '',
+                objectives: description.objectives || [],
+                deliverables: description.deliverables || [],
+                requirements: description.requirements || [],
+                scope: description.scope || '',
+                extractionMethod: description.extractionMethod,
+                sourceFiles: description.sourceFiles,
+                isDocumentBased: true,
+                isAIGenerated: true
+              };
+              setFormData(transformedData);
             } else {
-              // For other options (upload, browse), close for now
+              // For other options (browse), close for now
               onClose();
             }
           }}
@@ -606,8 +630,40 @@ export default function UnifiedAddModal({
       onClose={onClose}
       title={title}
       size="lg"
+      footer={
+        <div className="flex justify-end space-x-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="unified-form"
+            disabled={loading || !formData.title?.trim()}
+            style={{
+              opacity: (loading || !formData.title?.trim()) ? 0.5 : 1,
+              cursor: (loading || !formData.title?.trim()) ? 'not-allowed' : 'pointer'
+            }}
+            onMouseEnter={() => {
+              console.log('🖱️ Button hover - Status:', {
+                loading,
+                hasTitle: !!formData.title?.trim(),
+                title: formData.title,
+                disabled: loading || !formData.title?.trim()
+              });
+            }}
+          >
+            {loading ? 'Saving...' : buttonText}
+          </Button>
+        </div>
+      }
     >
       <form 
+        id="unified-form"
         onSubmit={(e) => {
           console.log('📋 Form onSubmit event triggered!');
           handleSubmit(e);
@@ -1185,36 +1241,6 @@ export default function UnifiedAddModal({
             }}
           >
             🧪 Test Submit
-          </Button>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={loading || !formData.title?.trim()}
-            style={{
-              opacity: (loading || !formData.title?.trim()) ? 0.5 : 1,
-              cursor: (loading || !formData.title?.trim()) ? 'not-allowed' : 'pointer'
-            }}
-            onMouseEnter={() => {
-              console.log('🖱️ Button hover - Status:', {
-                loading,
-                hasTitle: !!formData.title?.trim(),
-                title: formData.title,
-                disabled: loading || !formData.title?.trim()
-              });
-            }}
-          >
-            {loading ? 'Saving...' : buttonText}
           </Button>
         </div>
       </form>

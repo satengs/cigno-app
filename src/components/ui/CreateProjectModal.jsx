@@ -37,6 +37,9 @@ export default function CreateProjectModal({
     { name: 'Technical Report', type: 'Report' },
     { name: 'Implementation Roadmap', type: 'Strategy' }
   ]);
+  const [keyPersons, setKeyPersons] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [loadingKeyPersons, setLoadingKeyPersons] = useState(false);
 
   // Dynamic data population based on edit mode or AI generation
   useEffect(() => {
@@ -78,6 +81,53 @@ export default function CreateProjectModal({
       }
     }
   }, [editItem, prefilledData, clientId]);
+
+  // Fetch key persons when client is selected
+  useEffect(() => {
+    const fetchKeyPersons = async () => {
+      if (formData.client && formData.client.trim()) {
+        setLoadingKeyPersons(true);
+        try {
+          const response = await fetch(`/api/key-persons?clientId=${formData.client}`);
+          if (response.ok) {
+            const result = await response.json();
+            if (result.success) {
+              setKeyPersons(result.data.keyPersons || []);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching key persons:', error);
+        } finally {
+          setLoadingKeyPersons(false);
+        }
+      } else {
+        setKeyPersons([]);
+      }
+    };
+
+    fetchKeyPersons();
+  }, [formData.client]);
+
+  // Fetch users for internal owner selection
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            setUsers(result.users || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error);
+      }
+    };
+
+    if (isOpen) {
+      fetchUsers();
+    }
+  }, [isOpen]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -230,8 +280,45 @@ export default function CreateProjectModal({
       title={editItem ? "Edit Project" : "Create New Project"}
       subtitle={editItem ? "Update project information" : (isAIGenerated || prefilledData) ? "Review and customize your AI-generated project" : "Describe your project to get started"}
       size="lg"
+      footer={
+        <div className="flex justify-between">
+          {/* Left side - Back button (only show if onBack is provided) */}
+          <div>
+            {onBack && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onBack}
+                disabled={loading}
+                className="flex items-center space-x-2"
+              >
+                <span>← Back</span>
+              </Button>
+            )}
+          </div>
+          
+          {/* Right side - Cancel and Submit */}
+          <div className="flex space-x-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="project-form"
+              disabled={loading || !formData.name?.trim() || !formData.description?.trim()}
+            >
+              {loading ? (editItem ? 'Updating...' : 'Creating...') : (editItem ? 'Update Project' : 'Create Project')}
+            </Button>
+          </div>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form id="project-form" onSubmit={handleSubmit} className="space-y-6">
         {/* AI Generated Indicator */}
         {(isAIGenerated || prefilledData) && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -320,24 +407,44 @@ export default function CreateProjectModal({
         {/* Client Owner and Internal Owner */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Input
+            <Select
               label="Client Owner"
               value={formData.client_owner}
-              onChange={(e) => handleInputChange('client_owner', e.target.value)}
-              placeholder="Select client contact..."
+              onChange={(value) => handleInputChange('client_owner', value)}
+              placeholder={loadingKeyPersons ? "Loading..." : "Select client contact..."}
+              disabled={loadingKeyPersons || keyPersons.length === 0}
               required
               error={errors.client_owner}
+              options={[
+                { value: '', label: 'Select client contact...' },
+                ...keyPersons.map(person => ({
+                  value: person._id,
+                  label: `${person.full_name} (${person.role})`
+                }))
+              ]}
             />
+            {keyPersons.length === 0 && !loadingKeyPersons && formData.client && (
+              <p className="mt-1 text-sm text-gray-500">
+                No key persons found for this client. Add them in the client creation form.
+              </p>
+            )}
           </div>
           
           <div>
-            <Input
+            <Select
               label="Internal Owner"
               value={formData.internal_owner}
-              onChange={(e) => handleInputChange('internal_owner', e.target.value)}
+              onChange={(value) => handleInputChange('internal_owner', value)}
               placeholder="Select team member..."
               required
               error={errors.internal_owner}
+              options={[
+                { value: '', label: 'Select team member...' },
+                ...users.map(user => ({
+                  value: user._id || user.id,
+                  label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || user.username || 'Unknown User'
+                }))
+              ]}
             />
           </div>
         </div>
@@ -433,42 +540,6 @@ export default function CreateProjectModal({
         {errors.general && (
           <div className="text-red-600 text-sm">{errors.general}</div>
         )}
-
-        {/* Action Buttons */}
-        <div className="flex justify-between pt-4 border-t border-gray-200">
-          {/* Left side - Back button (only show if onBack is provided) */}
-          <div>
-            {onBack && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onBack}
-                disabled={loading}
-                className="flex items-center space-x-2"
-              >
-                <span>← Back</span>
-              </Button>
-            )}
-          </div>
-          
-          {/* Right side - Cancel and Submit */}
-          <div className="flex space-x-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={loading || !formData.name?.trim() || !formData.description?.trim()}
-            >
-              {loading ? (editItem ? 'Updating...' : 'Creating...') : (editItem ? 'Update Project' : 'Create Project')}
-            </Button>
-          </div>
-        </div>
       </form>
     </Modal>
   );

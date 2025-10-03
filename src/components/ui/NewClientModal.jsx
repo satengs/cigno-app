@@ -18,6 +18,8 @@ export default function NewClientModal({
   editItem = null
 }) {
   console.log('🔄 NewClientModal render:', { isOpen, hasOnAdd: !!onAdd, hasOnClose: !!onClose, editItem });
+  const [availableOrganizations, setAvailableOrganizations] = useState([]);
+  const [availableUsers, setAvailableUsers] = useState([]);
   const [formData, setFormData] = useState({
     clientName: '',
     website: 'https://example.com',
@@ -35,13 +37,58 @@ export default function NewClientModal({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [newTag, setNewTag] = useState('');
-  const [newKeyPerson, setNewKeyPerson] = useState({ name: '', role: '' });
+  const [newKeyPerson, setNewKeyPerson] = useState({ 
+    full_name: '', 
+    role: '', 
+    email: '', 
+    image: '',
+    phone: '',
+    is_primary: false 
+  });
   const [expandedSections, setExpandedSections] = useState({
     keyPeople: true,
     projects: false,
     communication: false,
     billing: false
   });
+
+  // Fetch available organizations and users
+  useEffect(() => {
+    const fetchAvailableData = async () => {
+      try {
+        // Fetch organizations
+        const orgResponse = await fetch('/api/organisations');
+        if (orgResponse.ok) {
+          const orgData = await orgResponse.json();
+          if (orgData.success && orgData.organisations) {
+            setAvailableOrganizations(orgData.organisations);
+          }
+        }
+
+        // Fetch users  
+        const userResponse = await fetch('/api/users');
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          if (userData.success && userData.users) {
+            setAvailableUsers(userData.users);
+            // Auto-select first user if no owner is selected and this is not edit mode
+            if (!editItem && !formData.owner && userData.users.length > 0) {
+              setFormData(prev => ({ 
+                ...prev, 
+                owner: userData.users[0].id || userData.users[0]._id 
+              }));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching available data:', error);
+      }
+    };
+
+    if (isOpen) {
+      fetchAvailableData();
+    }
+  }, [isOpen]);
 
   // Initialize form data for edit mode
   useEffect(() => {
@@ -91,10 +138,10 @@ export default function NewClientModal({
 
   const ownerOptions = [
     { value: '', label: 'Select owner...' },
-    { value: 'john-doe', label: 'John Doe' },
-    { value: 'jane-smith', label: 'Jane Smith' },
-    { value: 'mike-johnson', label: 'Mike Johnson' },
-    { value: 'sarah-wilson', label: 'Sarah Wilson' }
+    ...availableUsers.map(user => ({
+      value: user.id || user._id,
+      label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || user.username || 'Unknown User'
+    }))
   ];
 
   const roleOptions = [
@@ -172,6 +219,19 @@ export default function NewClientModal({
     
     if (!formData.owner) {
       newErrors.owner = 'Owner is required';
+    } else {
+      // Validate that the selected owner is a valid user ID (not a placeholder)
+      const isValidUserId = availableUsers.some(user => 
+        (user.id || user._id) === formData.owner
+      );
+      if (!isValidUserId) {
+        newErrors.owner = 'Please select a valid owner from the list';
+      }
+    }
+    
+    // Validate that we have at least one organization available
+    if (availableOrganizations.length === 0) {
+      newErrors.general = 'No organizations available. Please create an organization first.';
     }
     
     setErrors(newErrors);
@@ -210,12 +270,18 @@ export default function NewClientModal({
   };
 
   const handleAddTag = () => {
+    console.log('🏷️ Adding tag:', newTag.trim());
+    console.log('🏷️ Current tags:', formData.tags);
     if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+      const updatedTags = [...formData.tags, newTag.trim()];
+      console.log('🏷️ Updated tags will be:', updatedTags);
       setFormData(prev => ({
         ...prev,
-        tags: [...prev.tags, newTag.trim()]
+        tags: updatedTags
       }));
       setNewTag('');
+    } else {
+      console.log('🏷️ Tag not added - either empty or duplicate');
     }
   };
 
@@ -227,18 +293,36 @@ export default function NewClientModal({
   };
 
   const handleAddKeyPerson = () => {
-    if (newKeyPerson.name.trim() && newKeyPerson.role) {
+    if (newKeyPerson.full_name.trim() && newKeyPerson.role && newKeyPerson.email.trim()) {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newKeyPerson.email)) {
+        setErrors(prev => ({ ...prev, keyPersonEmail: 'Please enter a valid email address' }));
+        return;
+      }
+
       const newId = Math.max(...formData.keyPeople.map(p => p.id), 0) + 1;
       setFormData(prev => ({
         ...prev,
         keyPeople: [...prev.keyPeople, { 
           id: newId, 
-          name: newKeyPerson.name.trim(), 
+          full_name: newKeyPerson.full_name.trim(), 
           role: newKeyPerson.role,
-          avatar: null 
+          email: newKeyPerson.email.trim(),
+          image: newKeyPerson.image.trim() || null,
+          phone: newKeyPerson.phone.trim() || null,
+          is_primary: newKeyPerson.is_primary || prev.keyPeople.length === 0 // First person is primary by default
         }]
       }));
-      setNewKeyPerson({ name: '', role: '' });
+      setNewKeyPerson({ 
+        full_name: '', 
+        role: '', 
+        email: '', 
+        image: '',
+        phone: '',
+        is_primary: false 
+      });
+      setErrors(prev => ({ ...prev, keyPersonEmail: '' }));
     }
   };
 
@@ -282,6 +366,18 @@ export default function NewClientModal({
       title: formData.clientName,
       type: 'client',
       description: `Client: ${formData.clientName}`,
+      website: formData.website,
+      location: formData.location,
+      industry: formData.industry,
+      owner: formData.owner,
+      organisation: availableOrganizations.length > 0 ? (availableOrganizations[0].id || availableOrganizations[0]._id) : '68ded9a5b1a804e54c68f841', // Use first available organization
+      tags: formData.tags,
+      notes: formData.notes,
+      company_size: formData.companySize,
+      priority: formData.priority,
+      status: 'active',
+      order: 0,
+      isCollapsible: true,
       metadata: {
         website: formData.website,
         location: formData.location,
@@ -289,21 +385,59 @@ export default function NewClientModal({
         owner: formData.owner,
         tags: formData.tags,
         keyPeople: formData.keyPeople,
-        logo: formData.logo
-      },
-      status: 'active',
-      order: 0,
-      isCollapsible: true
+        logo: formData.logo,
+        companySize: formData.companySize,
+        priority: formData.priority,
+        notes: formData.notes
+      }
     };
 
     try {
       console.log('📤 Prepared client data:', clientData);
+      console.log('🏷️ Tags being sent:', clientData.tags);
+      console.log('👥 Key people being sent:', formData.keyPeople);
       console.log('🔍 onAdd function available:', typeof onAdd);
       console.log('🔍 Calling onAdd...');
       
-      await onAdd(clientData);
+      const createdClient = await onAdd(clientData);
+      console.log('✅ Client created successfully:', createdClient);
       
-      console.log('✅ Client created successfully');
+      // Create key persons if any were added
+      if (formData.keyPeople.length > 0 && createdClient?.data?.client?._id) {
+        console.log('👥 Creating key persons for client:', createdClient.data.client._id);
+        
+        for (const keyPerson of formData.keyPeople) {
+          try {
+            const keyPersonData = {
+              full_name: keyPerson.full_name,
+              role: keyPerson.role,
+              email: keyPerson.email,
+              image: keyPerson.image || null,
+              phone: keyPerson.phone || null,
+              client: createdClient.data.client._id,
+              is_primary: keyPerson.is_primary
+            };
+
+            const response = await fetch('/api/key-persons', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(keyPersonData),
+            });
+
+            const result = await response.json();
+            if (result.success) {
+              console.log('✅ Key person created:', result.data.keyPerson.full_name);
+            } else {
+              console.error('❌ Failed to create key person:', result.error);
+            }
+          } catch (keyPersonError) {
+            console.error('❌ Error creating key person:', keyPersonError);
+          }
+        }
+      }
+      
       onClose();
     } catch (error) {
       console.error('💥 Error creating client:', error);
@@ -327,10 +461,10 @@ export default function NewClientModal({
   console.log('✅ NewClientModal rendering - isOpen is true');
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Create New Client</h2>
             <p className="text-sm text-gray-600 mt-1">Add a new client to your portfolio</p>
@@ -343,13 +477,14 @@ export default function NewClientModal({
           </button>
         </div>
 
-        {/* Form */}
+        {/* Form - Scrollable */}
         <form onSubmit={(e) => {
           console.log('📋 Form onSubmit event triggered in NewClientModal');
           console.log('📝 Event target:', e.target);
           console.log('📝 Form elements:', e.target.elements);
           handleSubmit(e);
-        }} className="p-6 space-y-4">
+        }} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Client Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Client Name</label>
@@ -460,23 +595,42 @@ export default function NewClientModal({
                 {formData.keyPeople.map((person) => (
                   <div
                     key={person.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className="flex items-start justify-between p-3 bg-gray-50 rounded-lg"
                   >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-medium text-gray-600">
-                          {person.name.charAt(0).toUpperCase()}
-                        </span>
+                    <div className="flex items-start space-x-3">
+                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
+                        {person.image ? (
+                          <img 
+                            src={person.image} 
+                            alt={person.full_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-sm font-medium text-gray-600">
+                            {person.full_name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">{person.name}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <p className="text-sm font-medium">{person.full_name}</p>
+                          {person.is_primary && (
+                            <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                              Primary
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-600">{person.role}</p>
+                        <p className="text-xs text-gray-500">{person.email}</p>
+                        {person.phone && (
+                          <p className="text-xs text-gray-500">{person.phone}</p>
+                        )}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveKeyPerson(person.id)}
-                      className="text-gray-600 hover:text-gray-800"
+                      className="text-gray-600 hover:text-gray-800 ml-2"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -495,26 +649,64 @@ export default function NewClientModal({
             
             {expandedSections.keyPeople && (
               <div className="mt-3 space-y-3 p-4 bg-gray-50 rounded-lg">
-                <div className="flex space-x-2">
+                <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text"
-                    value={newKeyPerson.name}
-                    onChange={(e) => handleKeyPersonInputChange('name', e.target.value)}
-                    placeholder="Name"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={newKeyPerson.full_name}
+                    onChange={(e) => handleKeyPersonInputChange('full_name', e.target.value)}
+                    placeholder="Full Name *"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <input
                     type="text"
                     value={newKeyPerson.role}
                     onChange={(e) => handleKeyPersonInputChange('role', e.target.value)}
-                    placeholder="Role"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Role *"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="email"
+                    value={newKeyPerson.email}
+                    onChange={(e) => handleKeyPersonInputChange('email', e.target.value)}
+                    placeholder="Email *"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <input
+                    type="tel"
+                    value={newKeyPerson.phone}
+                    onChange={(e) => handleKeyPersonInputChange('phone', e.target.value)}
+                    placeholder="Phone"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <input
+                  type="url"
+                  value={newKeyPerson.image}
+                  onChange={(e) => handleKeyPersonInputChange('image', e.target.value)}
+                  placeholder="Profile Image URL"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="is_primary"
+                    checked={newKeyPerson.is_primary}
+                    onChange={(e) => handleKeyPersonInputChange('is_primary', e.target.checked)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="is_primary" className="text-sm text-gray-700">
+                    Set as primary contact
+                  </label>
+                </div>
+                {errors.keyPersonEmail && (
+                  <p className="text-sm text-red-600">{errors.keyPersonEmail}</p>
+                )}
                 <button
                   type="button"
                   onClick={handleAddKeyPerson}
-                  disabled={!newKeyPerson.name.trim() || !newKeyPerson.role.trim()}
+                  disabled={!newKeyPerson.full_name.trim() || !newKeyPerson.role.trim() || !newKeyPerson.email.trim()}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Add Person
@@ -527,9 +719,10 @@ export default function NewClientModal({
           {errors.general && (
             <div className="text-red-600 text-sm">{errors.general}</div>
           )}
+          </div>
 
-          {/* Action Buttons */}
-          <div className="pt-4">
+          {/* Action Buttons - Fixed Footer */}
+          <div className="border-t border-gray-200 p-6 flex-shrink-0">
             <button
               type="submit"
               disabled={loading}

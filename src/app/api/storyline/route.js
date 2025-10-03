@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
+import dbConnect from '../../../lib/db/mongoose.js';
+import Storyline from '../../../lib/models/Storyline.js';
+import Deliverable from '../../../lib/models/Deliverable.js';
+import User from '../../../lib/models/User.js';
 
 export async function POST(request) {
   try {
-    const { deliverableData } = await request.json();
+    await dbConnect();
+    
+    const { deliverableData, deliverableId, userId } = await request.json();
+    
+    console.log('🔍 API Debug - Received deliverableId:', deliverableId);
+    console.log('🔍 API Debug - Received deliverableData:', deliverableData);
+    console.log('🔍 API Debug - Type of deliverableId:', typeof deliverableId);
     
     // Extract key information from deliverable data
     const {
@@ -54,17 +64,134 @@ Make sure the storyline is:
 - Appropriate for the specified document length and format
 `;
 
+    // Verify deliverable exists if deliverableId provided
+    let deliverable = null;
+    if (deliverableId) {
+      deliverable = await Deliverable.findById(deliverableId);
+      if (!deliverable) {
+        console.log('❌ Deliverable not found with ID:', deliverableId);
+        console.log('🔍 Available deliverables:');
+        const availableDeliverables = await Deliverable.find({ is_active: true }).select('_id name').limit(5);
+        console.log(availableDeliverables);
+        
+        // Instead of failing, let's continue without saving to database
+        console.log('⚠️ Continuing storyline generation without database persistence');
+      }
+    } else {
+      console.log('⚠️ No deliverableId provided, storyline will not be saved to database');
+    }
+
     // Simulate calling a custom AI agent
     // In a real implementation, this would call your preferred AI service
     const storylineResponse = await generateStorylineWithAgent(storylinePrompt);
     
+    // Save storyline to database if deliverable is valid
+    let savedStoryline = null;
+    if (deliverable && deliverableId) {
+      try {
+        // Convert storylineResponse to database format
+        const storylineDoc = {
+          deliverable: deliverableId,
+          title: `${name} Storyline`,
+          executiveSummary: storylineResponse.executiveSummary?.keyMessages?.join('. ') || 'AI-generated executive summary.',
+          presentationFlow: 'Structured narrative flow connecting all sections logically.',
+          callToAction: storylineResponse.callToAction?.keyMessages?.join('. ') || 'Recommended next steps based on analysis.',
+          sections: [
+            // Executive Summary section
+            {
+              id: 'exec_summary',
+              title: storylineResponse.executiveSummary?.title || 'Executive Summary',
+              description: storylineResponse.executiveSummary?.keyMessages?.join('. ') || '',
+              status: 'draft',
+              order: 0,
+              keyPoints: storylineResponse.executiveSummary?.keyMessages || [],
+              contentBlocks: [{
+                type: 'Key Insights',
+                items: storylineResponse.executiveSummary?.keyMessages || []
+              }],
+              estimatedSlides: storylineResponse.executiveSummary?.estimatedPages || 2,
+              locked: false,
+              created_at: new Date(),
+              updated_at: new Date()
+            },
+            // Main sections
+            ...(storylineResponse.mainSections?.map((section, index) => ({
+              id: `section_${index + 1}`,
+              title: section.title,
+              description: section.keyMessages?.join('. ') || '',
+              status: 'not_started',
+              order: index + 1,
+              keyPoints: section.keyMessages || [],
+              contentBlocks: [{
+                type: getContentBlockType(section.contentType),
+                items: section.keyMessages || []
+              }],
+              estimatedSlides: section.estimatedPages || 3,
+              locked: false,
+              created_at: new Date(),
+              updated_at: new Date()
+            })) || []),
+            // Call to Action section
+            {
+              id: 'call_to_action',
+              title: storylineResponse.callToAction?.title || 'Next Steps',
+              description: storylineResponse.callToAction?.keyMessages?.join('. ') || '',
+              status: 'not_started',
+              order: (storylineResponse.mainSections?.length || 0) + 1,
+              keyPoints: storylineResponse.callToAction?.keyMessages || [],
+              contentBlocks: [{
+                type: 'Process Flow',
+                items: storylineResponse.callToAction?.keyMessages || []
+              }],
+              estimatedSlides: storylineResponse.callToAction?.estimatedPages || 1,
+              locked: false,
+              created_at: new Date(),
+              updated_at: new Date()
+            }
+          ],
+          topic: name,
+          industry: 'Financial Services', // Default based on CBDC context
+          audience: Array.isArray(audience) ? audience : audience ? [audience] : [],
+          objectives: brief || '',
+          presentationStyle: 'consulting',
+          complexity: 'intermediate',
+          generationSource: 'ai',
+          aiPrompt: storylinePrompt,
+          created_by: userId || deliverable.created_by,
+          updated_by: userId || deliverable.created_by,
+          is_active: true
+        };
+
+        // Check if storyline already exists for this deliverable
+        const existingStoryline = await Storyline.findOne({ deliverable: deliverableId });
+        
+        if (existingStoryline) {
+          // Update existing storyline
+          Object.assign(existingStoryline, storylineDoc);
+          existingStoryline.version = incrementVersion(existingStoryline.version);
+          savedStoryline = await existingStoryline.save();
+        } else {
+          // Create new storyline
+          savedStoryline = new Storyline(storylineDoc);
+          await savedStoryline.save();
+        }
+
+        console.log('✅ Storyline saved to database:', savedStoryline._id);
+      } catch (dbError) {
+        console.error('❌ Error saving storyline to database:', dbError);
+        // Continue without failing the request
+      }
+    }
+    
     return NextResponse.json({
       success: true,
       storyline: storylineResponse,
+      storylineId: savedStoryline?._id,
       metadata: {
         generatedAt: new Date().toISOString(),
         deliverableName: name,
-        estimatedLength: documentLength
+        estimatedLength: documentLength,
+        savedToDatabase: !!savedStoryline
       }
     });
 
@@ -233,4 +360,40 @@ function generateMockStoryline() {
     ],
     generatedBy: "Agent ID: 68dddd9ac1b3b5cc990ad5f0 (fallback mode)"
   };
+}
+
+// Helper function to increment version
+function incrementVersion(currentVersion) {
+  if (!currentVersion) return '1.0';
+  
+  const parts = currentVersion.split('.');
+  const major = parseInt(parts[0]) || 1;
+  const minor = parseInt(parts[1]) || 0;
+  
+  return `${major}.${minor + 1}`;
+}
+
+// Helper function to map content type to content block type
+function getContentBlockType(contentType) {
+  if (!contentType) return 'Content Block';
+  
+  const typeMap = {
+    'charts': 'Data Visualization',
+    'diagrams': 'Process Flow',
+    'timeline': 'Timeline Layout',
+    'framework': 'MECE Framework',
+    'analysis': 'Key Insights',
+    'checklist': 'Process Flow',
+    'models': 'BCG Matrix',
+    'projections': 'Data Visualization'
+  };
+  
+  const lowerType = contentType.toLowerCase();
+  for (const [key, value] of Object.entries(typeMap)) {
+    if (lowerType.includes(key)) {
+      return value;
+    }
+  }
+  
+  return 'Content Block';
 }

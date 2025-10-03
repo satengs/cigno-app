@@ -2,2357 +2,548 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  ChevronDown, 
-  ChevronUp, 
-  ChevronLeft, 
-  ChevronRight, 
-  Search,
-  Edit3,
-  Copy,
-  Lock,
-  Eye,
-  MoreHorizontal,
   Settings,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
   Trash2,
-  Sparkles,
-  Wand2,
-  Layout,
-  PlusCircle,
-  RefreshCw,
-  Save,
-  Download
+  Calendar,
+  Plus,
+  X
 } from 'lucide-react';
-import StaffingInfo from '../ui/StaffingInfo';
-import DeliverableMetrics from '../ui/DeliverableMetrics';
-import DesignGenerator from '../ui/DesignGenerator';
-import StorylineGenerationForm from '../ui/StorylineGenerationForm';
 import ClientDetailView from '../ui/ClientDetailView';
-import CignoContextAwareChat from '../ui/CignoContextAwareChat';
-import DeliverableSettingsPage from '../deliverables/DeliverableSettingsPage';
+import ProjectAwareChat from '../ui/ProjectAwareChat';
+import ImproveBriefModal from '../ui/ImproveBriefModal';
+import SectionNavigator from '../storyline/SectionNavigator';
 
 export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted }) {
-  const [viewMode, setViewMode] = useState('overview');
-  const [expandedSections, setExpandedSections] = useState({
-    settings: false,
-    brief: false,
-    design: true
+  const [formData, setFormData] = useState({
+    name: '',
+    audience: [],
+    type: 'Strategy Presentation',
+    format: 'PPT',
+    due_date: '',
+    document_length: 25,
+    brief: '',
+    brief_quality: 7.5,
+    strengths: 'Technical requirements well defined',
+    improvements: 'Add geographical scope and timeline constraints'
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(28);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showDesignGenerator, setShowDesignGenerator] = useState(false);
-  const [showStorylineGenerator, setShowStorylineGenerator] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedDesign, setGeneratedDesign] = useState(null);
+
+  const [newAudience, setNewAudience] = useState('');
+  const [showImproveBrief, setShowImproveBrief] = useState(false);
+  const [currentView, setCurrentView] = useState('detailed'); // 'detailed' or 'storyline'
   const [generatedStoryline, setGeneratedStoryline] = useState(null);
-  const [designForm, setDesignForm] = useState({
-    prompt: '',
-    designType: 'wireframe',
-    device: 'desktop',
-    style: 'modern',
-    complexity: 'intermediate',
-    referenceImage: null
-  });
-  const [showChat, setShowChat] = useState(false);
-  const [showDeliverableSettings, setShowDeliverableSettings] = useState(false);
-  const [deliverableForSettings, setDeliverableForSettings] = useState(null);
-  
-  // Deliverable form state
-  const [documentLength, setDocumentLength] = useState(25);
-  const [selectedFormat, setSelectedFormat] = useState('PPT');
-  const [audiences, setAudiences] = useState(['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)']);
-  const [deliverableName, setDeliverableName] = useState(selectedItem?.title || 'CBDC Implementation Strategy for Global Banking');
-  const [deliverableType, setDeliverableType] = useState('Strategy Presentation');
-  const [dueDate, setDueDate] = useState('15.02.2025');
-  const [briefText, setBriefText] = useState(selectedItem?.description || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.');
-  
-  // Tab switching state
-  const [activeTab, setActiveTab] = useState('detailed'); // 'storyline', 'detailed', 'layout'
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
 
-  // Helper functions
-  const removeAudience = (index) => {
-    setAudiences(audiences.filter((_, i) => i !== index));
-  };
-
-  const handleGenerateStoryline = async () => {
-    setIsGenerating(true);
-    
-    try {
-      const deliverableData = {
-        name: deliverableName,
-        type: deliverableType,
-        audience: audiences,
-        brief: briefText,
-        format: selectedFormat,
-        documentLength: documentLength,
-        dueDate: dueDate
-      };
-
-      const response = await fetch('/api/storyline', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ deliverableData }),
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        setGeneratedStoryline(result.storyline);
-        // You could also navigate to storyline view or show success message
-        console.log('Storyline generated successfully:', result.storyline);
-      } else {
-        console.error('Failed to generate storyline:', result.error);
-      }
-    } catch (error) {
-      console.error('Error calling storyline API:', error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleImproveBrief = async () => {
-    setIsGenerating(true);
-    
-    try {
-      const briefData = {
-        currentBrief: briefText,
-        deliverableName: deliverableName,
-        deliverableType: deliverableType,
-        audience: audiences,
-        format: selectedFormat,
-        documentLength: documentLength,
-        dueDate: dueDate
-      };
-
-      const response = await fetch('/api/improve-brief', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ briefData }),
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        setBriefText(result.improvedBrief);
-        console.log('Brief improved successfully:', {
-          qualityScore: result.qualityScore,
-          improvements: result.improvements
-        });
-      } else {
-        console.error('Failed to improve brief:', result.error);
-      }
-    } catch (error) {
-      console.error('Error calling improve brief API:', error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  // Keyboard shortcuts
+  // Update form data when selectedItem changes
   useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 'k':
-            e.preventDefault();
-            setShowDesignGenerator(true);
-            break;
-          case 'r':
-            if (generatedDesign) {
-              e.preventDefault();
-              handleResetDesign();
-            }
-            break;
-        }
-      }
-      if (e.key === 'Escape') {
-        if (showDesignGenerator) {
-          setShowDesignGenerator(false);
-        }
-        if (showDeleteConfirm) {
-          setShowDeleteConfirm(false);
-        }
-      }
-    };
+    if (selectedItem && selectedItem.type === 'deliverable') {
+      setFormData({
+        name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
+        audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
+        type: selectedItem.type || 'Strategy Presentation',
+        format: selectedItem.format || 'PPT',
+        due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
+        document_length: selectedItem.document_length || 25,
+        brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
+        brief_quality: selectedItem.brief_quality || 7.5,
+        strengths: selectedItem.strengths || 'Technical requirements well defined',
+        improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
+      });
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [showDesignGenerator, showDeleteConfirm, generatedDesign]);
-
-
-
-
-  // Sample data for sources
-  const internalSources = [
-    {
-      id: 1,
-      title: "CBDC Market Analysis Report",
-      description: "Internal research document on global CBDC trends",
-      type: "pdf",
-      pages: 45,
-      completion: 85,
-      source: "Internal Research"
-    },
-    {
-      id: 2,
-      title: "Digital Banking Strategy Framework",
-      description: "Strategic framework for digital transformation",
-      type: "document",
-      pages: 12,
-      completion: 92,
-      source: "Strategy Team"
-    },
-    {
-      id: 3,
-      title: "Regulatory Compliance Guidelines",
-      description: "Compliance requirements for financial institutions",
-      type: "pdf",
-      pages: 28,
-      completion: 78,
-      source: "Legal Team"
-    },
-    {
-      id: 4,
-      title: "Risk Assessment Template",
-      description: "Standard risk evaluation methodology",
-      type: "document",
-      pages: 22,
-      completion: 88,
-      source: "Risk Management"
+      // Load existing storyline if available
+      loadExistingStoryline(selectedItem._id || selectedItem.id);
     }
-  ];
+  }, [selectedItem]);
 
+  // Load existing storyline for the deliverable
+  const loadExistingStoryline = async (deliverableId) => {
+    if (!deliverableId) return;
 
-  // Use generated storyline if available, otherwise fallback to sample data
-  const storylineSections = generatedStoryline?.sections || [
-    {
-      id: 1,
-      title: "Executive Summary",
-      status: "Final",
-      description: "This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.",
-      sources: [1, 2, 3],
-      estimatedSlides: 5
-    },
-    {
-      id: 2,
-      title: "Market Context & CBDC",
-      status: "Draft",
-      description: "Analysis of the current state of CBDC development globally and key market drivers influencing adoption trajectories.",
-      sources: [1, 2, 4],
-      estimatedSlides: 8
-    },
-    {
-      id: 3,
-      title: "Strategic Implications for Financial Institutions",
-      status: "Draft",
-      description: "Detailed exploration of how CBDCs will impact existing business models and create new opportunities for financial services.",
-      sources: [2, 3, 4],
-      estimatedSlides: 10
-    },
-    {
-      id: 4,
-      title: "Technical Architecture & Integration",
-      status: "Not Started",
-      description: "Technical specifications for CBDC integration with existing banking infrastructure and security frameworks.",
-      sources: [2, 4],
-      estimatedSlides: 7
-    },
-    {
-      id: 5,
-      title: "Risk Assessment & Compliance",
-      status: "Not Started",
-      description: "Comprehensive assessment of regulatory compliance requirements and risk mitigation strategies for CBDC implementation.",
-      sources: [3, 4],
-      estimatedSlides: 6
-    },
-    {
-      id: 6,
-      title: "Implementation Roadmap",
-      status: "Not Started",
-      description: "Phased approach to CBDC implementation with key milestones, resource allocation, and timeline considerations.",
-      sources: [1, 2, 3],
-      estimatedSlides: 9
-    }
-  ];
-
-  // Use generated design if available, otherwise fallback to sample data
-  const designSections = generatedDesign?.design?.sections || [
-    {
-      id: 1,
-      title: "Executive Summary",
-      status: "Final",
-      description: "This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: [
-        { type: "BCG Matrix", items: ["Stars", "Questions", "Cash Cows", "Dogs"] },
-        { type: "MECE Bullets (3-column)", items: ["Column 1", "Column 2", "Column 3"] },
-        { type: "Insight +", items: [] }
-      ]
-    },
-    {
-      id: 2,
-      title: "Market Context & CBDC Landscape",
-      status: "Draft",
-      description: "Analysis of the current state of CBDC development globally and key market drivers influencing adoption trajectories.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: [
-        { type: "Timeline Layout", items: [] },
-        { type: "Process Flow", items: [] },
-        { type: "Market Map", items: [] }
-      ]
-    },
-    {
-      id: 3,
-      title: "Strategic Implications for Financial Institutions",
-      status: "Draft",
-      description: "Detailed exploration of how CBDCs will impact existing business models and create new opportunities for financial services.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: []
-    },
-    {
-      id: 4,
-      title: "Technical Architecture & Integration",
-      status: "Not Started",
-      description: "Technical specifications for CBDC integration with existing banking infrastructure and security frameworks.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: []
-    },
-    {
-      id: 5,
-      title: "Risk Assessment & Compliance",
-      status: "Not Started",
-      description: "Comprehensive assessment of regulatory compliance requirements and risk mitigation strategies for CBDC implementation.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: []
-    },
-    {
-      id: 6,
-      title: "Implementation Roadmap",
-      status: "Not Started",
-      description: "Phased approach to CBDC implementation with key milestones, resource allocation, and timeline considerations.",
-      content: "Select a layout design for this section",
-      link: "See full section content",
-      blocks: []
-    }
-  ];
-
-  const documentContent = {
-    title: "Central Bank Digital Currencies: Implementation Strategy for Financial Institutions",
-    author: "McKinsey & Company",
-    currentPage: 14,
-    totalPages: 28,
-    content: {
-      executiveSummary: {
-        title: "Executive Summary",
-        paragraphs: [
-          "The rapid evolution of central bank digital currencies (CBDCs) represents a fundamental shift in the global financial landscape. As monetary authorities worldwide accelerate their digital currency initiatives, financial institutions must prepare for unprecedented changes in payment infrastructure, customer engagement, and operational models.",
-          "Our analysis indicates that CBDCs will impact approximately 80% of central banks by 2025, with pilot programs already underway in over 50 countries. The implications for commercial banks, payment processors, and fintech companies are profound and immediate."
-        ]
-      },
-      keyFinding: {
-        title: "Key Finding: Preparation Timeline",
-        description: "Financial institutions require a 12-18 month preparation window to adequately adapt their systems, processes, and customer interfaces for CBDC integration. This timeline encompasses technical infrastructure updates, regulatory compliance adjustments, staff training, and customer education initiatives.",
-        phases: [
-          "Phase 1 (Months 1-6): Infrastructure assessment and strategic planning",
-          "Phase 2 (Months 7-12): System development and integration testing",
-          "Phase 3 (Months 13-18): Pilot programs and staff training"
-        ],
-        conclusion: "The institutions that begin preparation now will be positioned to capitalize on the competitive advantages that CBDC integration offers, including reduced transaction costs, enhanced customer experiences, and new revenue opportunities through programmable money features."
+    try {
+      console.log('🔍 Loading existing storyline for deliverable:', deliverableId);
+      
+      const response = await fetch(`/api/storylines?deliverableId=${deliverableId}`);
+      if (!response.ok) {
+        console.log('❌ Failed to fetch storylines from API');
+        return;
       }
+
+      const result = await response.json();
+      if (result.ok && result.data.storylines.length > 0) {
+        const existingStoryline = result.data.storylines[0];
+        console.log('✅ Found existing storyline:', existingStoryline._id);
+        
+        setGeneratedStoryline(existingStoryline);
+        setCurrentView('storyline'); // Switch to storyline view if storyline exists
+      } else {
+        console.log('📝 No existing storyline found for this deliverable');
+        setGeneratedStoryline(null);
+        setCurrentView('detailed'); // Default to detailed view
+      }
+    } catch (error) {
+      console.error('❌ Error loading existing storyline:', error);
+      setGeneratedStoryline(null);
+      setCurrentView('detailed');
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'Final':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'Draft':
-        return <Edit3 className="h-4 w-4 text-yellow-500" />;
-      case 'Not Started':
-        return <Clock className="h-4 w-4 text-gray-400" />;
-      default:
-        return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddAudience = () => {
+    if (newAudience.trim() && !formData.audience.includes(newAudience.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        audience: [...prev.audience, newAudience.trim()]
+      }));
+      setNewAudience('');
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Final':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'Draft':
-        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'Not Started':
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-      default:
-        return 'text-orange-600 bg-orange-50 border-orange-200';
-    }
-  };
-
-  const toggleSection = (sectionName) => {
-    setExpandedSections(prev => ({
+  const handleRemoveAudience = (audienceToRemove) => {
+    setFormData(prev => ({
       ...prev,
-      [sectionName]: !prev[sectionName]
+      audience: prev.audience.filter(item => item !== audienceToRemove)
     }));
   };
 
-  // Delete deliverable function
-  const handleDeleteDeliverable = async () => {
+  const handleDelete = async () => {
     if (!selectedItem || selectedItem.type !== 'deliverable') {
-      console.error('No deliverable selected for deletion');
+      alert(`Delete is only available for deliverables. Selected item type: ${selectedItem?.type}`);
       return;
     }
 
-    try {
-      // Get the deliverable ID from either the item itself or its metadata
-      const deliverableId = selectedItem.metadata?.deliverableId || selectedItem._id || selectedItem.id;
-      
-      const response = await fetch(`/api/deliverables?id=${deliverableId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+    if (window.confirm('Are you sure you want to delete this deliverable?')) {
+      try {
+        const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
+          method: 'DELETE',
+        });
 
-      if (response.ok) {
-        // Call the parent callback to refresh the menu and clear selection
-        if (onItemDeleted) {
-          onItemDeleted(selectedItem);
+        if (response.ok) {
+          if (onItemDeleted) {
+            onItemDeleted(selectedItem);
+          }
+          if (onItemSelect) {
+            onItemSelect(null);
+          }
+        } else {
+          alert('Failed to delete deliverable');
         }
-        // Clear the current selection
-        if (onItemSelect) {
-          onItemSelect(null);
-        }
-        console.log('Deliverable deleted successfully');
-      } else {
-        const errorData = await response.json();
-        console.error('Failed to delete deliverable:', errorData.error);
-        alert('Failed to delete deliverable. Please try again.');
+      } catch (error) {
+        console.error('Error deleting deliverable:', error);
+        alert('Error deleting deliverable');
       }
-    } catch (error) {
-      console.error('Error deleting deliverable:', error);
-      alert('Error deleting deliverable. Please try again.');
     }
-    
-    setShowDeleteConfirm(false);
   };
 
-  // Show delete confirmation
-  const confirmDelete = () => {
-    if (!selectedItem) {
-      alert('No item selected');
-      return;
-    }
-    
-    if (selectedItem.type !== 'deliverable') {
-      alert(`Delete is only available for deliverables. Selected item type: ${selectedItem.type}`);
-      return;
-    }
-    
-    setShowDeleteConfirm(true);
+  const handleImproveBrief = () => {
+    setShowImproveBrief(true);
   };
 
-  // Handle opening deliverable settings
-  const handleOpenDeliverableSettings = async () => {
+  const handleBriefSave = (improvedBrief, qualityScore, strengths, improvements) => {
+    setFormData(prev => ({
+      ...prev,
+      brief: improvedBrief,
+      brief_quality: qualityScore,
+      strengths: strengths,
+      improvements: improvements
+    }));
+    setShowImproveBrief(false);
+  };
+
+  const handleGenerateStoryline = async () => {
     if (!selectedItem || selectedItem.type !== 'deliverable') {
-      console.log('Settings only available for deliverables');
+      alert('Storyline generation is only available for deliverables');
       return;
     }
 
+    setIsGeneratingStoryline(true);
+    
     try {
-      // Get the deliverable ID from the selected item
-      const deliverableId = selectedItem.metadata?.deliverableId || 
-                           selectedItem.metadata?.business_entity_id || 
-                           selectedItem._id || 
-                           selectedItem.id;
+      const requestData = {
+        topic: formData.name || 'Business Strategy',
+        industry: 'financial-services',
+        audience: formData.audience.join(', ') || 'Business Stakeholders',
+        objectives: formData.brief || 'Strategic analysis and recommendations',
+        sectionsCount: Math.ceil(formData.document_length / 4), // Estimate sections based on document length
+        presentationStyle: 'consulting',
+        complexity: 'intermediate',
+        deliverableId: selectedItem._id || selectedItem.id
+      };
 
-      console.log('📋 Opening settings for deliverable:', deliverableId);
+      console.log('🎭 Generating storyline with data:', requestData);
 
-      // Fetch the full deliverable data
-      const response = await fetch(`/api/deliverables/${deliverableId}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch deliverable: ${response.status}`);
-      }
-      
-      const deliverableData = await response.json();
-      console.log('✅ Deliverable data fetched:', deliverableData);
-      
-      setDeliverableForSettings(deliverableData);
-      setShowDeliverableSettings(true);
-    } catch (error) {
-      console.error('❌ Error fetching deliverable for settings:', error);
-      alert('Failed to load deliverable settings. Please try again.');
-    }
-  };
-
-  // Handle saving deliverable settings
-  const handleSaveDeliverableSettings = (updatedDeliverable) => {
-    console.log('💾 Deliverable settings saved:', updatedDeliverable);
-    // Update the selected item if needed
-    if (onItemSelect) {
-      onItemSelect({
-        ...selectedItem,
-        ...updatedDeliverable
-      });
-    }
-    setShowDeliverableSettings(false);
-    setDeliverableForSettings(null);
-  };
-
-  // Handle closing deliverable settings
-  const handleCloseDeliverableSettings = () => {
-    setShowDeliverableSettings(false);
-    setDeliverableForSettings(null);
-  };
-
-  const handlePageChange = (direction) => {
-    if (direction === 'prev' && currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-    } else if (direction === 'next' && currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
-    }
-  };
-
-  // Handle design generation from DesignGenerator component
-  const handleDesignGenerate = (designData) => {
-    setGeneratedDesign(designData);
-    console.log('✅ Design generated successfully:', designData);
-  };
-
-  // Handle storyline generation
-  const handleStorylineGenerate = async (formData) => {
-    setIsGenerating(true);
-    try {
       const response = await fetch('/api/storyline/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          topic: formData.name,
-          industry: formData.industry,
-          audience: formData.audience.join(', '),
-          objectives: formData.brief,
-          sectionsCount: 6,
-          presentationStyle: 'consulting',
-          complexity: formData.complexity
-        }),
+        body: JSON.stringify(requestData)
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setGeneratedStoryline(data.data);
-        console.log('✅ Storyline generated successfully:', data.data);
-      } else {
-        console.error('Failed to generate storyline');
-        // Fallback to mock data
-        setGeneratedStoryline({
-          sections: storylineSections,
-          executiveSummary: 'AI-generated executive summary for the presentation.',
-          presentationFlow: 'Structured narrative flow connecting all sections logically.',
-          callToAction: 'Recommended next steps and implementation guidance.',
-          totalSections: storylineSections.length,
-          estimatedDuration: storylineSections.reduce((acc, s) => acc + s.estimatedSlides, 0) * 2
-        });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate storyline');
       }
+
+      const result = await response.json();
+      console.log('✅ Storyline generated successfully:', result);
+      
+      if (result.ok && result.data) {
+        setGeneratedStoryline(result.data.storyline);
+        setCurrentView('storyline'); // Switch to storyline view
+        setCurrentSectionIndex(0); // Start with first section
+      } else {
+        throw new Error(result.error || 'Invalid response format');
+      }
+
     } catch (error) {
-      console.error('Error generating storyline:', error);
-      // Fallback to mock data
-      setGeneratedStoryline({
-        sections: storylineSections,
-        executiveSummary: 'AI-generated executive summary for the presentation.',
-        presentationFlow: 'Structured narrative flow connecting all sections logically.',
-        callToAction: 'Recommended next steps and implementation guidance.',
-        totalSections: storylineSections.length,
-        estimatedDuration: storylineSections.reduce((acc, s) => acc + s.estimatedSlides, 0) * 2
-      });
+      console.error('❌ Error generating storyline:', error);
+      alert(`Failed to generate storyline: ${error.message}`);
     } finally {
-      setIsGenerating(false);
-      setShowStorylineGenerator(false);
+      setIsGeneratingStoryline(false);
     }
   };
 
-
-  // Reset to sample data
-  const handleResetDesign = () => {
-    setGeneratedDesign(null);
-    setDesignForm({
-      prompt: '',
-      designType: 'wireframe',
-      device: 'desktop',
-      style: 'modern',
-      complexity: 'intermediate',
-      referenceImage: null
-    });
-  };
-
-  // Determine content type based on selected item
-  const getContentType = () => {
-    if (!selectedItem) return 'empty';
-    
-    // Check if it's a deliverable (presentation/design)
-    if (selectedItem.type === 'deliverable') {
-      return 'deliverable-overview';
-    }
-    
-    // Check if it's an external resource (document)
-    if (selectedItem.type === 'external' || selectedItem.title?.includes('McKinsey')) {
-      return 'document';
-    }
-    
-    // Check if it's a project that should show storyline
-    if (selectedItem.type === 'project' && selectedItem.title?.includes('CBDC')) {
-      return 'storyline';
-    }
-    
-    // Check if it's a project that should show project overview
-    if (selectedItem.type === 'project') {
-      return 'project-overview';
-    }
-    
-    // Check if it's a client that should show overview
-    if (selectedItem.type === 'client') {
-      return 'client-overview';
-    }
-    
-    return 'empty';
-  };
-
-  const contentType = getContentType();
-
-  // Show deliverable settings page if requested
-  if (showDeliverableSettings && deliverableForSettings) {
+  // Handle different content types
+  if (!selectedItem) {
     return (
-      <div className="flex-1 p-0 flex flex-col min-h-0">
-        <DeliverableSettingsPage
-          deliverable={deliverableForSettings}
-          onSave={handleSaveDeliverableSettings}
-          onBack={handleCloseDeliverableSettings}
-        />
-      </div>
-    );
-  }
-
-  if (contentType === 'empty') {
-    return (
-      <div className="flex-1 p-2 flex flex-col min-h-0">
-        {/* Theme Toggle at top */}
-        <div className="flex justify-end mb-4">
-        </div>
-        
-        <div 
-          className="flex-1 rounded-lg border-2 border-dashed flex items-center justify-center"
-          style={{ 
-            backgroundColor: 'var(--bg-secondary)',
-            borderColor: 'var(--border-primary)'
-          }}
-        >
-          <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-              Select an Item
-            </h2>
-            <p className="text-lg" style={{ color: 'var(--text-secondary)' }}>
-              Choose a deliverable or resource from the left menu to view its content.
-            </p>
-          </div>
+      <div className="flex-1 flex items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-500">
+          <p className="text-lg mb-2">Select an item from the menu</p>
+          <p className="text-sm">Choose a client, project, or deliverable to view details</p>
         </div>
       </div>
     );
   }
 
-  if (contentType === 'client-overview') {
+  if (selectedItem.type === 'client') {
     return (
       <div className="flex-1 p-6 flex flex-col min-h-0">
         <ClientDetailView 
           client={selectedItem}
           onUpdate={async (updatedClient) => {
-            // TODO: Implement client update logic
             console.log('Updating client:', updatedClient);
           }}
           onDelete={async (clientToDelete) => {
-            // TODO: Implement client deletion logic
             console.log('Deleting client:', clientToDelete);
-            onItemDeleted?.(clientToDelete);
-          }}
-          onAddProject={(client) => {
-            // Open the project creation modal
-            setShowUnifiedAddModal(true);
-            setAddItemType('project');
-            console.log('Opening project creation for client:', client);
           }}
         />
       </div>
     );
   }
 
-  if (contentType === 'project-overview') {
+  if (selectedItem.type === 'project') {
     return (
       <div className="flex-1 p-2 flex flex-col min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
-          {/* Theme Toggle at top */}
           <div className="flex justify-end mb-4">
+            {/* Empty theme toggle space */}
           </div>
           
-          {/* Header */}
           <div className="mb-6">
-            <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-              {selectedItem?.title || 'Project Overview'}
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {selectedItem.name || selectedItem.title || 'Project Details'}
             </h1>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Project details and deliverable management
+            <p className="text-gray-600">
+              {selectedItem.description || 'Project description will appear here'}
             </p>
           </div>
 
-          {/* Project Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg border" style={{ 
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-primary)'
-              }}>
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                  Project Details
-                </h3>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Name:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.title || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Description:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.description || 'No description available'}</span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Client:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.metadata?.client_owner || 'No client assigned'}</span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Status:</span>
-                    <span className="ml-2 px-2 py-1 rounded text-xs" style={{ 
-                      backgroundColor: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)'
-                    }}>{selectedItem?.status || 'Unknown'}</span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Manager:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>{selectedItem?.metadata?.internal_owner || 'No manager assigned'}</span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Budget:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.metadata?.budget_amount ? `$${Number(selectedItem.metadata.budget_amount).toLocaleString()}` : 'Not specified'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Start Date:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.metadata?.start_date ? new Date(selectedItem.metadata.start_date).toLocaleDateString() : 'Not specified'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>End Date:</span>
-                    <span className="ml-2" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.metadata?.end_date ? new Date(selectedItem.metadata.end_date).toLocaleDateString() : 'Not specified'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-lg border" style={{ 
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-primary)'
-              }}>
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                  Deliverables
-                </h3>
-                <div className="space-y-2">
-                  {selectedItem?.children && selectedItem.children.length > 0 ? (
-                    selectedItem.children.map((deliverable, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          {deliverable.title}
-                        </span>
-                        <span className="px-2 py-1 rounded text-xs" style={{ 
-                          backgroundColor: 'var(--bg-tertiary)',
-                          color: 'var(--text-primary)'
-                        }}>{deliverable.status}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-sm text-center py-4" style={{ color: 'var(--text-secondary)' }}>
-                      No deliverables found for this project
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg border" style={{ 
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-primary)'
-              }}>
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                  Project Statistics
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.children?.length || 0}
-                    </div>
-                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Deliverables</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.children?.filter(d => d.status === 'completed').length || 0}
-                    </div>
-                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Completed</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.children?.filter(d => d.status !== 'completed').length || 0}
-                    </div>
-                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Pending</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedItem?.children?.length > 0 
-                        ? Math.round((selectedItem.children.filter(d => d.status === 'completed').length / selectedItem.children.length) * 100)
-                        : 0
-                      }%
-                    </div>
-                    <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Progress</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Staffing Information */}
-              <StaffingInfo 
-                staffing={[
-                  {
-                    user: { first_name: 'Sarah', last_name: 'Johnson' },
-                    role: 'project_manager',
-                    allocation_percentage: 100,
-                    start_date: '2024-01-01',
-                    end_date: '2024-06-30',
-                    hourly_rate: 150,
-                    notes: 'Lead project manager with 10+ years experience'
-                  },
-                  {
-                    user: { first_name: 'Michael', last_name: 'Chen' },
-                    role: 'consultant',
-                    allocation_percentage: 80,
-                    start_date: '2024-01-15',
-                    end_date: '2024-05-15',
-                    hourly_rate: 120,
-                    notes: 'CBDC specialist and technical consultant'
-                  },
-                  {
-                    user: { first_name: 'Emma', last_name: 'Williams' },
-                    role: 'analyst',
-                    allocation_percentage: 60,
-                    start_date: '2024-02-01',
-                    end_date: '2024-04-30',
-                    hourly_rate: 90,
-                    notes: 'Financial analysis and market research'
-                  }
-                ]}
-                isEditable={true}
-              />
-            </div>
+          <div className="flex-1 min-h-0">
+            <ProjectAwareChat 
+              key={selectedItem._id || selectedItem.id}
+              currentProject={selectedItem}
+            />
           </div>
         </div>
       </div>
     );
   }
 
-  if (contentType === 'deliverable-overview') {
+  // Deliverable view - matches the screenshot
+  if (selectedItem.type === 'deliverable') {
     return (
-      <div className="flex-1 p-6 overflow-y-auto" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="flex-1 flex flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            {selectedItem?.title || 'CBDC Strategy Presentation'}
+        <div className="flex items-center justify-between p-6 pb-4">
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            {formData.name}
           </h1>
-          <div className="flex space-x-2">
-            <button
-              className="p-2 rounded-lg transition-colors"
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={() => setCurrentView('detailed')}
+              className="p-2 rounded transition-colors cursor-pointer"
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-primary)'
+                backgroundColor: currentView === 'detailed' ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                color: currentView === 'detailed' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
+              title="Deliverable settings"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="h-4 w-4" />
             </button>
-            <button
-              onClick={handleDeleteDeliverable}
-              className="p-2 rounded-lg transition-colors"
+            <button 
+              onClick={handleDelete}
+              className="p-2 rounded transition-colors cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-secondary)',
-                color: 'var(--text-danger)',
-                border: '1px solid var(--border-primary)'
+                color: 'var(--text-secondary)'
               }}
+              title="Delete deliverable"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/>
-              </svg>
+              <Trash2 className="h-4 w-4" />
             </button>
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-1 mb-6">
-          {[
-            { id: 'storyline', label: 'Storyline' },
-            { id: 'detailed', label: 'Detailed' },
-            { id: 'layout', label: 'Layout' }
-          ].map((tab) => (
+        <div className="px-6" style={{ borderBottom: '1px solid var(--border-primary)' }}>
+          <div className="flex space-x-1">
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              onClick={() => setCurrentView('storyline')}
+              className="px-4 py-2 rounded-t-lg font-medium transition-colors"
               style={{
-                backgroundColor: activeTab === tab.id ? 'var(--text-primary)' : 'var(--bg-secondary)',
-                color: activeTab === tab.id ? 'var(--bg-primary)' : 'var(--text-primary)',
-                border: activeTab === tab.id ? 'none' : '1px solid var(--border-primary)'
+                backgroundColor: currentView === 'storyline' ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                color: currentView === 'storyline' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
+              disabled={!generatedStoryline}
             >
-              {tab.label}
+              Storyline
             </button>
-          ))}
+            <button
+              onClick={() => setCurrentView('layout')}
+              className="px-4 py-2 rounded-t-lg font-medium transition-colors"
+              style={{
+                backgroundColor: currentView === 'layout' ? 'var(--text-primary)' : 'var(--bg-secondary)',
+                color: currentView === 'layout' ? 'var(--bg-primary)' : 'var(--text-secondary)'
+              }}
+              disabled={!generatedStoryline}
+            >
+              Layout
+            </button>
+          </div>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'detailed' && (
-        <div className="space-y-6">
-          {/* Name Field */}
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Name
-            </label>
-            <input
-              type="text"
-              value={deliverableName}
-              onChange={(e) => setDeliverableName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border text-sm"
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                borderColor: 'var(--border-primary)',
-                color: 'var(--text-primary)'
-              }}
-            />
-          </div>
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden">
+          {currentView === 'storyline' && generatedStoryline ? (
+            <div className="p-6 h-full overflow-y-auto">
+              <SectionNavigator
+                sections={generatedStoryline.sections || []}
+                currentSectionIndex={currentSectionIndex}
+                onSectionChange={setCurrentSectionIndex}
+              />
+            </div>
+          ) : currentView === 'layout' && generatedStoryline ? (
+            <div className="p-6 h-full overflow-y-auto">
+              <div className="text-center text-gray-500">
+                <p className="text-lg mb-2">Layout View</p>
+                <p className="text-sm">Layout editing functionality coming soon</p>
+              </div>
+            </div>
+          ) : currentView === 'detailed' ? (
+            <div className="p-6 space-y-6">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              </div>
 
-          {/* Audience and Type Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Audience */}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                Audience
-              </label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {audiences.map((audience, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
-                    style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                  >
-                    {audience}
+              {/* Audience & Type */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Audience</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {formData.audience.map((item, index) => (
+                      <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded-full flex items-center">
+                        {item}
+                        <button onClick={() => handleRemoveAudience(item)} className="ml-1 text-blue-600 hover:text-blue-800">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex">
+                    <input
+                      type="text"
+                      value={newAudience}
+                      onChange={(e) => setNewAudience(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddAudience())}
+                      placeholder="Add audience..."
+                      className="flex-1 px-3 py-1 text-sm border border-gray-300 rounded-l focus:outline-none focus:ring-1 focus:ring-gray-900"
+                    />
                     <button
-                      onClick={() => removeAudience(index)}
-                      className="ml-2 text-xs"
-                      style={{ color: 'var(--text-secondary)' }}
+                      onClick={handleAddAudience}
+                      className="px-2 py-1 bg-gray-900 text-white rounded-r hover:bg-gray-800"
                     >
-                      ×
+                      <Plus className="w-4 h-4" />
                     </button>
-                  </span>
-                ))}
-              </div>
-              <input
-                type="text"
-                placeholder="Add audience..."
-                className="w-full px-3 py-2 rounded-lg border text-sm"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  borderColor: 'var(--border-primary)',
-                  color: 'var(--text-secondary)'
-                }}
-              />
-            </div>
+                  </div>
+                </div>
 
-            {/* Type */}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                Type
-              </label>
-              <select
-                value={deliverableType}
-                onChange={(e) => setDeliverableType(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border text-sm"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  borderColor: 'var(--border-primary)',
-                  color: 'var(--text-primary)'
-                }}
-              >
-                <option value="Presentation">Presentation</option>
-                <option value="Report">Report</option>
-                <option value="Strategy">Strategy</option>
-                <option value="Analysis">Analysis</option>
-                <option value="Design">Design</option>
-                <option value="Code">Code</option>
-                <option value="Documentation">Documentation</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Format and Due Date Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Format */}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                Format
-              </label>
-              <div className="flex space-x-2">
-                {['PPT', 'DOC', 'XLS'].map((format) => (
-                  <button
-                    key={format}
-                    onClick={() => setSelectedFormat(format)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border"
-                    style={{
-                      backgroundColor: selectedFormat === format ? 'var(--accent-primary)' : 'var(--bg-primary)',
-                      borderColor: selectedFormat === format ? 'var(--accent-primary)' : 'var(--border-primary)',
-                      color: selectedFormat === format ? 'white' : 'var(--text-primary)'
-                    }}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Type</label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => handleInputChange('type', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
                   >
-                    {format}
+                    <option value="Strategy Presentation">Strategy Presentation</option>
+                    <option value="Presentation">Presentation</option>
+                    <option value="Report">Report</option>
+                    <option value="Analysis">Analysis</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Format & Due Date */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Format</label>
+                  <div className="flex space-x-2">
+                    {['PPT', 'DOC', 'XLS'].map((format) => (
+                      <button
+                        key={format}
+                        onClick={() => handleInputChange('format', format)}
+                        className={`px-4 py-2 border rounded ${
+                          formData.format === format
+                            ? 'bg-gray-900 text-white border-gray-900'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-900'
+                        }`}
+                      >
+                        {format}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Due Date</label>
+                  <input
+                    type="date"
+                    value={formData.due_date}
+                    onChange={(e) => handleInputChange('due_date', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  />
+                </div>
+              </div>
+
+              {/* Document Length */}
+              <div>
+                <label className="block text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Document Length</label>
+                <div className="flex items-center space-x-4 mt-2">
+                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>2 pages</span>
+                  <div className="flex-1 relative">
+                    <input
+                      type="range"
+                      min="2"
+                      max="200"
+                      value={formData.document_length}
+                      onChange={(e) => handleInputChange('document_length', parseInt(e.target.value))}
+                      className="w-full h-2 rounded-lg appearance-none cursor-pointer slider"
+                      style={{
+                        background: `linear-gradient(to right, var(--text-primary) 0%, var(--text-primary) ${((formData.document_length - 2) / 198) * 100}%, var(--bg-tertiary) ${((formData.document_length - 2) / 198) * 100}%, var(--bg-tertiary) 100%)`
+                      }}
+                    />
+                  </div>
+                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>200 pages</span>
+                </div>
+                <div className="text-center mt-2">
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{formData.document_length} pages</span>
+                </div>
+              </div>
+
+              {/* Brief */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Brief</label>
+                  <button
+                    onClick={handleImproveBrief}
+                    className="px-3 py-1 text-sm bg-gray-900 text-white rounded hover:bg-gray-800"
+                  >
+                    Improve Brief
                   </button>
-                ))}
+                </div>
+                <textarea
+                  value={formData.brief}
+                  onChange={(e) => handleInputChange('brief', e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
+                />
               </div>
-            </div>
 
-            {/* Due Date */}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                Due Date
-              </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border text-sm"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  borderColor: 'var(--border-primary)',
-                  color: 'var(--text-primary)'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Document Length */}
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Document Length
-            </label>
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs" style={{ color: 'var(--text-secondary)' }}>
-                <span>2 pages</span>
-                <span>25 pages</span>
-                <span>200 pages</span>
-              </div>
-              <input
-                type="range"
-                min="2"
-                max="200"
-                value={documentLength}
-                onChange={(e) => setDocumentLength(parseInt(e.target.value))}
-                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
-                style={{ backgroundColor: 'var(--border-primary)' }}
-              />
-              <div className="text-center text-sm" style={{ color: 'var(--text-primary)' }}>
-                {documentLength} pages
-              </div>
-            </div>
-          </div>
-
-          {/* Brief */}
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Brief
-            </label>
-            <div className="relative">
-              <textarea
-                value={briefText}
-                onChange={(e) => setBriefText(e.target.value)}
-                rows={4}
-                className="w-full px-3 py-2 rounded-lg border text-sm resize-none"
-                style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  borderColor: 'var(--border-primary)',
-                  color: 'var(--text-primary)'
-                }}
-              />
-              <button
-                onClick={handleImproveBrief}
-                disabled={isGenerating}
-                className="absolute bottom-3 right-3 text-xs px-2 py-1 rounded flex items-center space-x-1"
-                style={{ 
-                  backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--bg-secondary)',
-                  color: isGenerating ? 'var(--text-secondary)' : 'var(--text-secondary)',
-                  border: '1px solid var(--border-primary)',
-                  opacity: isGenerating ? 0.7 : 1,
-                  cursor: isGenerating ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {isGenerating && (
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                )}
-                <span>{isGenerating ? 'Improving...' : 'Improve Brief'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Brief Quality Score */}
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-              Brief Quality Score
-            </label>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 h-2 rounded-full mr-4" style={{ backgroundColor: 'var(--border-primary)' }}>
+              {/* Brief Quality Score */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Brief Quality Score</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{formData.brief_quality} / 10</span>
+                </div>
+                <div className="w-full rounded-full h-2" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
                   <div 
-                    className="h-full rounded-full" 
+                    className="h-2 rounded-full" 
                     style={{ 
-                      backgroundColor: 'var(--accent-primary)', 
-                      width: '75%' 
+                      width: `${(formData.brief_quality / 10) * 100}%`,
+                      backgroundColor: 'var(--text-primary)'
                     }}
                   />
                 </div>
-                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  7.5 / 10
-                </span>
-              </div>
-              <div className="text-sm space-y-1">
-                <div style={{ color: 'var(--text-primary)' }}>
-                  <span className="font-medium">Strengths:</span> Technical requirements well defined
-                </div>
-                <div style={{ color: 'var(--text-primary)' }}>
-                  <span className="font-medium">Improve:</span> Add geographical scope and timeline constraints
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Generate Storyline Button */}
-          <div className="flex justify-end pt-4">
-            <button
-              onClick={handleGenerateStoryline}
-              disabled={isGenerating}
-              className="px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
-              style={{
-                backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--text-primary)',
-                color: 'var(--bg-primary)',
-                opacity: isGenerating ? 0.7 : 1,
-                cursor: isGenerating ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isGenerating && (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              )}
-              <span>{isGenerating ? 'Generating...' : 'Generate Storyline'}</span>
-            </button>
-          </div>
-        </div>
-        )}
-
-        {/* Storyline Tab */}
-        {activeTab === 'storyline' && (
-        <div className="space-y-4">
-          {generatedStoryline ? (
-            <div>
-              {/* Executive Summary */}
-              <div className="mb-6 p-4 rounded-lg border" style={{ borderColor: 'var(--border-primary)' }}>
-                <div className="flex items-center mb-3">
-                  <span className="text-sm font-bold mr-2 px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}>
-                    1/42
-                  </span>
-                  <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>Executive Summary</h3>
-                  <span className="ml-auto text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                    Final
-                  </span>
-                </div>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  This section provides a high-level overview of the CBDC strategy and key recommendations for financial institutions preparing for central bank digital currencies.
-                </p>
-              </div>
-
-              {/* Main Sections */}
-              {generatedStoryline.mainSections?.map((section, index) => (
-                <div key={index} className="mb-6 p-4 rounded-lg border" style={{ borderColor: 'var(--border-primary)' }}>
-                  <div className="flex items-center mb-3">
-                    <span className="text-sm font-bold mr-2 px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}>
-                      {index + 2}/42
-                    </span>
-                    <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>{section.title}</h3>
-                    <span className="ml-auto text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                      {index < 2 ? 'Draft' : 'Not Started'}
-                    </span>
-                  </div>
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {section.keyMessages?.[0] || 'Section content will be generated based on the storyline.'}
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm" style={{ color: 'var(--text-success)' }}>
+                    <strong>Strengths:</strong> {formData.strengths}
+                  </p>
+                  <p className="text-sm" style={{ color: 'var(--text-warning)' }}>
+                    <strong>Improve:</strong> {formData.improvements}
                   </p>
                 </div>
-              ))}
+              </div>
+
+              {/* Generate Storyline Button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleGenerateStoryline}
+                  disabled={isGeneratingStoryline}
+                  className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {isGeneratingStoryline ? 'Generating...' : 'Generate Storyline'}
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-                No storyline generated yet. Click "Generate Storyline" to create a structured outline.
-              </p>
-              <button
-                onClick={handleGenerateStoryline}
-                disabled={isGenerating}
-                className="px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2 mx-auto"
-                style={{
-                  backgroundColor: isGenerating ? 'var(--border-primary)' : 'var(--accent-primary)',
-                  color: 'white',
-                  opacity: isGenerating ? 0.7 : 1,
-                  cursor: isGenerating ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {isGenerating && (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                )}
-                <span>{isGenerating ? 'Generating...' : 'Generate Storyline'}</span>
-              </button>
+            <div className="p-6 h-full overflow-y-auto flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <p className="text-lg mb-2">No Content Available</p>
+                <p className="text-sm">Generate a storyline or switch to settings view</p>
+              </div>
             </div>
           )}
         </div>
-        )}
 
-        {/* Layout Tab */}
-        {activeTab === 'layout' && (
-        <div className="space-y-6">
-          <div className="text-center py-12">
-            <Layout className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-secondary)' }} />
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-              Layout Designer
-            </h3>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Visual layout and design tools for your deliverable will be available here.
-            </p>
-          </div>
-        </div>
-        )}
-
+        {/* Improve Brief Modal */}
+        <ImproveBriefModal
+          isOpen={showImproveBrief}
+          onClose={() => setShowImproveBrief(false)}
+          onSave={handleBriefSave}
+          currentBrief={formData.brief}
+          deliverable={selectedItem}
+          projectData={{}}
+        />
       </div>
     );
   }
 
-  if (contentType === 'storyline') {
-    return (
-      <div className="flex-1 p-2 flex flex-col min-h-0">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {selectedItem?.title || 'CBDC Strategy Presentation'}
-              {generatedStoryline && (
-                <span className="ml-2 px-2 py-1 rounded text-xs flex items-center space-x-1" style={{ 
-                  backgroundColor: 'var(--accent-primary)',
-                  color: 'white'
-                }}>
-                  <Sparkles className="h-3 w-3" />
-                  <span>AI Generated</span>
-                </span>
-              )}
-            </h1>
-            <div className="flex items-center space-x-2">
-              <button 
-                onClick={() => setShowStorylineGenerator(true)}
-                className="px-3 py-1.5 rounded transition-colors cursor-pointer flex items-center space-x-1"
-                style={{ 
-                  backgroundColor: 'var(--accent-primary)',
-                  color: 'white'
-                }}
-                onMouseEnter={(e) => e.target.style.opacity = '0.9'}
-                onMouseLeave={(e) => e.target.style.opacity = '1'}
-                title="Generate Storyline"
-              >
-                <Wand2 className="h-4 w-4" />
-                <span className="text-sm">Generate Storyline</span>
-              </button>
-              <button 
-                className="p-1 rounded transition-colors cursor-pointer"
-                style={{ 
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-secondary)'
-                }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                onClick={handleOpenDeliverableSettings}
-                title="Deliverable Settings"
-              >
-                <Settings className="h-5 w-5" />
-              </button>
-              {selectedItem && (
-                <button 
-                  className="p-1 rounded transition-colors cursor-pointer"
-                  style={{ 
-                    backgroundColor: 'transparent',
-                    color: selectedItem?.type === 'deliverable' ? 'var(--text-secondary)' : 'var(--text-secondary)',
-                    opacity: selectedItem?.type === 'deliverable' ? 1 : 0.5
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    confirmDelete();
-                  }}
-                  title={selectedItem?.type === 'deliverable' ? "Delete deliverable" : "Delete not available for this item type"}
-                >
-                  <Trash2 className="h-5 w-5" />
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* View Mode Selector */}
-          <div 
-            className="flex items-center rounded-lg p-1"
-            style={{ backgroundColor: 'var(--bg-secondary)' }}
-          >
-            {['Storyline', 'Detailed', 'Layout'].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode.toLowerCase())}
-                className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center space-x-1"
-                style={{
-                  backgroundColor: viewMode === mode.toLowerCase() ? 'var(--bg-primary)' : 'transparent',
-                  color: viewMode === mode.toLowerCase() ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  boxShadow: viewMode === mode.toLowerCase() ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none'
-                }}
-                onMouseEnter={(e) => {
-                  if (viewMode !== mode.toLowerCase()) {
-                    e.target.style.color = 'var(--text-primary)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (viewMode !== mode.toLowerCase()) {
-                    e.target.style.color = 'var(--text-secondary)';
-                  }
-                }}
-              >
-                <span>{mode}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Content based on view mode */}
-        <div className="flex-1 overflow-y-auto">
-          {viewMode === 'storyline' && (
-            <div className="space-y-4">
-              {storylineSections.map((section, index) => (
-                <div 
-                  key={section.id} 
-                  className="border rounded-lg p-4 transition-shadow"
-                  style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    borderColor: 'var(--border-secondary)'
-                  }}
-                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
-                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3 flex-1">
-                      <span className="text-sm font-medium mt-1" style={{ color: 'var(--text-secondary)' }}>
-                        {section.id}/{storylineSections.length}
-                      </span>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {section.title}
-                          </h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(section.status)}`}>
-                            {section.status}
-                          </span>
-                        </div>
-                        <p className="text-sm leading-relaxed mb-2" style={{ color: 'var(--text-secondary)' }}>
-                          {section.description}
-                        </p>
-                        {section.sources && section.sources.length > 0 && (
-                          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            Sources: {section.sources.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-1 ml-4">
-                      <button 
-                        className="p-1.5 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                      <button 
-                        className="p-1.5 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                      >
-                        <Lock className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {viewMode === 'detailed' && (
-            <div className="space-y-4">
-              {storylineSections.map((section, index) => (
-                <div 
-                  key={section.id} 
-                  className="border rounded-lg p-6 transition-shadow"
-                  style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    borderColor: 'var(--border-secondary)'
-                  }}
-                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
-                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-start space-x-4 flex-1">
-                      <div className="flex-shrink-0">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{ 
-                          backgroundColor: 'var(--accent-primary)', 
-                          color: 'white' 
-                        }}>
-                          {section.id}
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            {section.title}
-                          </h3>
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(section.status)}`}>
-                            {section.status}
-                          </span>
-                        </div>
-                        <p className="text-base leading-relaxed mb-4" style={{ color: 'var(--text-secondary)' }}>
-                          {section.description}
-                        </p>
-                        
-                        {/* Detailed content */}
-                        <div className="space-y-4">
-                          <div>
-                            <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                              Key Points
-                            </h4>
-                            <ul className="space-y-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                              <li>• Strategic analysis of current market conditions</li>
-                              <li>• Implementation roadmap with key milestones</li>
-                              <li>• Risk assessment and mitigation strategies</li>
-                              <li>• Expected outcomes and success metrics</li>
-                            </ul>
-                          </div>
-                          
-                          {section.sources && section.sources.length > 0 && (
-                            <div>
-                              <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                                Sources & References
-                              </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {section.sources.map((source, idx) => (
-                                  <span 
-                                    key={idx}
-                                    className="px-2 py-1 rounded text-xs" 
-                                    style={{ 
-                                      backgroundColor: 'var(--bg-secondary)', 
-                                      color: 'var(--text-secondary)' 
-                                    }}
-                                  >
-                                    Source {source}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          <div>
-                            <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                              Estimated Slides
-                            </h4>
-                            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                              {section.estimatedSlides || 5} slides • ~{(section.estimatedSlides || 5) * 2} minutes
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 ml-4">
-                      <button 
-                        className="p-2 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                        title="Edit section"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                      </button>
-                      <button 
-                        className="p-2 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                        title="More options"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {viewMode === 'layout' && (
-            <div className="space-y-4">
-              {storylineSections.map((section, index) => (
-                <div 
-                  key={section.id} 
-                  className="border rounded-lg p-4 transition-shadow"
-                  style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    borderColor: 'var(--border-secondary)'
-                  }}
-                  onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
-                  onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-start space-x-3 flex-1">
-                      <div className="flex-shrink-0">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{ 
-                          backgroundColor: 'var(--accent-primary)', 
-                          color: 'white' 
-                        }}>
-                          {section.id}
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                          {section.title}
-                        </h3>
-                        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-                          {section.description}
-                        </p>
-                        
-                        {/* Layout options */}
-                        <div>
-                          <h4 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                            Layout Options
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {['Timeline Layout', 'Process Flow', 'Market Map', 'Comparison Table', 'Infographic', 'Data Visualization'].map((layout, idx) => (
-                              <div 
-                                key={idx}
-                                className="border rounded-lg p-3 cursor-pointer transition-all hover:shadow-md"
-                                style={{
-                                  backgroundColor: 'var(--bg-secondary)',
-                                  borderColor: 'var(--border-primary)'
-                                }}
-                                onMouseEnter={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
-                                onMouseLeave={(e) => e.target.style.borderColor = 'var(--border-primary)'}
-                              >
-                                <div className="flex items-center space-x-2">
-                                  <Layout className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
-                                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                    {layout}
-                                  </span>
-                                </div>
-                                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                                  {layout === 'Timeline Layout' && 'Chronological progression of events'}
-                                  {layout === 'Process Flow' && 'Step-by-step workflow visualization'}
-                                  {layout === 'Market Map' && 'Market landscape and positioning'}
-                                  {layout === 'Comparison Table' && 'Side-by-side feature comparison'}
-                                  {layout === 'Infographic' && 'Visual data representation'}
-                                  {layout === 'Data Visualization' && 'Charts and graphs for data'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 ml-4">
-                      <button 
-                        className="p-2 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                        title="Preview layout"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button 
-                        className="p-2 rounded transition-colors"
-                        style={{ 
-                          backgroundColor: 'transparent',
-                          color: 'var(--text-secondary)'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                        title="More options"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (contentType === 'design') {
-    return (
-      <div className="flex-1 p-2 flex flex-col min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Theme Toggle at top */}
-          <div className="flex justify-end mb-4">
-          </div>
-          
-          {/* Header */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {selectedItem?.title || 'AI Design Generator'}
-                {generatedDesign && (
-                  <span className="ml-2 px-2 py-1 rounded text-xs flex items-center space-x-1" style={{ 
-                    backgroundColor: 'var(--accent-primary)',
-                    color: 'white'
-                  }}>
-                    <Sparkles className="h-3 w-3" />
-                    <span>AI Generated</span>
-                  </span>
-                )}
-              </h1>
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={() => setShowDesignGenerator(true)}
-                  className="px-3 py-1.5 rounded transition-colors cursor-pointer flex items-center space-x-1"
-                  style={{ 
-                    backgroundColor: 'var(--accent-primary)',
-                    color: 'white'
-                  }}
-                  onMouseEnter={(e) => e.target.style.opacity = '0.9'}
-                  onMouseLeave={(e) => e.target.style.opacity = '1'}
-                  title="Generate AI Design (Ctrl+K)"
-                >
-                  <Wand2 className="h-4 w-4" />
-                  <span className="text-sm">Generate AI Design</span>
-                  <span className="text-xs opacity-70 ml-1">⌘K</span>
-                </button>
-                {generatedDesign && (
-                  <button 
-                    onClick={handleResetDesign}
-                    className="p-1.5 rounded transition-colors cursor-pointer"
-                    style={{ 
-                      backgroundColor: 'transparent',
-                      color: 'var(--text-secondary)'
-                    }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                    title="Reset design (Ctrl+R)"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </button>
-                )}
-                <button 
-                  className="p-1 rounded transition-colors cursor-pointer"
-                  style={{ 
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-secondary)'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                >
-                  <Settings className="h-5 w-5" />
-                </button>
-                {/* Show delete button when item is selected */}
-                {selectedItem && (
-                  <button 
-                    className="p-1 rounded transition-colors cursor-pointer"
-                    style={{ 
-                      backgroundColor: 'transparent',
-                      color: selectedItem?.type === 'deliverable' ? 'var(--text-secondary)' : 'var(--text-secondary)',
-                      opacity: selectedItem?.type === 'deliverable' ? 1 : 0.5
-                    }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      confirmDelete();
-                    }}
-                    title={selectedItem?.type === 'deliverable' ? "Delete deliverable" : "Delete not available for this item type"}
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              {/* Design Generation Section Header */}
-              <div className="flex items-center space-x-2">
-                <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                <span className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
-                  AI Design Generator
-                </span>
-              </div>
-              
-              {/* View Mode Selector */}
-              <div 
-                className="flex items-center rounded-lg p-1"
-                style={{ backgroundColor: 'var(--bg-secondary)' }}
-              >
-                {['overview', 'brief', 'standard', 'full', 'layout'].map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center space-x-1"
-                    style={{
-                      backgroundColor: viewMode === mode ? 'var(--bg-primary)' : 'transparent',
-                      color: viewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      boxShadow: viewMode === mode ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (viewMode !== mode) {
-                        e.target.style.color = 'var(--text-primary)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (viewMode !== mode) {
-                        e.target.style.color = 'var(--text-secondary)';
-                      }
-                    }}
-                  >
-                    <div 
-                      className="w-2 h-2 rounded-full"
-                      style={{
-                        backgroundColor: viewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)'
-                      }}
-                    />
-                    <span>{mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* AI Generated Design Summary */}
-          {generatedDesign && (
-            <div 
-              className="mb-6 p-4 rounded-lg border" 
-              style={{ 
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--accent-primary)',
-                borderWidth: '2px'
-              }}
-            >
-              <div className="flex items-center space-x-2 mb-3">
-                <Sparkles className="h-5 w-5" style={{ color: 'var(--accent-primary)' }} />
-                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  AI Generated Design
-                </h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Design Prompt
-                  </label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{generatedDesign.prompt}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Design Type
-                  </label>
-                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.designType}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Target Device
-                  </label>
-                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.device}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Design Style
-                  </label>
-                  <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{generatedDesign.style}</p>
-                </div>
-              </div>
-              {generatedDesign.design?.layout && (
-                <div className="mt-4">
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Layout Structure
-                  </label>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                    {generatedDesign.design.layout.structure} with {generatedDesign.design.layout.areas?.join(', ')}
-                  </p>
-                </div>
-              )}
-              <div className="flex items-center justify-between mt-4 pt-3 border-t" style={{ borderColor: 'var(--border-secondary)' }}>
-                <div className="flex items-center space-x-4">
-                  <span className="text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'var(--bg-tertiary)',
-                    color: 'var(--text-primary)'
-                  }}>
-                    {generatedDesign.design?.components?.length || 0} Components
-                  </span>
-                  <span className="text-xs px-2 py-1 rounded" style={{ 
-                    backgroundColor: 'var(--bg-tertiary)',
-                    color: 'var(--text-primary)'
-                  }}>
-                    {generatedDesign.variations || 3} Variations
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button 
-                    className="text-xs px-3 py-1 rounded transition-colors flex items-center space-x-1"
-                    style={{ 
-                      backgroundColor: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)'
-                    }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
-                  >
-                    <Download className="h-3 w-3" />
-                    <span>Export</span>
-                  </button>
-                  <button 
-                    className="text-xs px-3 py-1 rounded transition-colors flex items-center space-x-1"
-                    style={{ 
-                      backgroundColor: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)'
-                    }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
-                  >
-                    <Save className="h-3 w-3" />
-                    <span>Save Template</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Brief Content */}
-          {viewMode === 'brief' && (
-            <div 
-              className="mb-6 p-4 rounded-lg border" 
-              style={{ 
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-primary)' 
-              }}
-            >
-              <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-                Project Brief
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Client
-                  </label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>Global Banking Corp</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Project
-                  </label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>CBDC Implementation Strategy</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Objective
-                  </label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                    Develop a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) solutions in the financial services sector.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Collapsible Sections */}
-          <div className="space-y-4 flex-1 overflow-y-auto">
-
-
-            {/* Design Generation Section */}
-            <div className="border rounded-lg" style={{ borderColor: 'var(--border-primary)' }}>
-              <div 
-                className="flex items-center justify-between p-4 cursor-pointer"
-                onClick={() => toggleSection('design')}
-                style={{ backgroundColor: 'var(--bg-secondary)' }}
-              >
-                <div className="flex items-center space-x-2">
-                  {expandedSections.design ? (
-                    <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                  ) : (
-                    <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                  )}
-                  <Layout className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Design Components</span>
-                </div>
-              </div>
-              
-              {expandedSections.design && (
-                <div className="space-y-3" style={{ backgroundColor: 'var(--bg-primary)' }}>
-                  {designSections.map((section, index) => (
-                    <div 
-                      key={section.id} 
-                      className="border rounded-lg p-4 transition-shadow"
-                      style={{
-                        backgroundColor: 'var(--bg-primary)',
-                        borderColor: 'var(--border-secondary)'
-                      }}
-                      onMouseEnter={(e) => e.target.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}
-                      onMouseLeave={(e) => e.target.style.boxShadow = 'none'}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3 flex-1">
-                          <span className="text-sm font-medium mt-1" style={{ color: 'var(--text-secondary)' }}>
-                            {section.id}/{designSections.length}
-                          </span>
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {section.title}
-                              </h3>
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(section.status)}`}>
-                                {section.status}
-                              </span>
-                            </div>
-                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                              {section.description}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-1 ml-4">
-                          <button 
-                            className="p-1.5 rounded transition-colors"
-                            style={{ 
-                              backgroundColor: 'transparent',
-                              color: 'var(--text-secondary)'
-                            }}
-                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-                          <button 
-                            className="p-1.5 rounded transition-colors"
-                            style={{ 
-                              backgroundColor: 'transparent',
-                              color: 'var(--text-secondary)'
-                            }}
-                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                          <button 
-                            className="p-1.5 rounded transition-colors"
-                            style={{ 
-                              backgroundColor: 'transparent',
-                              color: 'var(--text-secondary)'
-                            }}
-                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                          >
-                            <Lock className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Content Blocks */}
-                      {section.blocks && section.blocks.length > 0 && (
-                        <div className="mt-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                              Content Layouts
-                            </h4>
-                            <button 
-                              className="text-xs px-2 py-1 rounded transition-colors flex items-center space-x-1"
-                              style={{ 
-                                backgroundColor: 'var(--bg-tertiary)',
-                                color: 'var(--text-secondary)'
-                              }}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
-                            >
-                              <PlusCircle className="h-3 w-3" />
-                              <span>Add Layout</span>
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {section.blocks.map((block, blockIndex) => (
-                              <div 
-                                key={blockIndex} 
-                                className="p-3 border rounded cursor-pointer transition-all hover:shadow-sm group" 
-                                style={{ 
-                                  backgroundColor: 'var(--bg-secondary)',
-                                  borderColor: 'var(--border-secondary)'
-                                }}
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center space-x-2">
-                                    <Layout className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                                    <h5 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                      {block.type}
-                                    </h5>
-                                  </div>
-                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
-                                    <button className="p-1 rounded hover:bg-gray-100">
-                                      <Edit3 className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                                    </button>
-                                    <button className="p-1 rounded hover:bg-gray-100">
-                                      <Copy className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                                    </button>
-                                  </div>
-                                </div>
-                                
-                                {block.items && block.items.length > 0 ? (
-                                  <div className="space-y-1">
-                                    {block.items.map((item, itemIndex) => (
-                                      <div key={itemIndex} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        • {item}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="text-xs italic" style={{ color: 'var(--text-secondary)' }}>
-                                    Click to configure layout
-                                  </div>
-                                )}
-                                
-                                {/* Layout preview indicator */}
-                                <div className="mt-2 flex items-center justify-between">
-                                  <div className="flex space-x-1">
-                                    {[1, 2, 3].map((dot, dotIndex) => (
-                                      <div 
-                                        key={dotIndex}
-                                        className="w-1.5 h-1.5 rounded-full"
-                                        style={{ 
-                                          backgroundColor: dotIndex < (block.items?.length || 1) ? 'var(--accent-primary)' : 'var(--border-secondary)'
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                    {section.estimatedSlides || Math.ceil(Math.random() * 3) + 2} slides
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                            
-                            {/* Add new layout option */}
-                            <div 
-                              className="p-3 border-2 border-dashed rounded cursor-pointer transition-all hover:border-solid flex flex-col items-center justify-center min-h-[100px]" 
-                              style={{ 
-                                borderColor: 'var(--border-secondary)',
-                                backgroundColor: 'var(--bg-primary)'
-                              }}
-                            >
-                              <PlusCircle className="h-6 w-6 mb-2" style={{ color: 'var(--text-secondary)' }} />
-                              <span className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
-                                Add Content Layout
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Deliverable Metrics */}
-              <div className="mt-8">
-                <DeliverableMetrics 
-                  metrics={{
-                    pages_count: 45,
-                    word_count: 12500,
-                    reading_time_minutes: 50,
-                    file_size_mb: 2.8,
-                    views_count: 23,
-                    download_count: 8,
-                    last_viewed: '2024-01-15T14:30:00Z',
-                    completion_percentage: 75
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (contentType === 'document') {
-    return (
-      <div className="flex-1 p-2 flex flex-col min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Theme Toggle at top */}
-          <div className="flex justify-end mb-4">
-          </div>
-          
-          {/* Document Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-                {documentContent.title}
-              </h1>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {documentContent.author}
-              </p>
-            </div>
-            
-            {/* Pagination */}
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handlePageChange('prev')}
-                  disabled={currentPage <= 1}
-                  className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => handlePageChange('next')}
-                  disabled={currentPage >= totalPages}
-                  className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-              <button className="p-2 rounded hover:bg-gray-100">
-                <Search className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Document Content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-4xl mx-auto space-y-8">
-              {/* Executive Summary */}
-              <section>
-                <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-                  {documentContent.content.executiveSummary.title}
-                </h2>
-                {documentContent.content.executiveSummary.paragraphs.map((paragraph, index) => (
-                  <p key={index} className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    {paragraph}
-                  </p>
-                ))}
-              </section>
-
-              {/* Key Finding */}
-              <section>
-                <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-                  {documentContent.content.keyFinding.title}
-                </h2>
-                <p className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                  {documentContent.content.keyFinding.description}
-                </p>
-                
-                <div className="mb-4">
-                  <h3 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-                    Phased Timeline:
-                  </h3>
-                  <ul className="space-y-2">
-                    {documentContent.content.keyFinding.phases.map((phase, index) => (
-                      <li key={index} className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        • {phase}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                  {documentContent.content.keyFinding.conclusion}
-                </p>
-              </section>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
+  // Default fallback
   return (
-    <>
-      {/* Simple delete confirmation dialog */}
-      {showDeleteConfirm ? (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center" 
-          style={{ zIndex: 99999 }}
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div 
-            className="rounded-lg p-6 max-w-md w-full mx-4" 
-            style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-primary)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="p-2 rounded-full" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
-                <Trash2 className="h-6 w-6" style={{ color: 'var(--text-error)' }} />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Delete Deliverable
-                </h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  This action cannot be undone
-                </p>
-              </div>
-            </div>
-            
-            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Are you sure you want to delete "<strong style={{ color: 'var(--text-primary)' }}>{selectedItem?.title}</strong>"? 
-              This will permanently remove the deliverable and all its content.
-            </p>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 rounded-md border transition-colors"
-                style={{ 
-                  borderColor: 'var(--border-primary)',
-                  color: 'var(--text-primary)',
-                  backgroundColor: 'transparent'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = 'var(--bg-tertiary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = 'transparent';
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteDeliverable}
-                className="px-4 py-2 rounded-md transition-colors"
-                style={{ 
-                  backgroundColor: 'var(--text-error)',
-                  color: 'white'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.opacity = '0.9';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.opacity = '1';
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* AI Design Generator Modal */}
-      <DesignGenerator 
-        isOpen={showDesignGenerator}
-        onClose={() => setShowDesignGenerator(false)}
-        onGenerate={handleDesignGenerate}
-      />
-
-      {/* Storyline Generation Modal */}
-      <StorylineGenerationForm
-        isOpen={showStorylineGenerator}
-        onClose={() => setShowStorylineGenerator(false)}
-        onGenerate={handleStorylineGenerate}
-        isGenerating={isGenerating}
-      />
-
-      {/* Chat Toggle Button */}
-      <button 
-        onClick={() => setShowChat(!showChat)}
-        className={`fixed bottom-6 right-6 z-40 px-6 py-3 rounded-full shadow-lg transition-all duration-300 ${
-          showChat 
-            ? 'bg-red-600 hover:bg-red-700 text-white' 
-            : 'bg-blue-600 hover:bg-blue-700 text-white'
-        }`}
-        style={{
-          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          transform: showChat ? 'scale(0.95)' : 'scale(1)'
-        }}
-      >
-        <div className="flex items-center space-x-2">
-          <MessageCircle className="h-5 w-5" />
-          <span className="font-medium">
-            {showChat ? 'Close Chat' : 'AI Assistant'}
-          </span>
-        </div>
-      </button>
-      
-      {/* Context-Aware Chat */}
-      <CignoContextAwareChat
-        isOpen={showChat}
-        onClose={() => setShowChat(false)}
-        selectedItem={selectedItem}
-        contentType={getContentType()}
-      />
-      
-      {/* Return null if no content to show */}
-      {null}
-    </>
+    <div className="flex-1 flex items-center justify-center bg-gray-50">
+      <div className="text-center text-gray-500">
+        <p className="text-lg mb-2">Unsupported item type</p>
+        <p className="text-sm">Item type: {selectedItem?.type}</p>
+      </div>
+    </div>
   );
 }

@@ -7,6 +7,9 @@ import {
   createErrorResponse, 
   createValidationError 
 } from '../../../../lib/api/errors.js';
+import Storyline from '../../../../lib/models/Storyline.js';
+import Deliverable from '../../../../lib/models/Deliverable.js';
+import dbConnect from '../../../../lib/db/mongoose.js';
 
 const chatService = new ChatService();
 const backendProvider = new BackendProvider({
@@ -39,6 +42,7 @@ async function initializeAIProvider() {
 // POST /api/storyline/generate - Generate AI storyline
 export async function POST(request) {
   try {
+    await dbConnect();
     await initializeAIProvider();
     
     const body = await request.json();
@@ -49,13 +53,27 @@ export async function POST(request) {
       objectives, 
       sectionsCount = 6,
       presentationStyle = 'consulting',
-      complexity = 'intermediate'
+      complexity = 'intermediate',
+      deliverableId,
+      userId = null // For now, will be replaced with actual user authentication
     } = body;
 
     // Validate required fields
     if (!topic || typeof topic !== 'string') {
       const errorResponse = createValidationError(['Topic is required and must be a string'], 'topic');
       return NextResponse.json(errorResponse, { status: 400 });
+    }
+
+    if (!deliverableId) {
+      const errorResponse = createValidationError(['Deliverable ID is required'], 'deliverableId');
+      return NextResponse.json(errorResponse, { status: 400 });
+    }
+
+    // Verify deliverable exists
+    const deliverable = await Deliverable.findById(deliverableId);
+    if (!deliverable) {
+      const errorResponse = createErrorResponse('NOT_FOUND', 'Deliverable not found');
+      return NextResponse.json(errorResponse, { status: 404 });
     }
 
     // Generate storyline using AI or fallback to intelligent mock generation
@@ -94,7 +112,61 @@ export async function POST(request) {
       });
     }
 
+    // Create or update storyline in database
+    const storylineDoc = {
+      deliverable: deliverableId,
+      title: `${topic} Storyline`,
+      executiveSummary: storylineData.executiveSummary,
+      presentationFlow: storylineData.presentationFlow,
+      callToAction: storylineData.callToAction,
+      sections: storylineData.sections?.map((section, index) => ({
+        id: section.id || `section_${index + 1}`,
+        title: section.title,
+        description: section.description || '',
+        status: section.status || 'not_started',
+        order: index,
+        keyPoints: section.keyPoints || [],
+        contentBlocks: section.contentBlocks || [{
+          type: 'Content Block',
+          items: []
+        }],
+        estimatedSlides: section.estimatedSlides || 3,
+        locked: false,
+        created_at: new Date(),
+        updated_at: new Date()
+      })) || [],
+      topic,
+      industry,
+      audience: Array.isArray(audience) ? audience : [audience].filter(Boolean),
+      objectives,
+      presentationStyle,
+      complexity,
+      generationSource: 'ai',
+      aiPrompt: createStorylinePrompt({
+        topic, industry, audience, objectives, sectionsCount, presentationStyle, complexity
+      }),
+      created_by: userId || deliverable.created_by, // Use deliverable creator if no user provided
+      updated_by: userId || deliverable.created_by,
+      is_active: true
+    };
+
+    // Check if storyline already exists for this deliverable
+    let savedStoryline = await Storyline.findOne({ deliverable: deliverableId });
+    
+    if (savedStoryline) {
+      // Update existing storyline
+      Object.assign(savedStoryline, storylineDoc);
+      savedStoryline.version = incrementVersion(savedStoryline.version);
+      await savedStoryline.save();
+    } else {
+      // Create new storyline
+      savedStoryline = new Storyline(storylineDoc);
+      await savedStoryline.save();
+    }
+
     const responseData = {
+      storylineId: savedStoryline._id,
+      deliverableId,
       topic,
       industry,
       audience,
@@ -102,11 +174,13 @@ export async function POST(request) {
       presentationStyle,
       complexity,
       storyline: storylineData,
-      generatedAt: new Date().toISOString(),
-      sectionsCount: storylineData.sections?.length || sectionsCount
+      generatedAt: savedStoryline.generatedAt,
+      sectionsCount: savedStoryline.totalSections,
+      version: savedStoryline.version,
+      status: savedStoryline.status
     };
 
-    return NextResponse.json(createSuccessResponse(responseData, 'Storyline generated successfully'));
+    return NextResponse.json(createSuccessResponse(responseData, 'Storyline generated and saved successfully'));
 
   } catch (error) {
     console.error('Storyline generation error:', error);
@@ -426,4 +500,14 @@ function generateFallbackStoryline() {
     presentationStyle: 'consulting',
     complexity: 'intermediate'
   });
+}
+
+function incrementVersion(currentVersion) {
+  if (!currentVersion) return '1.0';
+  
+  const parts = currentVersion.split('.');
+  const major = parseInt(parts[0]) || 1;
+  const minor = parseInt(parts[1]) || 0;
+  
+  return `${major}.${minor + 1}`;
 }

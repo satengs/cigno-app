@@ -254,8 +254,27 @@ export default function CreateDeliverableModal({
       title={editItem ? "Edit Deliverable" : "Create New Deliverable"}
       subtitle={editItem ? "Update deliverable information" : "These fields are pre-populated from project documents"}
       size="lg"
+      footer={
+        <div className="flex justify-end space-x-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="deliverable-form"
+            disabled={loading || !formData.name.trim()}
+          >
+            {loading ? (editItem ? 'Updating...' : 'Creating...') : (editItem ? 'Update Deliverable' : 'Create Deliverable')}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form id="deliverable-form" onSubmit={handleSubmit} className="space-y-6">
         {/* Name Field */}
         <div>
           <Input
@@ -295,11 +314,41 @@ export default function CreateDeliverableModal({
                   key={option.value}
                   type="button"
                   onClick={() => handleInputChange('format', option.value)}
-                  className={`px-4 py-2 rounded-lg border-2 transition-colors ${
-                    formData.format === option.value 
-                      ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                  }`}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '2px solid',
+                    fontSize: '14px',
+                    fontWeight: formData.format === option.value ? 'bold' : 'normal',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    backgroundColor: formData.format === option.value ? '#059669' : '#ffffff',
+                    borderColor: formData.format === option.value ? '#059669' : '#374151',
+                    color: formData.format === option.value ? '#ffffff' : '#111827',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    textDecoration: 'none',
+                    fontFamily: 'inherit',
+                    lineHeight: '1.5',
+                    textAlign: 'center',
+                    verticalAlign: 'middle',
+                    userSelect: 'none',
+                    WebkitAppearance: 'none',
+                    MozAppearance: 'none',
+                    appearance: 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (formData.format !== option.value) {
+                      e.target.style.borderColor = '#059669';
+                      e.target.style.backgroundColor = '#f0fdf4';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (formData.format !== option.value) {
+                      e.target.style.borderColor = '#374151';
+                      e.target.style.backgroundColor = '#ffffff';
+                    }
+                  }}
                 >
                   {option.label}
                 </button>
@@ -396,24 +445,6 @@ export default function CreateDeliverableModal({
         {errors.general && (
           <div className="text-red-600 text-sm">{errors.general}</div>
         )}
-
-        {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={loading || !formData.name.trim()}
-          >
-            {loading ? (editItem ? 'Updating...' : 'Creating...') : (editItem ? 'Update Deliverable' : 'Create Deliverable')}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

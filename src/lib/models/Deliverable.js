@@ -153,45 +153,56 @@ deliverableSchema.index({ type: 1 });
 deliverableSchema.index({ priority: 1 });
 deliverableSchema.index({ is_active: 1 });
 
-// Static method to find active deliverables
-deliverableSchema.statics.findActive = function() {
-  return this.find({ is_active: true });
-};
+// Only add methods and virtuals if schema isn't already compiled
+if (!mongoose.models.Deliverable) {
+  // Static method to find active deliverables
+  deliverableSchema.statics.findActive = function() {
+    return this.find({ is_active: true });
+  };
 
-// Virtual for assigned users count
-deliverableSchema.virtual('assignedUsersCount').get(function() {
-  return this.assigned_to ? this.assigned_to.length : 0;
-});
+  // Virtual for assigned users count
+  deliverableSchema.virtual('assignedUsersCount').get(function() {
+    return this.assigned_to ? this.assigned_to.length : 0;
+  });
 
-// Pre-save middleware to update updated_at
-deliverableSchema.pre('save', function(next) {
-  this.updated_at = new Date();
-  next();
-});
+  // Virtual for storyline
+  deliverableSchema.virtual('storyline', {
+    ref: 'Storyline',
+    localField: '_id',
+    foreignField: 'deliverable',
+    justOne: true
+  });
 
-// Instance method to assign user
-deliverableSchema.methods.assignUser = function(userId) {
-  if (!this.assigned_to.includes(userId)) {
-    this.assigned_to.push(userId);
+  // Pre-save middleware to update updated_at
+  deliverableSchema.pre('save', function(next) {
+    this.updated_at = new Date();
+    next();
+  });
+
+  // Instance method to assign user
+  deliverableSchema.methods.assignUser = function(userId) {
+    if (!this.assigned_to.includes(userId)) {
+      this.assigned_to.push(userId);
+      return this.save();
+    }
+    return Promise.resolve(this);
+  };
+
+  // Instance method to unassign user
+  deliverableSchema.methods.unassignUser = function(userId) {
+    this.assigned_to = this.assigned_to.filter(id => !id.equals(userId));
     return this.save();
-  }
-  return Promise.resolve(this);
-};
+  };
 
-// Instance method to unassign user
-deliverableSchema.methods.unassignUser = function(userId) {
-  this.assigned_to = this.assigned_to.filter(id => !id.equals(userId));
-  return this.save();
-};
-
-// Instance method to update status
-deliverableSchema.methods.updateStatus = function(status) {
-  this.status = status;
-  if (status === 'delivered') {
-    this.delivered_date = new Date();
-  }
-  return this.save();
-};
+  // Instance method to update status
+  deliverableSchema.methods.updateStatus = function(status) {
+    this.status = status;
+    if (status === 'delivered') {
+      this.delivered_date = new Date();
+    }
+    return this.save();
+  };
+}
 
 // Check if model is already compiled
 const Deliverable = mongoose.models.Deliverable || mongoose.model('Deliverable', deliverableSchema);
