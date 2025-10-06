@@ -39,18 +39,25 @@ export default class BackendProvider extends AIProvider {
       }
 
       // Test backend connectivity
-      await this.testConnection();
+      const connectionResult = await this.testConnection();
       
-      this.isInitialized = true;
-      this.lastError = null;
-      return true;
+      if (connectionResult) {
+        this.isInitialized = true;
+        this.lastError = null;
+        console.log('✅ Backend AI provider initialized successfully');
+        return true;
+      } else {
+        throw new Error('Backend connection test failed');
+      }
     } catch (error) {
       this.lastError = {
         message: error.message,
         timestamp: new Date().toISOString(),
-        type: 'initialization'
+        type: 'initialization',
+        userMessage: 'AI backend service is currently unavailable. Using offline mode with intelligent responses.'
       };
       this.isInitialized = false;
+      console.warn('⚠️ Backend AI provider initialization failed - operating in offline mode');
       return false;
     }
   }
@@ -162,8 +169,14 @@ export default class BackendProvider extends AIProvider {
         throw new Error(`Backend send API error (${sendResponse.status}): ${errorText}`);
       }
 
-      const sendData = await sendResponse.json();
-      console.log('📥 Send response:', sendData);
+      let sendData;
+      try {
+        sendData = await sendResponse.json();
+        console.log('📥 Send response:', sendData);
+      } catch (parseError) {
+        console.error('❌ Failed to parse backend response as JSON:', parseError.message);
+        throw new Error(`Backend returned invalid JSON response: ${parseError.message}`);
+      }
 
       if (!sendData.requestId) {
         throw new Error('Backend did not return requestId');
@@ -207,8 +220,14 @@ export default class BackendProvider extends AIProvider {
           throw new Error(`Status check failed (${statusResponse.status})`);
         }
 
-        const statusData = await statusResponse.json();
-        console.log(`📊 Poll ${pollCount + 1}: ${statusData.status} (${statusData.progress || 0})`);
+        let statusData;
+        try {
+          statusData = await statusResponse.json();
+          console.log(`📊 Poll ${pollCount + 1}: ${statusData.status} (${statusData.progress || 0})`);
+        } catch (parseError) {
+          console.error('❌ Failed to parse status response as JSON:', parseError.message);
+          throw new Error(`Backend status endpoint returned invalid JSON: ${parseError.message}`);
+        }
 
         if (statusData.status === 'complete') {
           console.log('✅ Response ready, full data:', JSON.stringify(statusData, null, 2));
@@ -386,13 +405,20 @@ export default class BackendProvider extends AIProvider {
       const verifyUrl = `${this.backendUrl}/api/verify`;
       console.log(`   API verification URL: ${verifyUrl}`);
       
+      // Add timeout for connection test
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
       const verifyResponse = await fetch(verifyUrl, {
         method: 'GET',
         headers: {
           'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       if (verifyResponse.ok) {
         const verifyData = await verifyResponse.json();
@@ -429,10 +455,31 @@ export default class BackendProvider extends AIProvider {
       throw new Error(`Send endpoint not found (${testResponse.status})`);
       
     } catch (error) {
-      console.warn('❌ Backend connection test failed:', error.message);
+      let errorReason = 'Unknown error';
+      
+      if (error.name === 'AbortError') {
+        errorReason = 'Connection timeout (5s)';
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        errorReason = 'Service unavailable';
+      } else if (error.message.includes('fetch')) {
+        errorReason = 'Network error';
+      } else {
+        errorReason = error.message;
+      }
+      
+      console.warn('❌ Backend connection test failed:', errorReason);
+      console.warn(`   Service URL: ${this.backendUrl}`);
       console.warn(`   Send endpoint: ${this.backendUrl}${this.endpoint}`);
       console.warn(`   Verify endpoint: ${this.backendUrl}/api/verify`);
-      console.warn('   Falling back to mock responses');
+      console.warn('   ℹ️ Application will continue in offline mode with intelligent fallback responses');
+      
+      // Store detailed error information
+      this.lastError = {
+        message: errorReason,
+        timestamp: new Date().toISOString(),
+        type: 'connection_test',
+        userMessage: `Backend AI service is unavailable (${errorReason}). Using offline mode.`
+      };
       
       // Return false to indicate backend is not available
       return false;

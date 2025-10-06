@@ -55,11 +55,15 @@ export default class ChatService {
           assistantMessage = this.generateIntelligentMockResponse(userMessage);
         }
       } else {
-        console.log('🎭 Fallback to mock response (AI provider not available)');
-        console.log('   AI Provider:', this.aiProvider ? 'exists' : 'null');
-        console.log('   Is Available:', this.aiProvider ? this.aiProvider.isAvailable() : 'N/A');
-        // Fallback to mock response
-        assistantMessage = this.generateIntelligentMockResponse(userMessage);
+        console.log('🎭 Operating in offline mode (AI backend unavailable)');
+        if (this.aiProvider && this.aiProvider.getLastError) {
+          const lastError = this.aiProvider.getLastError();
+          if (lastError && lastError.userMessage) {
+            console.log('ℹ️ Offline reason:', lastError.userMessage);
+          }
+        }
+        // Fallback to intelligent mock response with offline indicator
+        assistantMessage = `🔄 **Operating in Offline Mode**\n\n${this.generateIntelligentMockResponse(userMessage)}\n\n---\n*Note: AI backend is currently unavailable. Responses are generated using intelligent fallback logic.*`;
       }
 
       // Add assistant message to conversation

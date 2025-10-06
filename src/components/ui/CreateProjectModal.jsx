@@ -15,7 +15,9 @@ export default function CreateProjectModal({
   editItem = null,
   onBack = null,
   isAIGenerated = false,
-  prefilledData = null
+  prefilledData = null,
+  availableUsers = [],
+  submitDirect = true
 }) {
   const [formData, setFormData] = useState({
     name: '',
@@ -28,7 +30,8 @@ export default function CreateProjectModal({
     budget_amount: 0,
     budget_currency: 'USD',
     budget_type: 'Fixed',
-    client: clientId || ''
+    client: clientId || '',
+    organisation: ''
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -38,14 +41,15 @@ export default function CreateProjectModal({
     { name: 'Implementation Roadmap', type: 'Strategy' }
   ]);
   const [keyPersons, setKeyPersons] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState(availableUsers);
   const [loadingKeyPersons, setLoadingKeyPersons] = useState(false);
 
   // Dynamic data population based on edit mode or AI generation
   useEffect(() => {
     if (editItem) {
       // This is actual edit mode
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         name: editItem.name || '',
         description: editItem.description || '',
         status: editItem.status || 'Planning',
@@ -56,14 +60,16 @@ export default function CreateProjectModal({
         budget_amount: editItem.budget_amount || 0,
         budget_currency: editItem.budget_currency || 'USD',
         budget_type: editItem.budget_type || 'Fixed',
-        client: editItem.client || clientId || ''
-      });
+        client: editItem.client || clientId || prev.client || '',
+        organisation: editItem.organisation || prev.organisation || ''
+      }));
       if (editItem.deliverables) {
         setDeliverables(editItem.deliverables);
       }
     } else if (prefilledData) {
       // This is AI-generated prefilled data for new project
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         name: prefilledData.name || '',
         description: prefilledData.description || '',
         status: prefilledData.status || 'Planning',
@@ -74,8 +80,9 @@ export default function CreateProjectModal({
         budget_amount: prefilledData.budget_amount || 0,
         budget_currency: prefilledData.budget_currency || 'USD',
         budget_type: prefilledData.budget_type || 'Fixed',
-        client: prefilledData.client || clientId || ''
-      });
+        client: prefilledData.client || clientId || prev.client || '',
+        organisation: prefilledData.organisation || prev.organisation || ''
+      }));
       if (prefilledData.deliverables) {
         setDeliverables(prefilledData.deliverables);
       }
@@ -116,23 +123,83 @@ export default function CreateProjectModal({
         if (response.ok) {
           const result = await response.json();
           if (result.success) {
-            setUsers(result.users || []);
+            const fetchedUsers = (result.users || []).filter(Boolean);
+            setUsers(fetchedUsers);
+            if (fetchedUsers.length > 0) {
+              const defaultUser = fetchedUsers[0];
+              setFormData(prev => ({
+                ...prev,
+                internal_owner: prev.internal_owner || defaultUser._id || defaultUser.id || prev.internal_owner || '',
+                organisation: prev.organisation || defaultUser.organisation || ''
+              }));
+            }
+            return;
+          }
+        }
+        // Fallback to provided users if API call fails or returns empty
+        if (availableUsers.length > 0) {
+          setUsers(availableUsers);
+          const defaultUser = availableUsers.find(user => {
+            const candidate = user?._id || user?.id || user?.value;
+            return typeof candidate === 'string' && candidate.match(/^[0-9a-fA-F]{24}$/);
+          });
+          if (defaultUser) {
+            setFormData(prev => ({
+              ...prev,
+              internal_owner: prev.internal_owner || defaultUser._id || defaultUser.id || defaultUser.value || '',
+              organisation: prev.organisation || defaultUser.organisation || ''
+            }));
           }
         }
       } catch (error) {
         console.error('Error fetching users:', error);
+        if (availableUsers.length > 0) {
+          setUsers(availableUsers);
+          const defaultUser = availableUsers.find(user => {
+            const candidate = user?._id || user?.id || user?.value;
+            return typeof candidate === 'string' && candidate.match(/^[0-9a-fA-F]{24}$/);
+          });
+          if (defaultUser) {
+            setFormData(prev => ({
+              ...prev,
+              internal_owner: prev.internal_owner || defaultUser._id || defaultUser.id || defaultUser.value || '',
+              organisation: prev.organisation || defaultUser.organisation || ''
+            }));
+          }
+        }
       }
     };
 
     if (isOpen) {
       fetchUsers();
     }
-  }, [isOpen]);
+  }, [isOpen, availableUsers]);
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    const extractedValue = (value && typeof value === 'object')
+      ? value.target?.value ?? value.value ?? value
+      : value;
+
+    setFormData(prev => ({ ...prev, [field]: extractedValue }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  const mapStatusToMenuStatus = (status) => {
+    switch (status) {
+      case 'Planning':
+        return 'not-started';
+      case 'Active':
+        return 'in-progress';
+      case 'Completed':
+        return 'completed';
+      case 'Cancelled':
+        return 'cancelled';
+      case 'On Hold':
+        return 'on-hold';
+      default:
+        return 'active';
     }
   };
 
@@ -199,20 +266,88 @@ export default function CreateProjectModal({
     setErrors({});
 
     try {
+      if (!submitDirect) {
+        const trimmedName = formData.name.trim();
+        const trimmedDescription = formData.description.trim();
+        const menuStatus = mapStatusToMenuStatus(formData.status);
+        const deliverableEntries = deliverables
+          .filter(d => typeof d?.name === 'string' && d.name.trim())
+          .map(d => ({
+            ...d,
+            name: d.name.trim()
+          }));
+
+        const projectItem = {
+          title: trimmedName,
+          description: trimmedDescription,
+          type: 'project',
+          status: formData.status || 'Planning',
+          parentId: formData.client || clientId || null,
+          metadata: {
+            start_date: formData.start_date,
+            end_date: formData.end_date,
+            budget_amount: formData.budget_amount,
+            budget_currency: formData.budget_currency,
+            budget_type: formData.budget_type,
+            priority: formData.priority || 'medium',
+            project_type: formData.project_type || 'consulting',
+            client_owner: formData.client_owner,
+            internal_owner: formData.internal_owner,
+            organisation: formData.organisation,
+            status: menuStatus,
+            project_status: formData.status || 'Planning',
+            client_id: formData.client || clientId || null,
+            deliverables: deliverableEntries
+          },
+          deliverables: deliverableEntries
+        };
+
+        await onProjectCreated?.(projectItem);
+        onClose();
+        return;
+      }
+
       const projectData = {
         ...formData,
-        deliverables: deliverables.filter(d => d.name.trim())
+        deliverables: deliverables
+          .filter(d => typeof d?.name === 'string' && d.name.trim())
+          .map(d => ({
+            ...d,
+            name: d.name.trim()
+          }))
       };
 
+      if (!projectData.internal_owner && users.length > 0) {
+        const fallbackOwner = users[0];
+        projectData.internal_owner = fallbackOwner?._id || fallbackOwner?.id || null;
+      }
+
+      if (!projectData.client && clientId) {
+        projectData.client = clientId;
+      }
+
+      if (!projectData.organisation && formData.organisation) {
+        projectData.organisation = formData.organisation;
+      }
+
       // Remove empty client_owner and internal_owner to let API use defaults
-      if (!projectData.client_owner || projectData.client_owner.trim() === '') {
+      if (
+        !projectData.client_owner ||
+        (typeof projectData.client_owner === 'string' && projectData.client_owner.trim() === '')
+      ) {
         delete projectData.client_owner;
       }
-      if (!projectData.internal_owner || projectData.internal_owner.trim() === '') {
+      if (
+        !projectData.internal_owner ||
+        (typeof projectData.internal_owner === 'string' && projectData.internal_owner.trim() === '')
+      ) {
         delete projectData.internal_owner;
       }
-      if (!projectData.client || projectData.client.trim() === '') {
+      if (!projectData.client || (typeof projectData.client === 'string' && projectData.client.trim() === '')) {
         delete projectData.client;
+      }
+      if (!projectData.organisation || (typeof projectData.organisation === 'string' && projectData.organisation.trim() === '')) {
+        delete projectData.organisation;
       }
 
       const response = await fetch('/api/projects', {
@@ -407,26 +542,33 @@ export default function CreateProjectModal({
         {/* Client Owner and Internal Owner */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Select
-              label="Client Owner"
-              value={formData.client_owner}
-              onChange={(value) => handleInputChange('client_owner', value)}
-              placeholder={loadingKeyPersons ? "Loading..." : "Select client contact..."}
-              disabled={loadingKeyPersons || keyPersons.length === 0}
-              required
-              error={errors.client_owner}
-              options={[
-                { value: '', label: 'Select client contact...' },
-                ...keyPersons.map(person => ({
-                  value: person._id,
-                  label: `${person.full_name} (${person.role})`
-                }))
-              ]}
-            />
-            {keyPersons.length === 0 && !loadingKeyPersons && formData.client && (
-              <p className="mt-1 text-sm text-gray-500">
-                No key persons found for this client. Add them in the client creation form.
-              </p>
+            {keyPersons.length > 0 ? (
+              <Select
+                label="Client Owner"
+                value={formData.client_owner}
+                onChange={(e) => handleInputChange('client_owner', e.target.value)}
+                placeholder={loadingKeyPersons ? "Loading..." : "Select client contact..."}
+                disabled={loadingKeyPersons}
+                required
+                error={errors.client_owner}
+                options={[
+                  { value: '', label: 'Select client contact...' },
+                  ...keyPersons.map(person => ({
+                    value: person._id,
+                    label: `${person.full_name} (${person.role})`
+                  }))
+                ]}
+              />
+            ) : (
+              <Input
+                label="Client Owner"
+                value={formData.client_owner}
+                onChange={(e) => handleInputChange('client_owner', e.target.value)}
+                placeholder="Type client owner name..."
+                helperText={formData.client ? 'No contacts found for this client. Enter a name to track manually.' : 'Select a client first to load contacts.'}
+                required
+                error={errors.client_owner}
+              />
             )}
           </div>
           
@@ -434,7 +576,7 @@ export default function CreateProjectModal({
             <Select
               label="Internal Owner"
               value={formData.internal_owner}
-              onChange={(value) => handleInputChange('internal_owner', value)}
+              onChange={(e) => handleInputChange('internal_owner', e.target.value)}
               placeholder="Select team member..."
               required
               error={errors.internal_owner}

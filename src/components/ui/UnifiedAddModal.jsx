@@ -607,6 +607,8 @@ export default function UnifiedAddModal({
           prefilledData={editItem ? projectData : formData} // Use transformed data if editing, otherwise AI generated data
           onBack={editItem ? null : () => setProjectCreationStep('options')} // No back button in edit mode
           isAIGenerated={!editItem} // Only AI generated if not editing
+          availableUsers={availableUsers}
+          submitDirect={false}
         />
       );
     }

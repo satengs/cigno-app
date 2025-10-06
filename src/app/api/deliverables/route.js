@@ -131,12 +131,13 @@ export async function POST(request) {
     const defaultUserId = '507f1f77bcf86cd799439011';
 
     // Create deliverable with validated values
+    const safeName = (name && typeof name === 'string') ? name.trim() : 'Untitled Deliverable';
     const deliverable = new Deliverable({
-      name: name.trim(),
+      name: safeName,
       type: type || 'Report',
       status: status || 'draft',
       priority: priority || 'medium',
-      brief: description || `Brief for ${name}`,
+      brief: description || `Brief for ${safeName}`,
       project,
       due_date: parsedDueDate,
       estimated_hours: Number(estimated_hours),
@@ -145,8 +146,34 @@ export async function POST(request) {
       updated_by: defaultUserId
     });
 
-    const saved = await deliverable.save();
-    console.log('✅ Deliverable created:', saved._id);
+    let saved;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        saved = await deliverable.save();
+        console.log('✅ Deliverable created:', saved._id);
+        break;
+      } catch (saveError) {
+        retryCount++;
+        console.log(`⚠️ Save attempt ${retryCount} failed:`, saveError.message);
+        
+        if (retryCount >= maxRetries) {
+          throw saveError;
+        }
+        
+        if (saveError.name === 'MongoServerSelectionError' || 
+            saveError.message.includes('timed out') ||
+            saveError.message.includes('connection')) {
+          console.log(`🔄 Retrying save operation (${retryCount}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          await connectDB();
+        } else {
+          throw saveError;
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -176,6 +203,23 @@ export async function POST(request) {
       return NextResponse.json(
         { success: false, error: 'Duplicate data detected' },
         { status: 409 }
+      );
+    }
+    
+    // MongoDB connection-specific errors
+    if (error.name === 'MongoServerSelectionError' || 
+        error.message.includes('timed out') ||
+        error.message.includes('connection')) {
+      return NextResponse.json(
+        { success: false, error: 'Database connection timeout. Please try again in a moment.' },
+        { status: 503 }
+      );
+    }
+    
+    if (error.name === 'MongoNetworkError') {
+      return NextResponse.json(
+        { success: false, error: 'Database network error. Please check your connection and try again.' },
+        { status: 503 }
       );
     }
     

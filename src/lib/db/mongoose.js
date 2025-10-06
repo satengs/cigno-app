@@ -8,7 +8,7 @@ if (!cached) {
 }
 
 async function connectDB() {
-  if (cached.conn) {
+  if (cached.conn && cached.conn.connection.readyState === 1) {
     return cached.conn;
   }
 
@@ -21,9 +21,12 @@ async function connectDB() {
     const opts = {
       bufferCommands: true,
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      family: 4
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 30000,
+      connectTimeoutMS: 10000,
+      family: 4,
+      retryWrites: true,
+      retryReads: true
     };
 
     cached.promise = mongoose.connect(config.MONGODB_URI, opts);
@@ -32,6 +35,20 @@ async function connectDB() {
   try {
     cached.conn = await cached.promise;
     console.log('✅ MongoDB connected successfully');
+    
+    // Add connection event listeners
+    cached.conn.connection.on('disconnected', () => {
+      console.log('⚠️ MongoDB disconnected');
+      cached.conn = null;
+      cached.promise = null;
+    });
+    
+    cached.conn.connection.on('error', (err) => {
+      console.error('❌ MongoDB connection error:', err);
+      cached.conn = null;
+      cached.promise = null;
+    });
+    
   } catch (e) {
     cached.promise = null;
     console.error('❌ MongoDB connection error:', e);

@@ -58,7 +58,7 @@ Return the response as a JSON structure with sections array.`;
 
     try {
       // Try custom agent first
-      const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.storylineAgentId}/chat`, {
+      const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.storylineAgentId}/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -43,7 +43,7 @@ export async function POST(request) {
   try {
     await connectDB();
     const projectData = await request.json();
-    
+
     console.log('Creating new project:', {
       name: projectData.name,
       client_owner: projectData.client_owner
@@ -77,40 +77,46 @@ export async function POST(request) {
     // Helper function to find client by name/identifier
     const findClient = async (identifier) => {
       if (!identifier) return null;
-      
-      // If it's already an ObjectId, return it
+
+      // If it's already an ObjectId, return the referenced document id
       if (typeof identifier === 'object' && identifier._id) {
         return identifier._id;
       }
-      
+
       if (typeof identifier === 'string' && identifier.match(/^[0-9a-fA-F]{24}$/)) {
         return identifier;
       }
-      
+
       // Try to find client by name
       const client = await Client.findOne({ name: identifier }).select('_id');
       if (client) {
         return client._id;
       }
-      
-      // Return null if not found
+
       return null;
     };
 
     // Resolve user and client references
-    let clientId = await findClient(projectData.client_owner);
+    const primaryClientIdentifier = projectData.client || projectData.client_owner;
+    let clientId = await findClient(primaryClientIdentifier);
     
     // Validate that client exists
-    if (!clientId && projectData.client_owner) {
+    if (!clientId && primaryClientIdentifier) {
       return NextResponse.json({ 
         error: 'Client not found',
-        details: `No client found with identifier: ${projectData.client_owner}. Please create the client first or use a valid client ID.` 
+        details: `No client found with identifier: ${primaryClientIdentifier}. Please create the client first or use a valid client ID.` 
       }, { status: 400 });
     }
     
     const internalOwnerId = await findUser(projectData.internal_owner);
     const createdById = await findUser(projectData.created_by);
     const updatedById = await findUser(projectData.updated_by);
+
+    // Gather organisation context
+    const clientDocument = clientId ? await Client.findById(clientId).select('organisation') : null;
+    const defaultUserCandidate = internalOwnerId || createdById;
+    const userDocument = defaultUserCandidate ? await User.findById(defaultUserCandidate).select('organisation') : null;
+    const organisationId = projectData.organisation || clientDocument?.organisation || userDocument?.organisation;
 
     // Validate required fields
     if (!projectData.name) {
@@ -134,10 +140,10 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    if (!projectData.organisation) {
+    if (!organisationId) {
       return NextResponse.json({ 
         error: 'Organisation is required',
-        details: 'Please provide a valid organisation ID' 
+        details: 'Unable to determine organisation from client or user context. Please provide a valid organisation ID.' 
       }, { status: 400 });
     }
 
@@ -159,9 +165,11 @@ export async function POST(request) {
       end_date: new Date(projectData.end_date),
       status: projectData.status,
       client: clientId,
-      client_owner: clientId,
+      client_owner: (typeof projectData.client_owner === 'string' && projectData.client_owner.match(/^[0-9a-fA-F]{24}$/))
+        ? projectData.client_owner
+        : clientId,
       internal_owner: defaultUser,
-      organisation: projectData.organisation,
+      organisation: organisationId,
       reference_documents: projectData.reference_documents || [],
       budget: projectData.budget || { amount: projectData.budget_amount || 0, currency: projectData.budget_currency || 'USD', allocated: 0, spent: 0 },
       team_members: projectData.team_members || [],
@@ -177,6 +185,131 @@ export async function POST(request) {
     
     const savedProject = await newProject.save();
     console.log('Project created successfully with ID:', savedProject._id);
+    
+    // Create deliverables - either from provided data or AI analysis
+    const createdDeliverables = [];
+    let deliverablesArray = projectData.deliverables;
+    
+    // If no deliverables provided, try to generate them from project description using AI
+    if (!deliverablesArray || !Array.isArray(deliverablesArray) || deliverablesArray.length === 0) {
+      if (projectData.description) {
+        console.log('No deliverables provided, analyzing project description with AI...');
+        try {
+          const aiAnalysisResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/api/projects/analyze`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              description: projectData.description,
+              projectData: projectData
+            })
+          });
+          
+          if (aiAnalysisResponse.ok) {
+            const aiResult = await aiAnalysisResponse.json();
+            if (aiResult.success && aiResult.analyzedProject && aiResult.analyzedProject.deliverables) {
+              deliverablesArray = aiResult.analyzedProject.deliverables;
+              console.log(`AI generated ${deliverablesArray.length} deliverables from project description`);
+            }
+          } else {
+            console.log('AI analysis failed, proceeding without auto-generated deliverables');
+          }
+        } catch (aiError) {
+          console.log('AI analysis error:', aiError.message, '- proceeding without auto-generated deliverables');
+        }
+      }
+    }
+    
+    if (deliverablesArray && Array.isArray(deliverablesArray) && deliverablesArray.length > 0) {
+      console.log(`Creating ${deliverablesArray.length} deliverables for project...`);
+      
+      for (const deliverableData of deliverablesArray) {
+        try {
+          // Map status values to valid enum values
+          const mapStatus = (status) => {
+            if (!status) return 'draft';
+            const statusMap = {
+              'Planned': 'draft',
+              'In Progress': 'in_progress',
+              'Completed': 'completed',
+              'Draft': 'draft',
+              'Review': 'in_review',
+              'Approved': 'approved',
+              'Delivered': 'delivered',
+              'Rejected': 'rejected'
+            };
+            return statusMap[status] || status.toLowerCase().replace(' ', '_');
+          };
+          
+          // Map type values to valid enum values
+          const mapType = (type) => {
+            if (!type) return 'Report';
+            const typeMap = {
+              'Document': 'Documentation',
+              'API': 'Code',
+              'Dashboard': 'Design',
+              'Presentation': 'Presentation',
+              'Report': 'Report',
+              'Strategy': 'Strategy',
+              'Analysis': 'Analysis',
+              'Design': 'Design',
+              'Code': 'Code',
+              'Documentation': 'Documentation'
+            };
+            return typeMap[type] || 'Other';
+          };
+          
+          // Map format values to valid enum values
+          const mapFormat = (format) => {
+            if (!format) return 'PDF';
+            const formatMap = {
+              'json': 'OTHER',
+              'pdf': 'PDF',
+              'docx': 'DOCX',
+              'pptx': 'PPTX',
+              'xlsx': 'XLSX',
+              'html': 'HTML',
+              'txt': 'TXT',
+              'web': 'HTML',
+              'api': 'OTHER'
+            };
+            return formatMap[format.toLowerCase()] || 'PDF';
+          };
+
+          const deliverable = new Deliverable({
+            name: deliverableData.title || deliverableData.name || 'Untitled Deliverable',
+            type: mapType(deliverableData.type),
+            status: mapStatus(deliverableData.status),
+            priority: deliverableData.priority || 'medium',
+            brief: deliverableData.description || deliverableData.title || 'Deliverable brief',
+            project: savedProject._id,
+            due_date: deliverableData.due_date ? new Date(deliverableData.due_date) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            estimated_hours: deliverableData.estimated_hours || 0,
+            notes: deliverableData.notes || '',
+            created_by: defaultUser,
+            updated_by: defaultUser,
+            // Additional fields from your example
+            format: mapFormat(deliverableData.metadata?.format || 'pdf'),
+            quality_score: deliverableData.quality_score || 0,
+            dependencies: deliverableData.dependencies || [],
+            metadata: deliverableData.metadata || {}
+          });
+          
+          const savedDeliverable = await deliverable.save();
+          createdDeliverables.push(savedDeliverable);
+          console.log(`✅ Created deliverable: ${savedDeliverable.name} (${savedDeliverable._id})`);
+          
+        } catch (deliverableError) {
+          console.error(`❌ Failed to create deliverable "${deliverableData.title || deliverableData.name}":`, deliverableError.message);
+          // Continue creating other deliverables even if one fails
+        }
+      }
+      
+      if (createdDeliverables.length > 0) {
+        console.log(`✅ Successfully created ${createdDeliverables.length} out of ${deliverablesArray.length} deliverables`);
+      }
+    }
     
     // Create corresponding menu item
     try {
@@ -234,7 +367,9 @@ export async function POST(request) {
           budget_amount: savedProject.budget?.amount || 0,
           start_date: savedProject.start_date,
           end_date: savedProject.end_date,
-          client_owner: savedProject.client_owner?.toString(),
+          client_owner: (typeof projectData.client_owner === 'string' && projectData.client_owner.trim())
+            ? projectData.client_owner.trim()
+            : clientId?.toString(),
           internal_owner: savedProject.internal_owner?.toString()
         }
       };
@@ -252,6 +387,62 @@ export async function POST(request) {
       }
       
       console.log('Menu item created successfully:', savedMenuItem._id);
+      
+      // Create menu items for deliverables if any were created
+      if (createdDeliverables.length > 0) {
+        console.log(`Creating ${createdDeliverables.length} deliverable menu items...`);
+        
+        for (const deliverable of createdDeliverables) {
+          try {
+            // Map deliverable status to menu item status
+            const mapDeliverableStatusToMenuStatus = (status) => {
+              const statusMap = {
+                'draft': 'draft',
+                'in_review': 'in_review',
+                'approved': 'approved',
+                'in_progress': 'in-progress', // Note: menu uses hyphen, deliverable uses underscore
+                'completed': 'completed',
+                'delivered': 'delivered',
+                'rejected': 'rejected'
+              };
+              return statusMap[status] || 'active';
+            };
+
+            const deliverableMenuItem = new MenuItemModel({
+              title: deliverable.name,
+              description: deliverable.brief || '',
+              type: 'deliverable',
+              status: mapDeliverableStatusToMenuStatus(deliverable.status),
+              parentId: savedMenuItem._id, // Use project menu item as parent
+              order: 0,
+              isCollapsible: true,
+              metadata: {
+                deliverableId: deliverable._id.toString(),
+                type: deliverable.type,
+                due_date: deliverable.due_date,
+                priority: deliverable.priority
+              },
+              brief: deliverable.brief || '',
+              dueDate: deliverable.due_date,
+              priority: deliverable.priority || 'medium'
+            });
+            
+            const savedDeliverableMenuItem = await deliverableMenuItem.save();
+            
+            // Update project menu item's children array
+            const updateResult = await MenuItemModel.findByIdAndUpdate(
+              savedMenuItem._id,
+              { $push: { children: savedDeliverableMenuItem._id } }
+            );
+            console.log(`✅ Created deliverable menu item: ${deliverable.name} (${savedDeliverableMenuItem._id})`);
+            
+          } catch (deliverableMenuError) {
+            console.error(`❌ Failed to create menu item for deliverable "${deliverable.name}":`, deliverableMenuError.message);
+            // Continue creating other deliverable menu items even if one fails
+          }
+        }
+      }
+      
     } catch (menuError) {
       console.error('Failed to create menu item for project:', menuError);
       // Don't fail the entire request if menu creation fails
@@ -260,11 +451,26 @@ export async function POST(request) {
     return NextResponse.json({ 
       success: true, 
       id: savedProject._id,
-      message: 'Project created successfully',
+      message: `Project created successfully${(createdDeliverables && createdDeliverables.length > 0) ? ` with ${createdDeliverables.length} deliverables` : ''}`,
       project: {
         ...savedProject.toObject(),
-        id: savedProject._id.toString()
-      }
+        id: savedProject._id.toString(),
+        deliverables: (createdDeliverables || []).map(d => ({
+          id: d._id.toString(),
+          name: d.name,
+          type: d.type,
+          status: d.status,
+          due_date: d.due_date
+        }))
+      },
+      deliverables: (createdDeliverables || []).map(d => ({
+        id: d._id.toString(),
+        name: d.name,
+        type: d.type,
+        status: d.status,
+        due_date: d.due_date,
+        priority: d.priority
+      }))
     });
     
   } catch (error) {

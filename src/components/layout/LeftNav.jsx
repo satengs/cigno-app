@@ -34,7 +34,7 @@ export default function LeftNav({
   const [availableClients, setAvailableClients] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [availableProjects, setAvailableProjects] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null);
+const [selectedItem, setSelectedItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredItem, setHoveredItem] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -256,7 +256,8 @@ export default function LeftNav({
               name: itemData.title,
               description: itemData.description || '',
               status: itemData.status || 'Planning', // Use correct enum value
-              client_owner: itemData.parentId || itemData.metadata?.client_owner,
+              client: itemData.parentId,
+              client_owner: itemData.metadata?.client_owner,
               internal_owner: itemData.metadata?.internal_owner || null,
               organisation: itemData.metadata?.organisation || null,
               start_date: itemData.metadata?.start_date || null,
@@ -266,6 +267,7 @@ export default function LeftNav({
               project_type: itemData.metadata?.project_type || 'consulting',
               tags: itemData.metadata?.tags || [],
               notes: itemData.metadata?.notes || '',
+              deliverables: itemData.deliverables || itemData.metadata?.deliverables || [],
               // created_by and updated_by will be set by API using defaults
               // created_by: null,
               // updated_by: null
@@ -310,7 +312,18 @@ export default function LeftNav({
             statusText: businessResponse.statusText,
             errorBody: errorText
           });
-          throw new Error(`${itemType} creation failed: ${businessResponse.status} ${businessResponse.statusText}`);
+          let errorMessage = `${itemType} creation failed: ${businessResponse.status} ${businessResponse.statusText}`;
+          try {
+            const parsedError = JSON.parse(errorText);
+            if (parsedError?.error || parsedError?.details) {
+              errorMessage += ` – ${parsedError.error || ''} ${parsedError.details || ''}`.trim();
+            }
+          } catch {
+            if (errorText) {
+              errorMessage += ` – ${errorText}`;
+            }
+          }
+          throw new Error(errorMessage);
         }
         
         businessEntityResult = await businessResponse.json();
@@ -323,10 +336,12 @@ export default function LeftNav({
       
       // Ensure title is not empty (use same fallback logic as deliverable name)
       const menuTitle = itemData.title || itemData.name || 'New Deliverable';
+      const menuStatus = itemData.metadata?.status || mapProjectStatusToMenu(itemData.status) || 'active';
       
-      const menuRequestBody = editId ? { ...itemData, id: editId, title: menuTitle } : {
+      const menuRequestBody = editId ? { ...itemData, id: editId, title: menuTitle, status: menuStatus } : {
         ...itemData,
         title: menuTitle,
+        status: menuStatus,
         // If we created a business entity, link it in the metadata
         metadata: {
           ...itemData.metadata,
@@ -495,9 +510,38 @@ export default function LeftNav({
   };
 
   // Unified modal handlers
-  const handleAddItem = (itemType, parentId = null) => {
+const resolveBusinessEntityId = (item) => (
+  item?.metadata?.business_entity_id ||
+  item?.metadata?.client_id ||
+  item?.metadata?.project_id ||
+  item?.metadata?.deliverable_id ||
+  item?._id ||
+  item?.id ||
+  null
+);
+
+const mapProjectStatusToMenu = (status) => {
+  switch (status) {
+    case 'Planning':
+      return 'not-started';
+    case 'Active':
+      return 'in-progress';
+    case 'Completed':
+      return 'completed';
+    case 'Cancelled':
+      return 'cancelled';
+    case 'On Hold':
+      return 'on-hold';
+    case 'In Progress':
+      return 'in-progress';
+    default:
+      return 'active';
+  }
+};
+
+  const handleAddItem = (itemType, parent = null) => {
     setAddItemType(itemType);
-    setParentId(parentId);
+    setParentId(parent);
     setEditingItem(null);
     setShowAddModal(true);
     if (onModalStateChange) {
@@ -944,7 +988,7 @@ export default function LeftNav({
                           </div>
                           <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `client-${client._id || client.id}` ? 'opacity-100' : 'opacity-0'}`}>
                             <button
-                              onClick={() => handleAddItem('project', client._id || client.id)}
+          onClick={() => handleAddItem('project', resolveBusinessEntityId(client))}
                               className="p-1 rounded transition-colors hover:bg-opacity-20"
                               style={{ 
                                 backgroundColor: 'transparent',
@@ -1075,7 +1119,7 @@ export default function LeftNav({
                                 <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>PROJECT</h4>
                               </button>
                               <button
-                                onClick={() => handleAddItem('project', client._id || client.id)}
+                                onClick={() => handleAddItem('project', resolveBusinessEntityId(client))}
                                 className="p-1 rounded transition-colors"
                                 style={{ backgroundColor: 'var(--bg-tertiary)' }}
                                 onMouseEnter={(e) => {
@@ -1139,7 +1183,7 @@ export default function LeftNav({
                                         </div>
                                         <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `project-${project._id || project.id}` ? 'opacity-100' : 'opacity-0'}`}>
                                           <button
-                                            onClick={() => handleAddItem('deliverable', project._id || project.id)}
+                                            onClick={() => handleAddItem('deliverable', resolveBusinessEntityId(project))}
                                             className="p-1 rounded transition-colors hover:bg-opacity-20"
                                             style={{ 
                                               backgroundColor: 'transparent',
@@ -1270,7 +1314,7 @@ export default function LeftNav({
                                               <h5 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>DELIVERABLE</h5>
                                             </button>
                                             <button
-                                              onClick={() => handleAddItem('deliverable', project._id || project.id)}
+                                              onClick={() => handleAddItem('deliverable', resolveBusinessEntityId(project))}
                                               className="p-1 rounded transition-colors"
                                               style={{ backgroundColor: 'var(--bg-tertiary)' }}
                                               onMouseEnter={(e) => {

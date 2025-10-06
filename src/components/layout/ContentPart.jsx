@@ -161,20 +161,62 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
     setIsGeneratingStoryline(true);
     
     try {
+      // If the selectedItem doesn't have a project field, it might be from the menu system
+      // We need to fetch the actual deliverable data to get the project field
+      let deliverableData = selectedItem;
+      
+      if (!selectedItem.project && !selectedItem.project_id) {
+        console.log('🔄 Menu item missing project field, fetching actual deliverable data...');
+        
+        // Try to get the deliverable ID from metadata first, then fallback to menu item ID
+        const deliverableId = selectedItem.metadata?.deliverableId || selectedItem._id || selectedItem.id;
+        console.log(`🔍 Looking for deliverable with ID: ${deliverableId}`);
+        
+        try {
+          const deliverableResponse = await fetch(`/api/deliverables/${deliverableId}`);
+          if (deliverableResponse.ok) {
+            const responseData = await deliverableResponse.json();
+            // Handle both wrapped and direct response formats
+            deliverableData = responseData.data || responseData;
+            console.log('✅ Fetched deliverable data:', deliverableData);
+          } else {
+            const errorData = await deliverableResponse.json();
+            throw new Error(errorData.error || 'Failed to fetch deliverable data from API');
+          }
+        } catch (fetchError) {
+          console.error('❌ Failed to fetch deliverable data:', fetchError);
+          throw new Error('Unable to fetch deliverable data. The selected item may not exist in the deliverables collection.');
+        }
+      }
+      
+      const projectId = deliverableData.project || deliverableData.project_id;
+      
+      if (!projectId) {
+        console.error('❌ No project ID found in deliverable data');
+        throw new Error('No project ID found in deliverable data. Please ensure the deliverable is properly linked to a project.');
+      }
+      
       const requestData = {
-        topic: formData.name || 'Business Strategy',
-        industry: 'financial-services',
-        audience: formData.audience.join(', ') || 'Business Stakeholders',
-        objectives: formData.brief || 'Strategic analysis and recommendations',
-        sectionsCount: Math.ceil(formData.document_length / 4), // Estimate sections based on document length
-        presentationStyle: 'consulting',
-        complexity: 'intermediate',
-        deliverableId: selectedItem._id || selectedItem.id
+        projectId: projectId,
+        projectData: {
+          name: formData.name || 'Business Strategy Project',
+          client_name: 'Client',
+          industry: 'financial-services',
+          description: formData.brief || 'Strategic analysis and recommendations project'
+        },
+        deliverableData: {
+          name: deliverableData.name || formData.name || 'Business Strategy',
+          brief: deliverableData.brief || formData.brief || 'Strategic analysis and recommendations',
+          audience: formData.audience || ['Business Stakeholders'],
+          document_length: formData.document_length || 20,
+          type: deliverableData.type || selectedItem.type || 'deliverable',
+          id: deliverableData._id || deliverableData.id || selectedItem._id || selectedItem.id
+        }
       };
 
       console.log('🎭 Generating storyline with data:', requestData);
 
-      const response = await fetch('/api/storyline/generate', {
+      const response = await fetch('/api/ai/generate-storyline', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -184,23 +226,108 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted 
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate storyline');
+        const errorMessage = typeof errorData.error === 'string' 
+          ? errorData.error 
+          : errorData.details 
+          ? errorData.details 
+          : JSON.stringify(errorData.error) || 'Failed to generate storyline';
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
       console.log('✅ Storyline generated successfully:', result);
       
-      if (result.ok && result.data) {
-        setGeneratedStoryline(result.data.storyline);
-        setCurrentView('storyline'); // Switch to storyline view
-        setCurrentSectionIndex(0); // Start with first section
+      if (result.success && result.data) {
+        console.log('ℹ️ Storyline generated via AI endpoint');
+        
+        // Parse the AI response - it comes as JSON string in data.response
+        let storylineData;
+        try {
+          if (result.data.response && typeof result.data.response === 'string') {
+            const parsedResponse = JSON.parse(result.data.response);
+            storylineData = {
+              sections: parsedResponse.storyline_structure?.sections || [],
+              projectName: parsedResponse.project_name,
+              client: parsedResponse.client,
+              industry: parsedResponse.industry,
+              executiveSummary: 'AI-generated storyline based on project requirements',
+              generationMode: 'ai',
+              agentId: result.agentId,
+              source: result.source
+            };
+          } else {
+            // Fallback if response format is different
+            storylineData = result.data;
+          }
+          
+          console.log('📋 Parsed storyline data:', storylineData);
+          
+          // Save the storyline to database
+          try {
+            const saveResponse = await fetch('/api/storylines', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                deliverable: deliverableData._id || deliverableData.id || selectedItem._id || selectedItem.id,
+                title: `Storyline for ${deliverableData.name || selectedItem.title}`,
+                status: 'completed',
+                sections: (storylineData.sections || []).map((section, index) => ({
+                  id: section.id || `section_${index + 1}`,
+                  title: section.title || `Section ${index + 1}`,
+                  description: section.description || '',
+                  status: 'not_started',
+                  order: index + 1,
+                  keyPoints: section.keyPoints || [],
+                  contentBlocks: section.contentBlocks || [],
+                  estimatedSlides: section.estimatedSlides || 3
+                })),
+                executiveSummary: storylineData.executiveSummary,
+                generationMode: storylineData.generationMode,
+                agentId: storylineData.agentId,
+                source: storylineData.source,
+                projectName: storylineData.projectName,
+                client: storylineData.client,
+                industry: storylineData.industry
+              })
+            });
+            
+            if (saveResponse.ok) {
+              const savedStoryline = await saveResponse.json();
+              console.log('✅ Storyline saved to database:', savedStoryline.data?._id);
+              
+              // Update local state with the saved storyline (includes database ID)
+              setGeneratedStoryline({
+                ...storylineData,
+                _id: savedStoryline.data._id,
+                id: savedStoryline.data._id
+              });
+            } else {
+              console.error('❌ Failed to save storyline to database');
+              // Still set local state even if save fails
+              setGeneratedStoryline(storylineData);
+            }
+          } catch (saveError) {
+            console.error('❌ Error saving storyline:', saveError);
+            // Still set local state even if save fails
+            setGeneratedStoryline(storylineData);
+          }
+          
+          setCurrentView('storyline'); // Switch to storyline view
+          setCurrentSectionIndex(0); // Start with first section
+        } catch (parseError) {
+          console.error('❌ Error parsing AI storyline response:', parseError);
+          throw new Error('Failed to parse AI storyline response');
+        }
       } else {
-        throw new Error(result.error || 'Invalid response format');
+        throw new Error(result.error || result.details || 'Invalid response format');
       }
 
     } catch (error) {
       console.error('❌ Error generating storyline:', error);
-      alert(`Failed to generate storyline: ${error.message}`);
+      const errorMessage = error.message || error.toString() || 'Unknown error occurred';
+      alert(`Failed to generate storyline: ${errorMessage}`);
     } finally {
       setIsGeneratingStoryline(false);
     }
