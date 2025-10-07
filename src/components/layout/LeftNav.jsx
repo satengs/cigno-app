@@ -16,7 +16,8 @@ export default function LeftNav({
   expandItem,
   collapseItem,
   onItemSelect, 
-  onModalStateChange 
+  onModalStateChange,
+  selectedItem: externalSelectedItem
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -34,7 +35,7 @@ export default function LeftNav({
   const [availableClients, setAvailableClients] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [availableProjects, setAvailableProjects] = useState([]);
-const [selectedItem, setSelectedItem] = useState(null);
+const [selectedNavItem, setSelectedNavItem] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredItem, setHoveredItem] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -64,11 +65,29 @@ const [selectedItem, setSelectedItem] = useState(null);
       type: normalizedItem.type
     });
     
-    setSelectedItem(normalizedItem);
+    setSelectedNavItem(normalizedItem);
     if (onItemSelect) {
       onItemSelect(normalizedItem);
     }
   };
+
+  useEffect(() => {
+    if (externalSelectedItem && externalSelectedItem.id) {
+      setSelectedNavItem({
+        ...externalSelectedItem,
+        id: externalSelectedItem._id || externalSelectedItem.id,
+        _id: externalSelectedItem._id || externalSelectedItem.id
+      });
+
+      setExpandedSections(prev => ({
+        ...prev,
+        project: true,
+        deliverable: true
+      }));
+    } else if (!externalSelectedItem) {
+      setSelectedNavItem(null);
+    }
+  }, [externalSelectedItem]);
 
   // Helper function to get status display info
   const getStatusInfo = (status) => {
@@ -668,8 +687,8 @@ const mapProjectStatusToMenu = (status) => {
       console.log('✅ Item removed successfully');
 
       // Clear selection if the removed item was selected
-      if (selectedItem && (selectedItem.id === id || selectedItem._id === id)) {
-        setSelectedItem(null);
+      if (selectedNavItem && (selectedNavItem.id === id || selectedNavItem._id === id)) {
+        setSelectedNavItem(null);
         if (onItemSelect) {
           onItemSelect(null);
         }
@@ -947,18 +966,18 @@ const mapProjectStatusToMenu = (status) => {
                         <div 
                           className="group flex items-center justify-between p-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
                           style={{ 
-                            backgroundColor: selectedItem?.id === client._id || selectedItem?.id === client.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                            backgroundColor: selectedNavItem?.id === client._id || selectedNavItem?.id === client.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
                           }}
                           onClick={() => handleItemClick({ ...client, type: 'client' })}
                           onMouseEnter={(e) => {
-                            if (selectedItem?.id !== client._id && selectedItem?.id !== client.id) {
+                            if (selectedNavItem?.id !== client._id && selectedNavItem?.id !== client.id) {
                               e.target.style.backgroundColor = 'var(--bg-tertiary)';
                             }
                             // Set hovered item using unique ID
                             setHoveredItem(`client-${client._id || client.id}`);
                           }}
                           onMouseLeave={(e) => {
-                            if (selectedItem?.id !== client._id && selectedItem?.id !== client.id) {
+                            if (selectedNavItem?.id !== client._id && selectedNavItem?.id !== client.id) {
                               e.target.style.backgroundColor = 'var(--bg-secondary)';
                             }
                             // Clear hovered item
@@ -1142,18 +1161,18 @@ const mapProjectStatusToMenu = (status) => {
                                       <div 
                                         className="group flex items-center justify-between py-1 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
                                         style={{ 
-                                          backgroundColor: selectedItem?.id === project._id || selectedItem?.id === project.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                                          backgroundColor: selectedNavItem?.id === project._id || selectedNavItem?.id === project.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
                                         }}
                                         onClick={() => handleItemClick({ ...project, type: 'project' })}
                                         onMouseEnter={(e) => {
-                                          if (selectedItem?.id !== project._id && selectedItem?.id !== project.id) {
+                                          if (selectedNavItem?.id !== project._id && selectedNavItem?.id !== project.id) {
                                             e.target.style.backgroundColor = 'var(--bg-tertiary)';
                                           }
                                           // Set hovered item using unique ID
                                           setHoveredItem(`project-${project._id || project.id}`);
                                         }}
                                         onMouseLeave={(e) => {
-                                          if (selectedItem?.id !== project._id && selectedItem?.id !== project.id) {
+                                          if (selectedNavItem?.id !== project._id && selectedNavItem?.id !== project.id) {
                                             e.target.style.backgroundColor = 'var(--bg-secondary)';
                                           }
                                           // Clear hovered item
@@ -1337,19 +1356,19 @@ const mapProjectStatusToMenu = (status) => {
                                                     <div 
                                                       className="flex items-start justify-between py-1.5 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer"
                                                       style={{ 
-                                                        backgroundColor: selectedItem?.id === deliverable._id || selectedItem?.id === deliverable.id ? 'var(--bg-tertiary)' : 'transparent',
-                                                        border: selectedItem?.id === deliverable._id || selectedItem?.id === deliverable.id ? '1px solid var(--border-primary)' : '1px solid transparent'
+                                                        backgroundColor: selectedNavItem?.id === deliverable._id || selectedNavItem?.id === deliverable.id ? 'var(--bg-tertiary)' : 'transparent',
+                                                        border: selectedNavItem?.id === deliverable._id || selectedNavItem?.id === deliverable.id ? '1px solid var(--border-primary)' : '1px solid transparent'
                                                       }}
                                                       onClick={() => handleItemClick({ ...deliverable, type: 'deliverable' })}
                                                       onMouseEnter={(e) => {
-                                                        if (selectedItem?.id !== deliverable._id && selectedItem?.id !== deliverable.id) {
+                                                        if (selectedNavItem?.id !== deliverable._id && selectedNavItem?.id !== deliverable.id) {
                                                           e.target.style.backgroundColor = 'var(--bg-tertiary)';
                                                         }
                                                         // Set hovered item using unique ID
                                                         setHoveredItem(`deliverable-${deliverable._id || deliverable.id}`);
                                                       }}
                                                       onMouseLeave={(e) => {
-                                                        if (selectedItem?.id !== deliverable._id && selectedItem?.id !== deliverable.id) {
+                                                        if (selectedNavItem?.id !== deliverable._id && selectedNavItem?.id !== deliverable.id) {
                                                           e.target.style.backgroundColor = 'var(--bg-secondary)';
                                                         }
                                                         // Clear hovered item

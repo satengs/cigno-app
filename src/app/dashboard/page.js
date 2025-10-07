@@ -53,6 +53,27 @@ export default function Dashboard() {
     refreshFromDatabase();
   };
 
+  const handleDeliverableNavigate = (deliverable) => {
+    if (!deliverable) return;
+
+    const deliverableId = deliverable._id || deliverable.id;
+    const normalized = {
+      ...deliverable,
+      id: deliverableId,
+      _id: deliverableId,
+      type: 'deliverable'
+    };
+
+    if (deliverable.parentId && typeof expandItem === 'function') {
+      expandItem(deliverable.parentId);
+    }
+    if (deliverableId && typeof expandItem === 'function') {
+      expandItem(deliverableId);
+    }
+
+    handleItemSelect(normalized);
+  };
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Left Navigation - Always Full Height */}
@@ -65,6 +86,7 @@ export default function Dashboard() {
         collapseItem={collapseItem}
         onItemSelect={handleItemSelect}
         onModalStateChange={setIsModalOpen}
+        selectedItem={selectedItem}
       />
 
       {/* Main Content Area */}
@@ -74,6 +96,7 @@ export default function Dashboard() {
           selectedItem={selectedItem}
           onItemSelect={handleItemSelect}
           onItemDeleted={handleItemDeleted}
+          onDeliverableNavigate={handleDeliverableNavigate}
         />
 
         {/* Right Section */}

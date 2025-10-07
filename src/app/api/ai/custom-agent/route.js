@@ -29,7 +29,7 @@ export async function POST(request) {
     console.log(`📝 Message: ${message}`);
 
     // Call custom agent API
-    const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/chat`, {
+    const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -42,35 +42,8 @@ export async function POST(request) {
     });
 
     if (!customAgentResponse.ok) {
-      console.error(`❌ Custom agent failed: ${customAgentResponse.status} ${customAgentResponse.statusText}`);
-      
-      // Fallback to chat endpoint
-      console.log('🔄 Falling back to chat endpoint...');
-      const chatResponse = await fetch(`${AI_CONFIG.baseUrl}/api/chat/send-streaming`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': AI_CONFIG.apiKey
-        },
-        body: JSON.stringify({
-          message: message,
-          context: context || {}
-        })
-      });
-
-      if (!chatResponse.ok) {
-        throw new Error(`Chat API failed: ${chatResponse.status} ${chatResponse.statusText}`);
-      }
-
-      const chatResult = await chatResponse.json();
-      console.log('✅ Chat endpoint response received');
-      
-      return NextResponse.json({
-        success: true,
-        source: 'chat',
-        agentId: agentId,
-        data: chatResult
-      });
+      const errorText = await customAgentResponse.text();
+      throw new Error(`Custom agent failed (${customAgentResponse.status}): ${errorText}`);
     }
 
     const agentResult = await customAgentResponse.json();

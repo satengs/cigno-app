@@ -16,7 +16,7 @@ export async function POST(request) {
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
       apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
-      storylineAgentId: process.env.AI_STORYLINE_AGENT_ID || '68db998aabd74ae6e0a5fbc8' // Default agent ID
+      storylineAgentId: process.env.AI_STORYLINE_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0' // Default agent ID
     };
 
     console.log(`📖 Generating storyline for project: ${projectId}`);

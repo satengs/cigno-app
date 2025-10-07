@@ -104,45 +104,80 @@ export async function POST(request) {
     }
 
     // Check if storyline already exists for this deliverable
-    const existingStoryline = await Storyline.findOne({ deliverable, is_active: true });
-    if (existingStoryline) {
-      const errorResponse = createErrorResponse('CONFLICT', 'Storyline already exists for this deliverable');
-      return NextResponse.json(errorResponse, { status: 409 });
-    }
+    const normalizedSections = (sections || []).map((section, index) => ({
+      id: section.id || section.sectionId || `section_${index + 1}`,
+      title: section.title || `Section ${index + 1}`,
+      description: section.description || '',
+      status: section.status || 'draft',
+      order: section.order !== undefined ? section.order : index,
+      keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+      contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+      estimatedSlides: section.estimatedSlides || 3,
+      locked: !!section.locked,
+      lockedBy: section.locked ? section.lockedBy : undefined,
+      lockedAt: section.locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
+      created_at: section.created_at ? new Date(section.created_at) : new Date(),
+      updated_at: new Date()
+    }));
 
-    // Create new storyline
-    const storylineData = {
+    const storylinePayload = {
       deliverable,
       title,
       executiveSummary,
       presentationFlow,
       callToAction,
-      sections: sections?.map((section, index) => ({
-        ...section,
-        order: section.order !== undefined ? section.order : index,
-        created_at: new Date(),
-        updated_at: new Date()
-      })) || [],
+      sections: normalizedSections,
       topic,
       industry,
       audience: Array.isArray(audience) ? audience : [audience].filter(Boolean),
       objectives,
       presentationStyle: presentationStyle || 'consulting',
       complexity: complexity || 'intermediate',
-      generationSource: 'manual',
+      generationSource: 'ai',
       created_by: userId || deliverableDoc.created_by,
       updated_by: userId || deliverableDoc.created_by,
       is_active: true
     };
 
-    const storyline = new Storyline(storylineData);
+    let storyline = await Storyline.findOne({ deliverable, is_active: true });
+
+    if (storyline) {
+      Object.assign(storyline, {
+        title: storylinePayload.title,
+        executiveSummary: storylinePayload.executiveSummary,
+        presentationFlow: storylinePayload.presentationFlow,
+        callToAction: storylinePayload.callToAction,
+        sections: storylinePayload.sections,
+        topic: storylinePayload.topic,
+        industry: storylinePayload.industry,
+        audience: storylinePayload.audience,
+        objectives: storylinePayload.objectives,
+        presentationStyle: storylinePayload.presentationStyle,
+        complexity: storylinePayload.complexity,
+        generationSource: 'ai',
+        updated_by: storylinePayload.updated_by,
+        updated_at: new Date()
+      });
+
+      await storyline.save();
+      await storyline.populate([
+        { path: 'deliverable', select: 'name type status' },
+        { path: 'created_by', select: 'name email' },
+        { path: 'updated_by', select: 'name email' },
+        { path: 'sections.lockedBy', select: 'name email' }
+      ]);
+
+      return NextResponse.json(createSuccessResponse(storyline, 'Storyline updated successfully'));
+    }
+
+    storyline = new Storyline(storylinePayload);
     await storyline.save();
 
-    // Populate response
     await storyline.populate([
       { path: 'deliverable', select: 'name type status' },
       { path: 'created_by', select: 'name email' },
-      { path: 'updated_by', select: 'name email' }
+      { path: 'updated_by', select: 'name email' },
+      { path: 'sections.lockedBy', select: 'name email' }
     ]);
 
     return NextResponse.json(createSuccessResponse(storyline, 'Storyline created successfully'), { status: 201 });

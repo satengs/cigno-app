@@ -16,7 +16,7 @@ export async function POST(request) {
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
       apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
-      insightsAgentId: process.env.AI_INSIGHTS_AGENT_ID || '68db998aabd74ae6e0a5fbc8' // Default agent ID
+      insightsAgentId: process.env.AI_INSIGHTS_AGENT_ID || '68dde123c1b3b5cc990ad5f1' // Default agent ID
     };
 
     console.log(`💡 Generating insights for project: ${projectId}`);
@@ -59,42 +59,7 @@ For each insight, provide:
 
 Return the response as a JSON structure with insights array.`;
 
-    try {
-      // Try custom agent first
-      const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.insightsAgentId}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': AI_CONFIG.apiKey
-        },
-        body: JSON.stringify({
-          message: message,
-          context: context
-        })
-      });
-
-      if (customAgentResponse.ok) {
-        const agentResult = await customAgentResponse.json();
-        console.log('✅ Insights generated via custom agent');
-        
-        return NextResponse.json({
-          success: true,
-          source: 'custom-agent',
-          agentId: AI_CONFIG.insightsAgentId,
-          projectId: projectId,
-          topic: topic,
-          category: category,
-          data: agentResult
-        });
-      }
-
-      console.log('🔄 Custom agent failed, falling back to chat endpoint...');
-    } catch (error) {
-      console.log('🔄 Custom agent error, falling back to chat endpoint...', error.message);
-    }
-
-    // Fallback to chat endpoint
-    const chatResponse = await fetch(`${AI_CONFIG.baseUrl}/api/chat/send-streaming`, {
+    const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.insightsAgentId}/execute`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,20 +71,22 @@ Return the response as a JSON structure with insights array.`;
       })
     });
 
-    if (!chatResponse.ok) {
-      throw new Error(`Chat API failed: ${chatResponse.status} ${chatResponse.statusText}`);
+    if (!customAgentResponse.ok) {
+      const errorText = await customAgentResponse.text();
+      throw new Error(`Custom agent failed (${customAgentResponse.status}): ${errorText}`);
     }
 
-    const chatResult = await chatResponse.json();
-    console.log('✅ Insights generated via chat endpoint');
+    const agentResult = await customAgentResponse.json();
+    console.log('✅ Insights generated via custom agent');
     
     return NextResponse.json({
       success: true,
-      source: 'chat',
+      source: 'custom-agent',
+      agentId: AI_CONFIG.insightsAgentId,
       projectId: projectId,
       topic: topic,
       category: category,
-      data: chatResult
+      data: agentResult
     });
 
   } catch (error) {
