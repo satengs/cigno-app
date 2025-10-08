@@ -467,6 +467,22 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   };
 
   useEffect(() => {
+    // Handle initial view selection for deliverables from URL
+    if (selectedItem?.type === 'deliverable' && selectedItem._view) {
+      const view = selectedItem._view;
+      if (view === 'storyline') {
+        setCurrentView('storyline');
+      } else if (view === 'layout') {
+        setCurrentView('layout');
+      } else if (view === 'details') {
+        setCurrentView('detailed');
+      } else {
+        setCurrentView('detailed');
+      }
+    }
+  }, [selectedItem]);
+
+  useEffect(() => {
     if (selectedItem?.type === 'project') {
       const metadata = selectedItem.metadata || {};
       const metadataDeliverables = Array.isArray(metadata.deliverables) ? metadata.deliverables : [];
@@ -1187,7 +1203,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     );
   }
 
-  // Deliverable view - matches the screenshot
+  // Deliverable view - with tab navigation
   if (selectedItem.type === 'deliverable') {
     const storylineTitle = selectedItem?.title || formData.name;
 
@@ -1202,11 +1218,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           if (existingStoryline) {
             setCurrentView('storyline');
           } else {
-            // Only generate if no existing storyline was found
             handleGenerateStoryline();
           }
-        } else {
-          handleGenerateStoryline();
         }
       }
     };
@@ -1222,11 +1235,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           if (existingStoryline) {
             setCurrentView('layout');
           } else {
-            // Only generate if no existing storyline was found
             handleGenerateStoryline();
           }
-        } else {
-          handleGenerateStoryline();
         }
       }
     };
@@ -1235,19 +1245,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       if (currentView === 'storyline') {
         return (
           <DeliverableStorylineView
-            generatedStoryline={generatedStoryline}
-            storylineDirty={storylineDirty}
-            isSavingStoryline={isSavingStoryline}
-            isGeneratingStoryline={isGeneratingStoryline}
-            onSaveStoryline={handleSaveStoryline}
+            hasStoryline={!!generatedStoryline}
+            storyline={generatedStoryline}
             onGenerateStoryline={handleGenerateStoryline}
-            currentSectionIndex={currentSectionIndex}
-            onSectionChange={setCurrentSectionIndex}
-            onUpdateSection={handleSectionUpdate}
-            onStatusChange={handleSectionStatusChange}
+            onSaveStoryline={handleSaveStoryline}
+            onSectionUpdate={handleSectionUpdate}
+            onSectionStatusChange={handleSectionStatusChange}
             onToggleLock={handleToggleLock}
             onKeyPointsChange={handleKeyPointsChange}
-            title={storylineTitle}
+            isGeneratingStoryline={isGeneratingStoryline}
+            isSavingStoryline={isSavingStoryline}
+            currentSectionIndex={currentSectionIndex}
+            onSectionNavigate={setCurrentSectionIndex}
+            isDirty={storylineDirty}
           />
         );
       }
@@ -1259,10 +1269,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             storyline={generatedStoryline}
             onGenerateStoryline={handleGenerateStoryline}
             isGeneratingStoryline={isGeneratingStoryline}
-            onApplyLayout={(layoutId) => {
-              console.log('Applying layout to storyline:', layoutId);
-              // TODO: Implement layout application logic
-            }}
+            selectedLayoutType={selectedItem?._layoutType}
           />
         );
       }
@@ -1279,9 +1286,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           onGenerateStoryline={handleGenerateStoryline}
           isGeneratingStoryline={isGeneratingStoryline}
           onNewAudienceChange={setNewAudience}
-          onNewAudienceKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
+          onNewAudienceKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
               handleAddAudience();
             }
           }}
