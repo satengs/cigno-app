@@ -26,8 +26,8 @@ export async function GET(request, { params }) {
       );
     }
 
-    const deliverables = await Deliverable.find({ project_id: id })
-      .populate('assigned_team', 'first_name last_name')
+    const deliverables = await Deliverable.find({ project: id })
+      .populate('assigned_to', 'first_name last_name')
       .sort({ created_at: -1 });
 
     return NextResponse.json(deliverables);
@@ -66,7 +66,7 @@ export async function POST(request, { params }) {
     // Create new deliverable
     const deliverable = new Deliverable({
       ...deliverableData,
-      project_id: id,
+      project: id,
       created_at: new Date(),
       updated_at: new Date()
     });
@@ -75,7 +75,7 @@ export async function POST(request, { params }) {
 
     // Populate the response
     const populatedDeliverable = await Deliverable.findById(deliverable._id)
-      .populate('assigned_team', 'first_name last_name');
+      .populate('assigned_to', 'first_name last_name');
 
     return NextResponse.json(populatedDeliverable, { status: 201 });
   } catch (error) {

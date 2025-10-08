@@ -87,8 +87,15 @@ export async function POST(request) {
         const aiPayload = await callCustomAgent(description, projectData);
 
         if (aiPayload) {
-          // Merge AI-provided fields back through the deterministic parser to enforce schema.
-          finalAnalysis = parseProjectDescription(description, { ...projectData, ...aiPayload });
+          // Use AI payload directly to avoid double-parsing deliverables
+          // Only run through parser for non-deliverable fields to enforce schema
+          const schemaFields = parseProjectDescription(description, projectData);
+          finalAnalysis = {
+            ...schemaFields,
+            ...aiPayload,
+            // Preserve AI deliverables exactly as provided to avoid duplicates
+            deliverables: aiPayload.deliverables || schemaFields.deliverables
+          };
           source = 'custom-agent+parser';
         } else {
           warnings.push('Custom agent returned no structured payload; using local analysis.');

@@ -22,22 +22,29 @@ export async function POST(request) {
     console.log(`📖 Generating storyline for project: ${projectId}`);
     console.log(`🤖 Using agent: ${AI_CONFIG.storylineAgentId}`);
 
-    // Prepare context for storyline generation
-    const context = {
-      projectId: projectId,
-      projectName: projectData?.name || 'Unknown Project',
-      clientName: projectData?.client_name || 'Unknown Client',
-      industry: projectData?.industry || 'General',
-      description: projectData?.description || '',
-      deliverable: deliverableData || {},
-      requestType: 'storyline_generation'
+    const structuredPayload = {
+      projectId,
+      project: projectData,
+      deliverable: deliverableData
     };
 
-    const message = `Generate a comprehensive storyline structure for the project "${projectData?.name || 'project'}" for client "${projectData?.client_name || 'client'}". 
+    const message = `Generate a comprehensive storyline structure for the project "${projectData?.name || 'project'}" for client "${projectData?.client_name || 'client'}".
+
+Deliverable focus:
+- Title: ${deliverableData?.name || 'Unnamed Deliverable'}
+- Type: ${deliverableData?.type || 'deliverable'}
+- Format: ${deliverableData?.format || 'unspecified'}
+- Priority: ${deliverableData?.priority || 'medium'}
+- Due date: ${deliverableData?.due_date || deliverableData?.dueDate || 'not provided'}
+- Audience: ${(deliverableData?.audience || []).join(', ') || 'General stakeholders'}
+- Brief: ${deliverableData?.brief || 'No brief provided'}
 
 Project Details:
 - Industry: ${projectData?.industry || 'Not specified'}
 - Description: ${projectData?.description || 'Not provided'}
+
+Structured data JSON (use this for precise fields):
+${JSON.stringify(structuredPayload, null, 2)}
 
 Please create a structured storyline with sections including:
 1. Executive Summary
@@ -54,7 +61,7 @@ For each section, provide:
 - Sources/references
 - Status (Final/Draft/Not Started)
 
-Return the response as a JSON structure with sections array.`;
+Return the response as a JSON structure with sections array. Include deliverable-specific recommendations where relevant.`;
 
     try {
       // Try custom agent first
@@ -65,55 +72,28 @@ Return the response as a JSON structure with sections array.`;
           'X-API-Key': AI_CONFIG.apiKey
         },
         body: JSON.stringify({
-          message: message,
-          context: context
+          message,
         })
       });
 
-      if (customAgentResponse.ok) {
-        const agentResult = await customAgentResponse.json();
-        console.log('✅ Storyline generated via custom agent');
-        
-        return NextResponse.json({
-          success: true,
-          source: 'custom-agent',
-          agentId: AI_CONFIG.storylineAgentId,
-          projectId: projectId,
-          data: agentResult
-        });
+      if (!customAgentResponse.ok) {
+        const errorText = await customAgentResponse.text();
+        throw new Error(`Custom agent failed (${customAgentResponse.status}): ${errorText}`);
       }
 
-      console.log('🔄 Custom agent failed, falling back to chat endpoint...');
-    } catch (error) {
-      console.log('🔄 Custom agent error, falling back to chat endpoint...', error.message);
+      const agentResult = await customAgentResponse.json();
+      console.log('✅ Storyline generated via custom agent', agentResult);
+
+      return NextResponse.json({
+        success: true,
+        source: 'custom-agent',
+        agentId: AI_CONFIG.storylineAgentId,
+        projectId: projectId,
+        data: agentResult
+      });
+    } catch (agentError) {
+      throw agentError;
     }
-
-    // Fallback to chat endpoint
-    const chatResponse = await fetch(`${AI_CONFIG.baseUrl}/api/chat/send-streaming`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': AI_CONFIG.apiKey
-      },
-      body: JSON.stringify({
-        message: message,
-        context: context
-      })
-    });
-
-    if (!chatResponse.ok) {
-      throw new Error(`Chat API failed: ${chatResponse.status} ${chatResponse.statusText}`);
-    }
-
-    const chatResult = await chatResponse.json();
-    console.log('✅ Storyline generated via chat endpoint');
-    
-    return NextResponse.json({
-      success: true,
-      source: 'chat',
-      projectId: projectId,
-      data: chatResult
-    });
 
   } catch (error) {
     console.error('❌ Storyline generation error:', error);

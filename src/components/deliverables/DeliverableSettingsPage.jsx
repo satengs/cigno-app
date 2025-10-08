@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import Button from '../ui/buttons/Button';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
-import { FileText, Wand2, Save, ArrowLeft, X, Sparkles } from 'lucide-react';
+import { FileText, Wand2, Save, ArrowLeft, X, Sparkles, BookOpen } from 'lucide-react';
 
 export default function DeliverableSettingsPage({ 
   deliverable,
   onSave,
-  onBack
+  onBack,
+  onGenerateStoryline,
+  isGeneratingStoryline
 }) {
   const [formData, setFormData] = useState({
     brief: '',
@@ -358,6 +360,42 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
           )}
         </div>
 
+        {/* Generate Storyline Section */}
+        {onGenerateStoryline && (
+          <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-md font-semibold text-gray-800 mb-1 flex items-center">
+                  <BookOpen className="w-4 h-4 mr-2 text-purple-600" />
+                  AI Storyline Generation
+                </h4>
+                <p className="text-gray-600 text-xs">
+                  Generate a structured storyline based on the brief above.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={onGenerateStoryline}
+                disabled={isGeneratingStoryline || !formData.brief.trim()}
+                size="sm"
+                className={`flex items-center space-x-2 ${
+                  isGeneratingStoryline
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                }`}
+              >
+                <Sparkles className={`w-3 h-3 ${isGeneratingStoryline ? 'animate-spin' : ''}`} />
+                <span>{isGeneratingStoryline ? 'Generating...' : 'Generate Storyline'}</span>
+              </Button>
+            </div>
+            {!formData.brief.trim() && (
+              <p className="text-amber-600 text-xs mt-2">
+                A brief is required to generate a storyline.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Notes Section */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -477,6 +515,7 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         {errors.general && (
           <div className="text-red-600 text-sm">{errors.general}</div>
         )}
+
 
         {/* Action Buttons */}
         <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db/mongoose';
 import MenuItemModel from '@/lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -20,16 +21,13 @@ export async function GET() {
     const itemMap = new Map();
     const rootItems = [];
     
-    // First pass: create a map of all items
+    // First pass: create a map of all items with normalized IDs
     allItems.forEach(item => {
-      const itemWithId = {
+      const normalizedItem = formatForAPI({
         ...item,
-        id: item._id.toString(),
         children: []
-      };
-      // Remove _id to avoid confusion
-      delete itemWithId._id;
-      itemMap.set(item._id.toString(), itemWithId);
+      });
+      itemMap.set(item._id.toString(), normalizedItem);
     });
     
     // Second pass: build the hierarchy
@@ -128,18 +126,9 @@ export async function POST(request) {
       console.log('Updated parent item children array');
     }
     
-    const itemResponse = {
-      ...savedItem.toObject(),
-      id: savedItem._id.toString()
-    };
-    // Remove _id to avoid confusion
-    delete itemResponse._id;
-    
     return NextResponse.json({ 
       success: true, 
-      id: savedItem._id,
-      message: 'Menu item created successfully',
-      item: itemResponse
+      data: { item: formatForAPI(savedItem) }
     });
     
   } catch (error) {
@@ -161,6 +150,12 @@ export async function PUT(request) {
     await connectDB();
     const { id, ...updateData } = await request.json();
     
+    if (!id || !isValidObjectId(id)) {
+      return NextResponse.json({ 
+        error: 'Valid ObjectId required' 
+      }, { status: 400 });
+    }
+    
     console.log('Updating menu item:', id, updateData);
     
     const updatedItem = await MenuItemModel.findByIdAndUpdate(
@@ -175,17 +170,9 @@ export async function PUT(request) {
     
     console.log('Menu item updated successfully');
     
-    const itemResponse = {
-      ...updatedItem.toObject(),
-      id: updatedItem._id.toString()
-    };
-    // Remove _id to avoid confusion
-    delete itemResponse._id;
-    
     return NextResponse.json({ 
       success: true, 
-      message: 'Menu item updated successfully',
-      item: itemResponse
+      data: { item: formatForAPI(updatedItem) }
     });
     
   } catch (error) {
@@ -201,6 +188,12 @@ export async function DELETE(request) {
   try {
     await connectDB();
     const { id } = await request.json();
+    
+    if (!id || !isValidObjectId(id)) {
+      return NextResponse.json({ 
+        error: 'Valid ObjectId required' 
+      }, { status: 400 });
+    }
     
     console.log('Deleting menu item:', id);
     

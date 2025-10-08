@@ -85,6 +85,8 @@ Make sure the storyline is:
     // In a real implementation, this would call your preferred AI service
     const storylineResponse = await generateStorylineWithAgent(storylinePrompt);
     
+    console.log('🔍 Storyline response structure:', JSON.stringify(storylineResponse, null, 2));
+    
     // Save storyline to database if deliverable is valid
     let savedStoryline = null;
     if (deliverable && deliverableId) {
@@ -115,7 +117,7 @@ Make sure the storyline is:
               updated_at: new Date()
             },
             // Main sections
-            ...(storylineResponse.mainSections?.map((section, index) => ({
+            ...((storylineResponse.mainSections || []).map((section, index) => ({
               id: `section_${index + 1}`,
               title: section.title,
               description: section.keyMessages?.join('. ') || '',
@@ -130,7 +132,7 @@ Make sure the storyline is:
               locked: false,
               created_at: new Date(),
               updated_at: new Date()
-            })) || []),
+            }))),
             // Call to Action section
             {
               id: 'call_to_action',
@@ -163,7 +165,7 @@ Make sure the storyline is:
         };
 
         // Check if storyline already exists for this deliverable
-        const existingStoryline = await Storyline.findOne({ deliverable: deliverableId });
+        const existingStoryline = await Storyline.findOne({ deliverable: deliverableId, is_active: true });
         
         if (existingStoryline) {
           // Update existing storyline
@@ -179,6 +181,7 @@ Make sure the storyline is:
         console.log('✅ Storyline saved to database:', savedStoryline._id);
       } catch (dbError) {
         console.error('❌ Error saving storyline to database:', dbError);
+        console.log('🔍 Attempted storyline document:', JSON.stringify(storylineDoc, null, 2));
         // Continue without failing the request
       }
     }

@@ -67,8 +67,7 @@ const storylineSchema = new mongoose.Schema({
   deliverable: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Deliverable',
-    required: true,
-    unique: true // One storyline per deliverable
+    required: true
   },
   title: {
     type: String,
@@ -171,7 +170,8 @@ const storylineSchema = new mongoose.Schema({
 });
 
 // Indexes for better performance
-// Note: deliverable index is created automatically by unique: true
+storylineSchema.index({ deliverable: 1 });
+storylineSchema.index({ deliverable: 1, is_active: 1 }, { unique: true }); // One active storyline per deliverable
 storylineSchema.index({ status: 1 });
 storylineSchema.index({ created_by: 1 });
 storylineSchema.index({ is_active: 1 });

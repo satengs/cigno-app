@@ -6,6 +6,7 @@ import { UnifiedAddModal } from '../ui';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ThemeToggle from '../theme/ThemeToggle';
 import dataService from '@/lib/services/DataService';
+import { normalizeId, idsEqual } from '../../lib/utils/idUtils';
 
 export default function LeftNav({ 
   onToggle, 
@@ -52,12 +53,8 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
       hasMetadata: !!item?.metadata
     });
     
-    // Ensure the item has a consistent ID structure
-    const normalizedItem = {
-      ...item,
-      id: item._id || item.id, // Ensure id field exists
-      _id: item._id || item.id  // Ensure _id field exists
-    };
+    // Use normalizeId utility for consistent ID structure
+    const normalizedItem = normalizeId(item);
     
     console.log('🎯 LeftNav normalized item:', {
       id: normalizedItem.id,
@@ -73,11 +70,7 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
 
   useEffect(() => {
     if (externalSelectedItem && externalSelectedItem.id) {
-      setSelectedNavItem({
-        ...externalSelectedItem,
-        id: externalSelectedItem._id || externalSelectedItem.id,
-        _id: externalSelectedItem._id || externalSelectedItem.id
-      });
+      setSelectedNavItem(normalizeId(externalSelectedItem));
 
       setExpandedSections(prev => ({
         ...prev,
@@ -195,12 +188,22 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
               if (item.children && item.children.length > 0) {
                 item.children.forEach(child => {
                   if (child.type === 'project') {
+                    const projectEntityId = child.metadata?.project_id
+                      || child.metadata?.business_entity_id
+                      || child.metadata?.project?.id
+                      || child.metadata?.project?._id
+                      || child.metadata?.project
+                      || child.id;
+
                     projects.push({
-                      id: child.id,
+                      id: projectEntityId,
                       name: child.title,
                       title: child.title,
                       clientId: item.id,
-                      clientName: item.title
+                      clientName: item.title,
+                      menuId: child.id,
+                      metadata: child.metadata || {},
+                      menuItem: child
                     });
                   }
                 });
@@ -269,44 +272,76 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
             };
             break;
             
-          case 'project':
+          case 'project': {
             apiEndpoint = '/api/projects';
+            const metadata = itemData.metadata || {};
+            const budgetAmount = Number(metadata.budget_amount ?? metadata.budget?.amount ?? 0) || 0;
+            const budgetCurrency = metadata.budget_currency || metadata.budget?.currency || 'USD';
+            const budgetType = metadata.budget_type || metadata.budget?.type || 'Fixed';
+            const budgetAllocated = Number(metadata.budget?.allocated ?? 0) || 0;
+            const budgetSpent = Number(metadata.budget?.spent ?? 0) || 0;
             requestBody = {
               name: itemData.title,
               description: itemData.description || '',
               status: itemData.status || 'Planning', // Use correct enum value
               client: itemData.parentId,
-              client_owner: itemData.metadata?.client_owner,
-              internal_owner: itemData.metadata?.internal_owner || null,
-              organisation: itemData.metadata?.organisation || null,
-              start_date: itemData.metadata?.start_date || null,
-              end_date: itemData.metadata?.end_date || null,
-              budget: itemData.metadata?.budget || { amount: 0, currency: 'USD' },
-              priority: itemData.metadata?.priority || 'medium',
-              project_type: itemData.metadata?.project_type || 'consulting',
-              tags: itemData.metadata?.tags || [],
-              notes: itemData.metadata?.notes || '',
-              deliverables: itemData.deliverables || itemData.metadata?.deliverables || [],
+              client_owner: metadata.client_owner || null,
+              internal_owner: metadata.internal_owner || null,
+              organisation: metadata.organisation || null,
+              start_date: metadata.start_date || null,
+              end_date: metadata.end_date || null,
+              budget: {
+                amount: budgetAmount,
+                currency: budgetCurrency,
+                type: budgetType,
+                allocated: budgetAllocated,
+                spent: budgetSpent
+              },
+              budget_amount: budgetAmount,
+              budget_currency: budgetCurrency,
+              budget_type: budgetType,
+              priority: metadata.priority || 'medium',
+              project_type: metadata.project_type || 'consulting',
+              tags: metadata.tags || [],
+              notes: metadata.notes || '',
+              deliverables: itemData.deliverables || metadata.deliverables || [],
               // created_by and updated_by will be set by API using defaults
               // created_by: null,
               // updated_by: null
             };
             break;
+          }
             
           case 'deliverable':
             apiEndpoint = '/api/deliverables';
-            requestBody = {
-              name: itemData.title || itemData.name || 'New Deliverable',
-              type: itemData.metadata?.type || 'Report', // Use correct enum value (capitalized)
-              description: itemData.description || '',
-              status: itemData.status || 'draft', // Use correct enum value (lowercase)
-              priority: itemData.metadata?.priority || 'medium', // Use correct enum value (lowercase)
-              project: itemData.parentId || itemData.metadata?.project,
-              assigned_to: itemData.metadata?.assigned_to || [],
-              due_date: itemData.metadata?.due_date || null,
-              estimated_hours: itemData.metadata?.estimated_hours || 0,
-              notes: itemData.metadata?.notes || ''
-            };
+            {
+              const metadata = itemData.metadata || {};
+              const projectIdCandidate = metadata.project?.id
+                || metadata.project?._id
+                || metadata.project
+                || metadata.project_id
+                || metadata.projectId
+                || itemData.project
+                || itemData.parentProjectId
+                || itemData.parentId; // Fallback to parent if nothing else available
+
+              const normalizedProjectId = typeof projectIdCandidate === 'object'
+                ? projectIdCandidate._id || projectIdCandidate.id || projectIdCandidate.toString?.() || projectIdCandidate
+                : projectIdCandidate;
+
+              requestBody = {
+                name: itemData.title || itemData.name || 'New Deliverable',
+                type: metadata.type || 'Report', // Use correct enum value (capitalized)
+                description: itemData.description || '',
+                status: itemData.status || 'draft', // Use correct enum value (lowercase)
+                priority: metadata.priority || 'medium', // Use correct enum value (lowercase)
+                project: normalizedProjectId,
+                assigned_to: metadata.assigned_to || [],
+                due_date: metadata.due_date || null,
+                estimated_hours: metadata.estimated_hours || 0,
+                notes: metadata.notes || ''
+              };
+            }
             break;
             
           default:
@@ -357,6 +392,32 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
       const menuTitle = itemData.title || itemData.name || 'New Deliverable';
       const menuStatus = itemData.metadata?.status || mapProjectStatusToMenu(itemData.status) || 'active';
       
+      const menuProjectId = itemData.metadata?.project_id
+        || itemData.metadata?.projectId
+        || itemData.metadata?.project?._id
+        || itemData.metadata?.project?.id
+        || itemData.metadata?.project
+        || itemData.parentProjectId
+        || itemData.project
+        || itemData.parentId;
+
+      const businessEntity = businessEntityResult?.data?.deliverable
+        || businessEntityResult?.data?.project
+        || businessEntityResult?.data?.client
+        || businessEntityResult?.deliverable
+        || businessEntityResult?.project
+        || businessEntityResult?.client
+        || businessEntityResult;
+
+      const businessEntityId = businessEntity?.id || businessEntity?._id || businessEntityResult?.id || businessEntityResult?._id;
+
+      if (businessEntityId && itemType === 'deliverable') {
+        itemData.metadata = {
+          ...itemData.metadata,
+          deliverableId: businessEntityId
+        };
+      }
+
       const menuRequestBody = editId ? { ...itemData, id: editId, title: menuTitle, status: menuStatus } : {
         ...itemData,
         title: menuTitle,
@@ -364,10 +425,14 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
         // If we created a business entity, link it in the metadata
         metadata: {
           ...itemData.metadata,
-          ...(businessEntityResult && {
-            [`${itemType}_id`]: businessEntityResult.id || businessEntityResult._id,
-            business_entity_id: businessEntityResult.id || businessEntityResult._id
-          })
+          ...(businessEntityId && {
+            [`${itemType}_id`]: businessEntityId,
+            business_entity_id: businessEntityId,
+            deliverableId: itemType === 'deliverable' ? businessEntityId : itemData.metadata?.deliverableId
+          }),
+          ...(menuProjectId && { project_id: menuProjectId }),
+          ...(itemData.parentProjectId && { parent_project_id: itemData.parentProjectId }),
+          ...(itemData.parentId && { parent_menu_id: itemData.parentId })
         }
       };
       
@@ -445,16 +510,33 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
           
         case 'project':
           apiEndpoint = '/api/projects';
-          requestBody = {
-            ...requestBody,
-            name: updates.title,
-            description: updates.description || '',
-            status: updates.status || 'Planning', // Use correct enum value
-            client_owner: updates.metadata?.client_owner,
-            internal_owner: updates.metadata?.internal_owner,
-            priority: updates.metadata?.priority || 'medium',
-            // updated_by will be set by API using defaults
-          };
+          {
+            const metadata = updates.metadata || {};
+            const budgetAmount = Number(metadata.budget_amount ?? metadata.budget?.amount ?? 0) || 0;
+            const budgetCurrency = metadata.budget_currency || metadata.budget?.currency || 'USD';
+            const budgetType = metadata.budget_type || metadata.budget?.type || 'Fixed';
+            requestBody = {
+              ...requestBody,
+              name: updates.title,
+              description: updates.description || '',
+              status: updates.status || 'Planning', // Use correct enum value
+              client_owner: metadata.client_owner,
+              internal_owner: metadata.internal_owner,
+              start_date: metadata.start_date || null,
+              end_date: metadata.end_date || null,
+              budget: {
+                amount: budgetAmount,
+                currency: budgetCurrency,
+                type: budgetType
+              },
+              budget_amount: budgetAmount,
+              budget_currency: budgetCurrency,
+              budget_type: budgetType,
+              priority: metadata.priority || 'medium',
+              project_type: metadata.project_type || 'consulting',
+              // updated_by will be set by API using defaults
+            };
+          }
           break;
           
         case 'deliverable':
@@ -680,14 +762,35 @@ const mapProjectStatusToMenu = (status) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to remove ${type}`);
+        console.error('❌ Delete request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url,
+          headers: Object.fromEntries(response.headers.entries())
+        });
+        
+        let errorMessage = `Failed to remove ${type}`;
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } else {
+            const errorText = await response.text();
+            console.error('Non-JSON error response:', errorText.substring(0, 200));
+            errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+          }
+        } catch (parseError) {
+          console.error('Error parsing error response:', parseError);
+          errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       console.log('✅ Item removed successfully');
 
       // Clear selection if the removed item was selected
-      if (selectedNavItem && (selectedNavItem.id === id || selectedNavItem._id === id)) {
+      if (selectedNavItem && idsEqual(selectedNavItem, { id, _id: id })) {
         setSelectedNavItem(null);
         if (onItemSelect) {
           onItemSelect(null);
@@ -966,18 +1069,18 @@ const mapProjectStatusToMenu = (status) => {
                         <div 
                           className="group flex items-center justify-between p-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
                           style={{ 
-                            backgroundColor: selectedNavItem?.id === client._id || selectedNavItem?.id === client.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                            backgroundColor: idsEqual(selectedNavItem, client) ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
                           }}
                           onClick={() => handleItemClick({ ...client, type: 'client' })}
                           onMouseEnter={(e) => {
-                            if (selectedNavItem?.id !== client._id && selectedNavItem?.id !== client.id) {
+                            if (!idsEqual(selectedNavItem, client)) {
                               e.target.style.backgroundColor = 'var(--bg-tertiary)';
                             }
                             // Set hovered item using unique ID
                             setHoveredItem(`client-${client._id || client.id}`);
                           }}
                           onMouseLeave={(e) => {
-                            if (selectedNavItem?.id !== client._id && selectedNavItem?.id !== client.id) {
+                            if (!idsEqual(selectedNavItem, client)) {
                               e.target.style.backgroundColor = 'var(--bg-secondary)';
                             }
                             // Clear hovered item
@@ -1161,18 +1264,18 @@ const mapProjectStatusToMenu = (status) => {
                                       <div 
                                         className="group flex items-center justify-between py-1 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
                                         style={{ 
-                                          backgroundColor: selectedNavItem?.id === project._id || selectedNavItem?.id === project.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                                          backgroundColor: idsEqual(selectedNavItem, project) ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
                                         }}
                                         onClick={() => handleItemClick({ ...project, type: 'project' })}
                                         onMouseEnter={(e) => {
-                                          if (selectedNavItem?.id !== project._id && selectedNavItem?.id !== project.id) {
+                                          if (!idsEqual(selectedNavItem, project)) {
                                             e.target.style.backgroundColor = 'var(--bg-tertiary)';
                                           }
                                           // Set hovered item using unique ID
                                           setHoveredItem(`project-${project._id || project.id}`);
                                         }}
                                         onMouseLeave={(e) => {
-                                          if (selectedNavItem?.id !== project._id && selectedNavItem?.id !== project.id) {
+                                          if (!idsEqual(selectedNavItem, project)) {
                                             e.target.style.backgroundColor = 'var(--bg-secondary)';
                                           }
                                           // Clear hovered item
@@ -1356,19 +1459,19 @@ const mapProjectStatusToMenu = (status) => {
                                                     <div 
                                                       className="flex items-start justify-between py-1.5 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer"
                                                       style={{ 
-                                                        backgroundColor: selectedNavItem?.id === deliverable._id || selectedNavItem?.id === deliverable.id ? 'var(--bg-tertiary)' : 'transparent',
-                                                        border: selectedNavItem?.id === deliverable._id || selectedNavItem?.id === deliverable.id ? '1px solid var(--border-primary)' : '1px solid transparent'
+                                                        backgroundColor: idsEqual(selectedNavItem, deliverable) ? 'var(--bg-tertiary)' : 'transparent',
+                                                        border: idsEqual(selectedNavItem, deliverable) ? '1px solid var(--border-primary)' : '1px solid transparent'
                                                       }}
                                                       onClick={() => handleItemClick({ ...deliverable, type: 'deliverable' })}
                                                       onMouseEnter={(e) => {
-                                                        if (selectedNavItem?.id !== deliverable._id && selectedNavItem?.id !== deliverable.id) {
+                                                        if (!idsEqual(selectedNavItem, deliverable)) {
                                                           e.target.style.backgroundColor = 'var(--bg-tertiary)';
                                                         }
                                                         // Set hovered item using unique ID
                                                         setHoveredItem(`deliverable-${deliverable._id || deliverable.id}`);
                                                       }}
                                                       onMouseLeave={(e) => {
-                                                        if (selectedNavItem?.id !== deliverable._id && selectedNavItem?.id !== deliverable.id) {
+                                                        if (!idsEqual(selectedNavItem, deliverable)) {
                                                           e.target.style.backgroundColor = 'var(--bg-secondary)';
                                                         }
                                                         // Clear hovered item

@@ -151,7 +151,6 @@ const userSchema = new mongoose.Schema({
 });
 
 // Indexes for better performance
-userSchema.index({ email_address: 1 });
 userSchema.index({ organisation: 1 });
 userSchema.index({ is_active: 1 });
 userSchema.index({ job_title: 1 });

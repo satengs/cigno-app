@@ -30,8 +30,8 @@ export async function GET(request, { params }) {
     }
 
     // Get deliverables count and calculate progress
-    const deliverables = await Deliverable.find({ project_id: id });
-    const completedDeliverables = deliverables.filter(d => d.status === 'complete').length;
+    const deliverables = await Deliverable.find({ project: id });
+    const completedDeliverables = deliverables.filter(d => d.status === 'completed').length;
     const progressPercentage = deliverables.length > 0 
       ? Math.round((completedDeliverables / deliverables.length) * 100)
       : 0;
@@ -113,7 +113,7 @@ export async function DELETE(request, { params }) {
     }
 
     // Delete related deliverables first
-    await Deliverable.deleteMany({ project_id: id });
+    await Deliverable.deleteMany({ project: id });
 
     const project = await Project.findByIdAndDelete(id);
 

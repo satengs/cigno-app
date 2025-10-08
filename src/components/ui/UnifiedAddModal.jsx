@@ -139,7 +139,9 @@ export default function UnifiedAddModal({
         client_owner: editItem.metadata?.client_owner || '',
         internal_owner: editItem.metadata?.internal_owner || '',
         team_members: editItem.metadata?.team_members || [],
-        deliverables: editItem.metadata?.deliverables || []
+        deliverables: editItem.metadata?.deliverables || [],
+        project: editItem.metadata?.project_id || editItem.metadata?.project || editItem.parentProjectId || '',
+        projectMenuId: editItem.parentId || editItem.metadata?.projectMenuId || ''
       });
     } else {
       // Default form data for new items
@@ -195,26 +197,29 @@ export default function UnifiedAddModal({
           });
           console.log('🔧 Project defaults set:', defaults);
           break;
-        case 'deliverable':
+        case 'deliverable': {
+          const linkedProject = availableProjects.find(project => project.menuId === parentId);
           Object.assign(defaults, {
             format: 'PDF',
-            type: 'report',
+            type: 'Report',
             status: 'draft',
             due_date: '',
             priority: 'medium',
             complexity: 'moderate',
             estimated_hours: 0,
-            project: parentId || '',
+            project: linkedProject?.id || '',
+            projectMenuId: linkedProject?.menuId || parentId || '',
             brief: '',
             version: '1.0',
             language: 'en'
           });
           break;
+        }
       }
 
       setFormData(defaults);
     }
-  }, [itemType, editItem, parentId]);
+  }, [itemType, editItem, parentId, availableProjects]);
 
   // Get modal title and button text
   const getModalConfig = () => {
@@ -365,9 +370,11 @@ export default function UnifiedAddModal({
             project_type: formData.project_type,
             start_date: formData.start_date,
             end_date: formData.end_date,
-            budget_amount: formData.budget_amount,
-            budget_currency: formData.budget_currency,
-            budget_type: formData.budget_type,
+            budget: {
+              amount: formData.budget_amount || 0,
+              currency: formData.budget_currency || 'USD',
+              type: formData.budget_type || 'fixed'
+            },
             status: projectStatus,
             priority: formData.priority,
             client_owner: formData.client_owner,
@@ -392,16 +399,23 @@ export default function UnifiedAddModal({
             estimated_hours: formData.estimated_hours,
             version: formData.version,
             language: formData.language,
-            project: formData.project
+            project: formData.project,
+            project_id: formData.project,
+            projectMenuId: formData.projectMenuId
           });
           
           // Add deliverable-specific properties directly to itemData
           itemData.brief = formData.brief.trim();
+          itemData.project = formData.project;
           
           // Set parentId to the selected project for deliverables
-          if (formData.project) {
-            itemData.parentId = formData.project;
-            console.log('🔗 Setting parentId to selected project:', formData.project);
+          if (formData.projectMenuId) {
+            itemData.parentId = formData.projectMenuId;
+            itemData.parentProjectId = formData.project;
+            console.log('🔗 Setting parentId to project menu item:', formData.projectMenuId);
+          } else if (formData.project) {
+            itemData.parentProjectId = formData.project;
+            console.log('🔗 No project menu ID available, storing project reference only.');
           }
           
           console.log('✅ Deliverable metadata added:', itemData.metadata);
@@ -454,6 +468,18 @@ export default function UnifiedAddModal({
   const handleInputChange = (field, value) => {
     console.log(`📝 Input changed: ${field} = "${value}"`);
     setFormData(prev => {
+      if (field === 'project') {
+        const selectedProject = availableProjects.find(project => project.id === value);
+        const projectMenuId = selectedProject?.menuId || '';
+        const newData = { ...prev, project: value, projectMenuId };
+        console.log('🔗 Project selection updated:', {
+          projectId: value,
+          projectMenuId,
+          selectedProject
+        });
+        return newData;
+      }
+
       const newData = { ...prev, [field]: value };
       console.log(`📊 Updated form data:`, newData);
       return newData;
@@ -1035,18 +1061,21 @@ export default function UnifiedAddModal({
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     <Select
-                      value={deliverable.type || 'strategy'}
+                      value={deliverable.type || 'Strategy'}
                       onChange={(e) => {
                         const newDeliverables = [...formData.deliverables];
                         newDeliverables[index] = { ...newDeliverables[index], type: e.target.value };
                         handleInputChange('deliverables', newDeliverables);
                       }}
                       options={[
-                        { value: 'strategy', label: 'Strategy' },
-                        { value: 'report', label: 'Report' },
-                        { value: 'presentation', label: 'Presentation' },
-                        { value: 'analysis', label: 'Analysis' },
-                        { value: 'design', label: 'Design' }
+                        { value: 'Strategy', label: 'Strategy' },
+                        { value: 'Report', label: 'Report' },
+                        { value: 'Presentation', label: 'Presentation' },
+                        { value: 'Analysis', label: 'Analysis' },
+                        { value: 'Design', label: 'Design' },
+                        { value: 'Dashboard', label: 'Dashboard' },
+                        { value: 'API', label: 'API' },
+                        { value: 'Other', label: 'Other' }
                       ]}
                       className="w-28"
                     />
@@ -1066,7 +1095,7 @@ export default function UnifiedAddModal({
                 <button
                   type="button"
                   onClick={() => {
-                    handleInputChange('deliverables', [...(formData.deliverables || []), { name: '', type: 'strategy' }]);
+                    handleInputChange('deliverables', [...(formData.deliverables || []), { name: '', type: 'Strategy' }]);
                   }}
                   className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -1115,17 +1144,19 @@ export default function UnifiedAddModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Select
                 label="Type"
-                value={formData.type || 'report'}
+                value={formData.type || 'Report'}
                 onChange={(e) => handleInputChange('type', e.target.value)}
                 options={[
-                  { value: 'report', label: 'Report' },
-                  { value: 'presentation', label: 'Presentation' },
-                  { value: 'analysis', label: 'Analysis' },
-                  { value: 'strategy', label: 'Strategy' },
-                  { value: 'design', label: 'Design' },
-                  { value: 'code', label: 'Code' },
-                  { value: 'documentation', label: 'Documentation' },
-                  { value: 'other', label: 'Other' }
+                  { value: 'Report', label: 'Report' },
+                  { value: 'Presentation', label: 'Presentation' },
+                  { value: 'Strategy', label: 'Strategy' },
+                  { value: 'Analysis', label: 'Analysis' },
+                  { value: 'Design', label: 'Design' },
+                  { value: 'Code', label: 'Code' },
+                  { value: 'Documentation', label: 'Documentation' },
+                  { value: 'Dashboard', label: 'Dashboard' },
+                  { value: 'API', label: 'API' },
+                  { value: 'Other', label: 'Other' }
                 ]}
               />
               <Select

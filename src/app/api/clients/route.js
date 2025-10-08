@@ -7,6 +7,7 @@ import Contact from '@/lib/models/Contact';
 import Project from '@/lib/models/Project';
 import Deliverable from '@/lib/models/Deliverable';
 import MenuItemModel from '@/lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -23,10 +24,7 @@ export async function GET() {
     
     return NextResponse.json({ 
       success: true,
-      clients: clients.map(client => ({
-        ...client,
-        id: client._id.toString()
-      }))
+      data: { clients: formatForAPI(clients) }
     });
     
   } catch (error) {
@@ -128,12 +126,7 @@ export async function POST(request) {
     
     return NextResponse.json({ 
       success: true, 
-      id: savedClient._id,
-      message: 'Client created successfully',
-      client: {
-        ...savedClient.toObject(),
-        id: savedClient._id.toString()
-      }
+      data: { client: formatForAPI(savedClient) }
     });
     
   } catch (error) {
@@ -151,10 +144,10 @@ export async function PUT(request) {
     const updateData = await request.json();
     const { id, ...clientData } = updateData;
     
-    if (!id) {
+    if (!id || !isValidObjectId(id)) {
       return NextResponse.json({ 
-        error: 'Client ID is required',
-        details: 'Please provide a client ID to update' 
+        error: 'Valid ObjectId required',
+        details: 'Please provide a valid client ObjectId to update' 
       }, { status: 400 });
     }
     
@@ -206,11 +199,7 @@ export async function PUT(request) {
     
     return NextResponse.json({ 
       success: true, 
-      message: 'Client updated successfully',
-      client: {
-        ...updatedClient.toObject(),
-        id: updatedClient._id.toString()
-      }
+      data: { client: formatForAPI(updatedClient) }
     });
     
   } catch (error) {
@@ -229,25 +218,14 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get('id');
     
-    if (!clientId) {
+    if (!clientId || !isValidObjectId(clientId)) {
       return NextResponse.json({ 
-        error: 'Client ID is required',
-        details: 'Please provide a client ID to delete' 
+        error: 'Valid ObjectId required',
+        details: 'Please provide a valid client ObjectId to delete' 
       }, { status: 400 });
     }
     
     console.log('🗑️ Deleting client with ID:', clientId);
-    console.log('🔍 Client ID type:', typeof clientId);
-    console.log('🔍 Client ID length:', clientId?.length);
-    
-    // Validate ObjectId format
-    if (!clientId.match(/^[0-9a-fA-F]{24}$/)) {
-      console.log('❌ Invalid ObjectId format:', clientId);
-      return NextResponse.json({ 
-        error: 'Invalid client ID format',
-        details: 'Client ID must be a valid MongoDB ObjectId' 
-      }, { status: 400 });
-    }
     
     console.log('✅ ObjectId format valid, proceeding with deletion...');
     
@@ -345,10 +323,7 @@ export async function DELETE(request) {
     return NextResponse.json({ 
       success: true,
       message: 'Client and all associated projects, deliverables, and contacts deleted successfully',
-      deletedClient: {
-        id: deletedClient._id.toString(),
-        name: deletedClient.name
-      }
+      data: { client: formatForAPI(deletedClient) }
     });
     
   } catch (error) {

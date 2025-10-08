@@ -7,6 +7,12 @@ import {
   createErrorResponse, 
   createValidationError 
 } from '../../../lib/api/errors.js';
+import { 
+  normalizeStatus, 
+  normalizeStorylineStatus,
+  SECTION_STATUS,
+  STORYLINE_STATUS 
+} from '../../../lib/constants/enums.js';
 
 // GET /api/storylines - Get storylines with optional filters
 export async function GET(request) {
@@ -104,21 +110,23 @@ export async function POST(request) {
     }
 
     // Check if storyline already exists for this deliverable
-    const normalizedSections = (sections || []).map((section, index) => ({
-      id: section.id || section.sectionId || `section_${index + 1}`,
-      title: section.title || `Section ${index + 1}`,
-      description: section.description || '',
-      status: section.status || 'draft',
-      order: section.order !== undefined ? section.order : index,
-      keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
-      contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
-      estimatedSlides: section.estimatedSlides || 3,
-      locked: !!section.locked,
-      lockedBy: section.locked ? section.lockedBy : undefined,
-      lockedAt: section.locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
-      created_at: section.created_at ? new Date(section.created_at) : new Date(),
-      updated_at: new Date()
-    }));
+    const normalizedSections = (sections || []).map((section, index) => {
+      return {
+        id: section.id || section.sectionId || `section_${index + 1}`,
+        title: section.title || `Section ${index + 1}`,
+        description: section.description || '',
+        status: normalizeStatus(section.status, SECTION_STATUS.DRAFT),
+        order: section.order !== undefined ? section.order : index,
+        keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+        contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+        estimatedSlides: section.estimatedSlides || 3,
+        locked: !!section.locked,
+        lockedBy: section.locked ? section.lockedBy : undefined,
+        lockedAt: section.locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
+        created_at: section.created_at ? new Date(section.created_at) : new Date(),
+        updated_at: new Date()
+      };
+    });
 
     const storylinePayload = {
       deliverable,

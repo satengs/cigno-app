@@ -4,6 +4,7 @@ import MenuItemModel from '@/lib/models/MenuItemModel';
 import Project from '@/lib/models/Project';
 import User from '@/lib/models/User';
 import connectDB from '@/lib/db/mongoose';
+import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
 
 // GET /api/deliverables
 export async function GET(request) {
@@ -24,7 +25,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
-      data: { deliverables }
+      data: { deliverables: formatForAPI(deliverables) }
     });
 
   } catch (error) {
@@ -177,7 +178,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      data: { deliverable: saved }
+      data: { deliverable: formatForAPI(saved) }
     }, { status: 201 });
 
   } catch (error) {
@@ -239,9 +240,9 @@ export async function PUT(request) {
     const body = await request.json();
     const { id, ...updateData } = body;
 
-    if (!id || typeof id !== 'string') {
+    if (!id || typeof id !== 'string' || !isValidObjectId(id)) {
       return NextResponse.json(
-        { success: false, error: 'Valid ID required' },
+        { success: false, error: 'Valid ObjectId required' },
         { status: 400 }
       );
     }
@@ -261,7 +262,7 @@ export async function PUT(request) {
 
     return NextResponse.json({
       success: true,
-      data: { deliverable }
+      data: { deliverable: formatForAPI(deliverable) }
     });
 
   } catch (error) {
@@ -281,17 +282,9 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
-    if (!id) {
+    if (!id || !isValidObjectId(id)) {
       return NextResponse.json(
-        { success: false, error: 'ID required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate ObjectId format
-    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid ID format' },
+        { success: false, error: 'Valid ObjectId required' },
         { status: 400 }
       );
     }

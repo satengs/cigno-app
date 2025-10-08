@@ -13,7 +13,7 @@ const deliverableSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Other'],
+    enum: ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'],
     default: 'Report'
   },
   length: {

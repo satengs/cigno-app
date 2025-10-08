@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import ClientDetailView from '../ui/ClientDetailView';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
-import SectionNavigator from '../storyline/SectionNavigator';
+import { getIdString, isValidObjectId } from '@/lib/utils/idUtils';
+import { normalizeStatus } from '@/lib/constants/enums';
+import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
+import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
+import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
 
 export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate }) {
   const [formData, setFormData] = useState({
@@ -205,8 +209,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const result = await response.json();
-      if (result.ok && result.data.storylines.length > 0) {
-        const existingStoryline = result.data.storylines[0];
+      const storylines = Array.isArray(result?.data?.storylines)
+        ? result.data.storylines
+        : Array.isArray(result?.data)
+          ? result.data
+          : [];
+      const existingStoryline = storylines[0] || result?.data?.storyline || null;
+
+      if (existingStoryline) {
         console.log('✅ Found existing storyline:', existingStoryline._id);
         
         setGeneratedStoryline({
@@ -276,7 +286,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   };
 
   const handleSaveStoryline = async () => {
-    if (!generatedStoryline?._id) return;
+    console.log('🔍 Save storyline called, generatedStoryline:', generatedStoryline);
+    console.log('🔍 Storyline _id:', generatedStoryline?._id);
+    
+    if (!generatedStoryline) {
+      console.log('❌ No storyline to save');
+      return;
+    }
 
     setIsSavingStoryline(true);
     try {
@@ -296,7 +312,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           id: section.id || `section_${index + 1}`,
           title: section.title,
           description: section.description,
-          status: section.status || 'draft',
+          status: normalizeStatus(section.status, 'draft'),
           order: section.order ?? index,
           keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
           contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
@@ -307,13 +323,37 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         }))
       };
 
-      const response = await fetch(`/api/storylines/${generatedStoryline._id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
+      let response;
+      
+      if (generatedStoryline._id) {
+        // Update existing storyline
+        console.log('🔄 Updating existing storyline:', generatedStoryline._id);
+        response = await fetch(`/api/storylines/${generatedStoryline._id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        // Create new storyline - need deliverable ID
+        const deliverableId = getIdString(selectedItem?._id || selectedItem?.id || selectedItem?.metadata?.deliverableId);
+        if (!deliverableId) {
+          throw new Error('No deliverable ID found to create storyline');
+        }
+        
+        console.log('➕ Creating new storyline for deliverable:', deliverableId);
+        payload.deliverable = deliverableId;
+        
+        console.log('🔍 Creating storyline with payload:', JSON.stringify(payload, null, 2));
+        response = await fetch('/api/storylines', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -520,55 +560,117 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     try {
       // If the selectedItem doesn't have a project field, it might be from the menu system
       // We need to fetch the actual deliverable data to get the project field
-      let deliverableData = selectedItem;
-      
-      if (!selectedItem.project && !selectedItem.project_id) {
+      let deliverableData = { ...selectedItem };
+      const metadata = selectedItem.metadata || {};
+
+      // Derive deliverable ID candidates from metadata or item itself
+      const rawDeliverableId = metadata.deliverableId || selectedItem._id || selectedItem.id;
+      const deliverableId = getIdString(rawDeliverableId);
+
+      if ((!selectedItem.project && !selectedItem.project_id) && deliverableId && isValidObjectId(deliverableId)) {
         console.log('🔄 Menu item missing project field, fetching actual deliverable data...');
-        
-        // Try to get the deliverable ID from metadata first, then fallback to menu item ID
-        const deliverableId = selectedItem.metadata?.deliverableId || selectedItem._id || selectedItem.id;
         console.log(`🔍 Looking for deliverable with ID: ${deliverableId}`);
-        
+
         try {
           const deliverableResponse = await fetch(`/api/deliverables/${deliverableId}`);
           if (deliverableResponse.ok) {
             const responseData = await deliverableResponse.json();
-            // Handle both wrapped and direct response formats
-            deliverableData = responseData.data || responseData;
-            console.log('✅ Fetched deliverable data:', deliverableData);
+            const resolvedData = responseData?.data?.deliverable || responseData?.data || responseData;
+            if (resolvedData) {
+              deliverableData = { ...deliverableData, ...resolvedData };
+              console.log('✅ Fetched deliverable data:', deliverableData);
+            }
           } else {
-            const errorData = await deliverableResponse.json();
-            throw new Error(errorData.error || 'Failed to fetch deliverable data from API');
+            let errorMessage = 'Failed to fetch deliverable data from API';
+            try {
+              const errorData = await deliverableResponse.json();
+              errorMessage = errorData?.error || errorData?.details || errorMessage;
+            } catch (parseError) {
+              console.warn('⚠️ Unable to parse deliverable API error response:', parseError);
+            }
+            console.warn('⚠️', errorMessage);
           }
         } catch (fetchError) {
-          console.error('❌ Failed to fetch deliverable data:', fetchError);
-          throw new Error('Unable to fetch deliverable data. The selected item may not exist in the deliverables collection.');
+          console.warn('❌ Failed to fetch deliverable data, continuing with menu item metadata:', fetchError);
         }
       }
-      
-      const projectId = deliverableData.project || deliverableData.project_id;
+
+      // Ensure we have a project ID, falling back to metadata
+      const projectId = getIdString(
+        deliverableData.project ||
+        deliverableData.project_id ||
+        deliverableData.parentProjectId ||
+        deliverableData.parent_project_id ||
+        deliverableData.metadata?.parent_project_id ||
+        metadata.project_id ||
+        metadata.projectId ||
+        metadata.project ||
+        metadata.parent_project_id ||
+        selectedItem.project ||
+        selectedItem.project_id ||
+        selectedItem.parentProjectId ||
+        selectedItem.parentId
+      );
       
       if (!projectId) {
         console.error('❌ No project ID found in deliverable data');
         throw new Error('No project ID found in deliverable data. Please ensure the deliverable is properly linked to a project.');
       }
       
+      const resolvedDeliverableId = getIdString(deliverableData._id || deliverableData.id || rawDeliverableId || selectedItem._id || selectedItem.id);
+
+      const enrichedDeliverableData = {
+        ...(typeof deliverableData === 'object' ? deliverableData : {}),
+        id: resolvedDeliverableId,
+        project: projectId,
+        project_id: projectId,
+        name: deliverableData.name || formData.name || selectedItem.title || 'Business Strategy',
+        summary: deliverableData.summary || deliverableData.description || metadata.summary || selectedItem.summary || null,
+        description: deliverableData.description || metadata.description || selectedItem.description || formData.description || null,
+        brief: deliverableData.brief || metadata.brief || formData.brief || 'Strategic analysis and recommendations',
+        audience: deliverableData.audience || metadata.audience || formData.audience || selectedItem.audience || ['Business Stakeholders'],
+        stakeholders: deliverableData.stakeholders || metadata.stakeholders || [],
+        objectives: deliverableData.objectives || metadata.objectives || selectedItem.objectives || [],
+        scope: deliverableData.scope || metadata.scope || null,
+        assumptions: deliverableData.assumptions || metadata.assumptions || [],
+        dependencies: deliverableData.dependencies || metadata.dependencies || selectedItem.dependencies || [],
+        risks: deliverableData.risks || metadata.risks || [],
+        success_metrics: deliverableData.success_metrics || metadata.success_metrics || [],
+        constraints: deliverableData.constraints || metadata.constraints || [],
+        deliverables: deliverableData.deliverables || metadata.deliverables || [],
+        key_messages: deliverableData.key_messages || metadata.key_messages || [],
+        document_length: deliverableData.document_length || metadata.document_length || formData.document_length || selectedItem.document_length || 20,
+        page_count: deliverableData.page_count || metadata.page_count || null,
+        estimated_hours: deliverableData.estimated_hours || metadata.estimated_hours || selectedItem.estimated_hours || 0,
+        type: deliverableData.type || metadata.type || selectedItem.type || 'deliverable',
+        format: deliverableData.format || metadata.format || selectedItem.format || 'PPT',
+        status: deliverableData.status || metadata.status || selectedItem.status || 'draft',
+        priority: deliverableData.priority || metadata.priority || selectedItem.priority || 'medium',
+        due_date: deliverableData.due_date || metadata.due_date || selectedItem.due_date || null,
+        start_date: deliverableData.start_date || metadata.start_date || selectedItem.start_date || null,
+        end_date: deliverableData.end_date || metadata.end_date || selectedItem.end_date || null,
+        created_by: deliverableData.created_by || metadata.created_by || null,
+        owner: deliverableData.owner || metadata.owner || selectedItem.owner || null,
+        client_owner: deliverableData.client_owner || metadata.client_owner || selectedItem.client_owner || null,
+        internal_owner: deliverableData.internal_owner || metadata.internal_owner || selectedItem.internal_owner || null,
+        tags: deliverableData.tags || metadata.tags || selectedItem.tags || [],
+        related_documents: deliverableData.related_documents || metadata.related_documents || [],
+        metadata: {
+          ...(deliverableData.metadata || {}),
+          ...metadata
+        }
+      };
+
       const requestData = {
         projectId: projectId,
         projectData: {
-          name: formData.name || 'Business Strategy Project',
-          client_name: 'Client',
-          industry: 'financial-services',
-          description: formData.brief || 'Strategic analysis and recommendations project'
+          id: projectId,
+          name: formData.name || selectedItem?.projectName || 'Business Strategy Project',
+          client_name: selectedItem?.client?.name || 'Client',
+          industry: metadata.industry || 'financial-services',
+          description: formData.brief || deliverableData.brief || 'Strategic analysis and recommendations project'
         },
-        deliverableData: {
-          name: deliverableData.name || formData.name || 'Business Strategy',
-          brief: deliverableData.brief || formData.brief || 'Strategic analysis and recommendations',
-          audience: formData.audience || ['Business Stakeholders'],
-          document_length: formData.document_length || 20,
-          type: deliverableData.type || selectedItem.type || 'deliverable',
-          id: deliverableData._id || deliverableData.id || selectedItem._id || selectedItem.id
-        }
+        deliverableData: enrichedDeliverableData
       };
 
       console.log('🎭 Generating storyline with data:', requestData);
@@ -597,25 +699,57 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       if (result.success && result.data) {
         console.log('ℹ️ Storyline generated via AI endpoint');
         
-        // Parse the AI response - it comes as JSON string in data.response
+        // Parse the AI response - handle string payloads or wrapped responses
         let storylineData;
         try {
-          if (result.data.response && typeof result.data.response === 'string') {
-            const parsedResponse = JSON.parse(result.data.response);
-            storylineData = {
-              sections: parsedResponse.storyline_structure?.sections || [],
-              projectName: parsedResponse.project_name,
-              client: parsedResponse.client,
-              industry: parsedResponse.industry,
-              executiveSummary: 'AI-generated storyline based on project requirements',
-              generationMode: 'ai',
-              agentId: result.agentId,
-              source: result.source
+          const fallbackProject = requestData.projectData || {};
+
+          const normaliseResponse = (payload) => {
+            let parsed = payload;
+
+            if (typeof parsed === 'string') {
+              try {
+                parsed = JSON.parse(parsed);
+              } catch (stringParseError) {
+                console.warn('⚠️ Unable to parse storyline string as JSON, returning empty sections.', stringParseError);
+                return {
+                  sections: [],
+                  projectName: fallbackProject?.name,
+                  client: fallbackProject?.client_name,
+                  industry: fallbackProject?.industry,
+                  executiveSummary: 'AI-generated storyline based on project requirements',
+                  generationMode: 'ai',
+                  agentId: result.agentId,
+                  source: result.source
+                };
+              }
+            }
+
+            if (parsed?.response && typeof parsed.response === 'string') {
+              return normaliseResponse(parsed.response);
+            }
+
+            if (parsed?.data && typeof parsed.data === 'string') {
+              return normaliseResponse(parsed.data);
+            }
+
+            const sections = parsed?.storyline_structure?.sections
+              || parsed?.sections
+              || [];
+
+            return {
+              sections,
+              projectName: parsed?.project_name || parsed?.projectName || fallbackProject?.name,
+              client: parsed?.client || parsed?.clientName || fallbackProject?.client_name,
+              industry: parsed?.industry || fallbackProject?.industry,
+              executiveSummary: parsed?.executiveSummary || parsed?.executive_summary || 'AI-generated storyline based on project requirements',
+              generationMode: parsed?.generationMode || parsed?.generation_mode || 'ai',
+              agentId: parsed?.agentId || result.agentId,
+              source: parsed?.source || result.source
             };
-          } else {
-            // Fallback if response format is different
-            storylineData = result.data;
-          }
+          };
+
+          storylineData = normaliseResponse(result.data);
           
           console.log('📋 Parsed storyline data:', storylineData);
           
@@ -1003,6 +1137,77 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
   // Deliverable view - matches the screenshot
   if (selectedItem.type === 'deliverable') {
+    const storylineTitle = selectedItem?.title || formData.name;
+
+    const handleStorylineTabClick = () => {
+      if (generatedStoryline) {
+        setCurrentView('storyline');
+      } else {
+        handleGenerateStoryline();
+      }
+    };
+
+    const handleLayoutTabClick = () => {
+      if (generatedStoryline) {
+        setCurrentView('layout');
+      } else {
+        handleGenerateStoryline();
+      }
+    };
+
+    const deliverableView = (() => {
+      if (currentView === 'storyline') {
+        return (
+          <DeliverableStorylineView
+            generatedStoryline={generatedStoryline}
+            storylineDirty={storylineDirty}
+            isSavingStoryline={isSavingStoryline}
+            isGeneratingStoryline={isGeneratingStoryline}
+            onSaveStoryline={handleSaveStoryline}
+            onGenerateStoryline={handleGenerateStoryline}
+            currentSectionIndex={currentSectionIndex}
+            onSectionChange={setCurrentSectionIndex}
+            onUpdateSection={handleSectionUpdate}
+            onStatusChange={handleSectionStatusChange}
+            onToggleLock={handleToggleLock}
+            onKeyPointsChange={handleKeyPointsChange}
+            title={storylineTitle}
+          />
+        );
+      }
+
+      if (currentView === 'layout') {
+        return (
+          <DeliverableLayoutView
+            hasStoryline={!!generatedStoryline}
+            onGenerateStoryline={handleGenerateStoryline}
+            isGeneratingStoryline={isGeneratingStoryline}
+          />
+        );
+      }
+
+      return (
+        <DeliverableDetailsView
+          formData={formData}
+          newAudience={newAudience}
+          formatDueDateForDisplay={formatDueDateForDisplay}
+          onInputChange={handleInputChange}
+          onRemoveAudience={handleRemoveAudience}
+          onAddAudience={handleAddAudience}
+          onImproveBrief={handleImproveBrief}
+          onGenerateStoryline={handleGenerateStoryline}
+          isGeneratingStoryline={isGeneratingStoryline}
+          onNewAudienceChange={setNewAudience}
+          onNewAudienceKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              handleAddAudience();
+            }
+          }}
+        />
+      );
+    })();
+
     return (
       <div className="flex-1 flex flex-col min-h-0" style={{ backgroundColor: 'var(--bg-primary)' }}>
         {/* Header */}
@@ -1010,50 +1215,48 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
             {formData.name}
           </h1>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setCurrentView('detailed')}
-            className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
-              currentView === 'detailed'
-                ? 'border-gray-900 bg-gray-900 text-white'
-                : 'border-gray-200 bg-white text-gray-500 hover:text-gray-700'
-            }`}
-            title="Deliverable settings"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-          <button 
-            onClick={handleDelete}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:text-gray-700"
-            title="Delete deliverable"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setCurrentView('detailed')}
+              className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                currentView === 'detailed'
+                  ? 'border-gray-900 bg-gray-900 text-white'
+                  : 'border-gray-200 bg-white text-gray-500 hover:text-gray-700'
+              }`}
+              title="Deliverable settings"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:text-gray-700"
+              title="Delete deliverable"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
         <div className="px-6" style={{ borderBottom: '1px solid var(--border-primary)' }}>
           <div className="flex space-x-1">
             <button
-              onClick={() => setCurrentView('storyline')}
+              onClick={handleStorylineTabClick}
               className="px-4 py-2 rounded-t-sm font-medium transition-colors"
               style={{
                 backgroundColor: currentView === 'storyline' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'storyline' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
-              disabled={!generatedStoryline}
             >
               Storyline
             </button>
             <button
-              onClick={() => setCurrentView('layout')}
+              onClick={handleLayoutTabClick}
               className="px-4 py-2 rounded-t-sm font-medium transition-colors"
               style={{
                 backgroundColor: currentView === 'layout' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'layout' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
-              disabled={!generatedStoryline}
             >
               Layout
             </button>
@@ -1062,246 +1265,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          {currentView === 'storyline' && generatedStoryline ? (
-            <div className="flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-6 py-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
-                <div>
-                  <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {generatedStoryline.title || `Storyline for ${selectedItem?.title || formData.name}`}
-                  </h2>
-                  {storylineDirty && (
-                    <p className="text-xs text-orange-500">Unsaved changes</p>
-                  )}
-                </div>
-                <button
-                  onClick={handleSaveStoryline}
-                  disabled={!storylineDirty || isSavingStoryline}
-                  className={`px-4 py-2 rounded-sm text-sm font-medium ${
-                    !storylineDirty || isSavingStoryline
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-900 text-white hover:bg-gray-800'
-                  }`}
-                >
-                  {isSavingStoryline ? 'Saving...' : 'Save Storyline'}
-                </button>
-              </div>
-              <div className="flex-1 p-6 overflow-y-auto">
-                <SectionNavigator
-                  sections={generatedStoryline.sections || []}
-                  currentSectionIndex={currentSectionIndex}
-                  onSectionChange={setCurrentSectionIndex}
-                  onUpdateSection={handleSectionUpdate}
-                  onStatusChange={handleSectionStatusChange}
-                  onToggleLock={handleToggleLock}
-                  onKeyPointsChange={handleKeyPointsChange}
-                />
-              </div>
-            </div>
-          ) : currentView === 'layout' && generatedStoryline ? (
-            <div className="p-6 h-full overflow-y-auto">
-              <div className="text-center text-gray-500">
-                <p className="text-lg mb-2">Layout View</p>
-                <p className="text-sm">Layout editing functionality coming soon</p>
-              </div>
-            </div>
-          ) : currentView === 'detailed' ? (
-            <div className="p-6 space-y-8">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                    />
-                  </div>
-
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-3">
-                      <label className="block text-sm font-medium text-gray-700">Audience</label>
-                      <div className="flex flex-wrap gap-2">
-                        {formData.audience.map((item, index) => (
-                          <span key={index} className="flex items-center gap-1 rounded-sm bg-blue-50 px-3 py-1 text-sm text-blue-700">
-                            {item}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveAudience(item)}
-                              className="text-blue-500 hover:text-blue-700"
-                              aria-label={`Remove ${item}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
-                        {formData.audience.length === 0 && (
-                          <span className="text-sm text-gray-400">No audience defined yet</span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={newAudience}
-                          onChange={(e) => setNewAudience(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddAudience();
-                            }
-                          }}
-                          placeholder="Add audience..."
-                          className="flex-1 rounded-sm border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-900"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddAudience}
-                          className="flex h-10 w-10 items-center justify-center rounded-sm border border-gray-200 bg-white text-gray-500 transition-colors hover:border-gray-900 hover:text-gray-700"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                        <select
-                          value={formData.type}
-                          onChange={(e) => handleInputChange('type', e.target.value)}
-                          className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                        >
-                          <option value="Strategy Presentation">Strategy Presentation</option>
-                          <option value="Presentation">Presentation</option>
-                          <option value="Report">Report</option>
-                          <option value="Analysis">Analysis</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Format</label>
-                        <div className="flex gap-2">
-                          {['PPT', 'DOC', 'XLS'].map((format) => (
-                            <button
-                              key={format}
-                              onClick={() => handleInputChange('format', format)}
-                              className={`flex-1 rounded-sm border px-3 py-2 text-sm transition-colors ${
-                                formData.format === format
-                                  ? 'border-gray-900 bg-gray-900 text-white'
-                                  : 'border-gray-300 bg-gray-50 text-gray-700 hover:border-gray-900'
-                              }`}
-                              type="button"
-                            >
-                              {format}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="DD.MM.YYYY"
-                      value={formatDueDateForDisplay(formData.due_date)}
-                      onChange={(e) => handleInputChange('due_date', e.target.value)}
-                      className="w-full rounded-sm border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">Document Length</label>
-                    <input
-                      type="range"
-                      min="2"
-                      max="200"
-                      value={formData.document_length}
-                      onChange={(e) => handleInputChange('document_length', parseInt(e.target.value))}
-                      className="w-full h-1 rounded-sm appearance-none cursor-pointer"
-                      style={{
-                        background: `linear-gradient(to right, #374151 0%, #374151 ${((formData.document_length - 2) / 198) * 100}%, #e5e7eb ${((formData.document_length - 2) / 198) * 100}%, #e5e7eb 100%)`
-                      }}
-                    />
-                    <div className="flex items-center justify-between text-xs text-gray-400">
-                      <span>2 pages</span>
-                      <span className="text-gray-600 font-medium">{formData.document_length} pages</span>
-                      <span>200 pages</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700">Brief</label>
-                      <button
-                        type="button"
-                        onClick={handleImproveBrief}
-                        className="rounded-sm bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
-                      >
-                        Improve Brief
-                      </button>
-                    </div>
-                    <textarea
-                      value={formData.brief}
-                      onChange={(e) => handleInputChange('brief', e.target.value)}
-                      rows={5}
-                      className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                    />
-                  </div>
-
-                  <div className="space-y-4 rounded-sm border border-gray-200 bg-gray-50 p-6">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium text-gray-700">Brief Quality Score</span>
-                      <span className="font-semibold text-gray-900">{formData.brief_quality} / 10</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
-                      <div
-                        className="h-full rounded-sm bg-gray-900"
-                        style={{ width: `${(formData.brief_quality / 10) * 100}%` }}
-                      />
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-gray-600">
-                        <span className="font-medium text-gray-900">Strengths:</span> {formData.strengths}
-                      </p>
-                      <p className="text-gray-600">
-                        <span className="font-medium text-gray-900">Improve:</span> {formData.improvements}
-                      </p>
-                    </div>
-                  </div>
-
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleGenerateStoryline}
-                    disabled={isGeneratingStoryline}
-                    className="rounded-sm bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
-                  >
-                    {isGeneratingStoryline ? 'Generating...' : 'Generate Storyline'}
-                  </button>
-                </div>
-            </div>
-          ) : (
-            <div className="p-6 h-full overflow-y-auto flex items-center justify-center">
-              <div className="text-center text-gray-500">
-                <p className="text-lg mb-2">No Content Available</p>
-                <p className="text-sm">Generate a storyline or switch to settings view</p>
-              </div>
-            </div>
-          )}
+          {deliverableView}
         </div>
-
-        {/* Improve Brief Modal */}
-        <ImproveBriefModal
-          isOpen={showImproveBrief}
-          onClose={() => setShowImproveBrief(false)}
-          onSave={handleBriefSave}
-          currentBrief={formData.brief}
-          deliverable={selectedItem}
-          projectData={{}}
-        />
       </div>
     );
   }
+
 
   // Default fallback
   return (

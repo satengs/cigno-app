@@ -6,6 +6,7 @@ import Client from '@/lib/models/Client';
 import Organisation from '@/lib/models/Organisation';
 import Deliverable from '@/lib/models/Deliverable';
 import MenuItemModel from '@/lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -24,10 +25,7 @@ export async function GET() {
     
     return NextResponse.json({ 
       success: true,
-      projects: projects.map(project => ({
-        ...project,
-        id: project._id.toString()
-      }))
+      projects: formatForAPI(projects)
     });
     
   } catch (error) {
@@ -158,6 +156,12 @@ export async function POST(request) {
     const defaultUser = internalOwnerId || createdById;
 
     // Create the new project (all required fields validated above)
+    // Ensure proper budget structure
+    const budgetData = projectData.budget || {};
+    const budgetAmount = budgetData.amount || projectData.budget_amount || 0;
+    const budgetCurrency = budgetData.currency || projectData.currency || projectData.budget_currency || 'USD';
+    const budgetType = budgetData.type || projectData.budget_type || 'Fixed';
+    
     const newProject = new Project({
       name: projectData.name,
       description: projectData.description,
@@ -171,7 +175,13 @@ export async function POST(request) {
       internal_owner: defaultUser,
       organisation: organisationId,
       reference_documents: projectData.reference_documents || [],
-      budget: projectData.budget || { amount: projectData.budget_amount || 0, currency: projectData.budget_currency || 'USD', allocated: 0, spent: 0 },
+      budget: { 
+        amount: budgetAmount, 
+        currency: budgetCurrency, 
+        type: budgetType,
+        allocated: budgetData.allocated || 0, 
+        spent: budgetData.spent || 0 
+      },
       team_members: projectData.team_members || [],
       staffing: projectData.staffing || [],
       tags: projectData.tags || [],
@@ -184,7 +194,7 @@ export async function POST(request) {
     });
     
     const savedProject = await newProject.save();
-    console.log('Project created successfully with ID:', savedProject._id);
+    console.log('Project created successfully with ID:', savedProject._id.toString());
     
     // Create deliverables - either from provided data or AI analysis
     const createdDeliverables = [];
@@ -211,6 +221,10 @@ export async function POST(request) {
             if (aiResult.success && aiResult.analyzedProject && aiResult.analyzedProject.deliverables) {
               deliverablesArray = aiResult.analyzedProject.deliverables;
               console.log(`AI generated ${deliverablesArray.length} deliverables from project description`);
+              
+              // Important: Preserve user's original dates if they provided them
+              // AI analysis should not override user-provided start_date and end_date
+              console.log('Preserving user-provided dates over AI analysis results');
             }
           } else {
             console.log('AI analysis failed, proceeding without auto-generated deliverables');
@@ -245,19 +259,50 @@ export async function POST(request) {
           // Map type values to valid enum values
           const mapType = (type) => {
             if (!type) return 'Report';
+
+            const normalized = type.toString().trim();
+            if (!normalized) return 'Report';
+
+            const lower = normalized.toLowerCase();
+
             const typeMap = {
-              'Document': 'Documentation',
-              'API': 'Code',
-              'Dashboard': 'Design',
-              'Presentation': 'Presentation',
-              'Report': 'Report',
-              'Strategy': 'Strategy',
-              'Analysis': 'Analysis',
-              'Design': 'Design',
-              'Code': 'Code',
-              'Documentation': 'Documentation'
+              document: 'Documentation',
+              documentation: 'Documentation',
+              manual: 'Documentation',
+              api: 'API',
+              integration: 'API',
+              dashboard: 'Dashboard',
+              dataviz: 'Dashboard',
+              presentation: 'Presentation',
+              deck: 'Presentation',
+              slides: 'Presentation',
+              report: 'Report',
+              strategy: 'Strategy',
+              roadmap: 'Strategy',
+              plan: 'Strategy',
+              analysis: 'Analysis',
+              assessment: 'Analysis',
+              design: 'Design',
+              prototype: 'Design',
+              code: 'Code'
             };
-            return typeMap[type] || 'Other';
+
+            if (typeMap[lower]) {
+              return typeMap[lower];
+            }
+
+            if (lower.includes('dashboard')) return 'Dashboard';
+            if (lower.includes('api')) return 'API';
+            if (lower.includes('deck') || lower.includes('presentation')) return 'Presentation';
+            if (lower.includes('roadmap') || lower.includes('plan')) return 'Strategy';
+            if (lower.includes('report')) return 'Report';
+            if (lower.includes('analysis') || lower.includes('assessment')) return 'Analysis';
+            if (lower.includes('brief')) return 'Brief';
+            if (lower.includes('storyline')) return 'Storyline';
+            if (lower.includes('design')) return 'Design';
+            if (lower.includes('doc')) return 'Documentation';
+
+            return normalized.charAt(0).toUpperCase() + normalized.slice(1);
           };
           
           // Map format values to valid enum values
@@ -452,25 +497,11 @@ export async function POST(request) {
       success: true, 
       id: savedProject._id,
       message: `Project created successfully${(createdDeliverables && createdDeliverables.length > 0) ? ` with ${createdDeliverables.length} deliverables` : ''}`,
-      project: {
+      project: formatForAPI({
         ...savedProject.toObject(),
-        id: savedProject._id.toString(),
-        deliverables: (createdDeliverables || []).map(d => ({
-          id: d._id.toString(),
-          name: d.name,
-          type: d.type,
-          status: d.status,
-          due_date: d.due_date
-        }))
-      },
-      deliverables: (createdDeliverables || []).map(d => ({
-        id: d._id.toString(),
-        name: d.name,
-        type: d.type,
-        status: d.status,
-        due_date: d.due_date,
-        priority: d.priority
-      }))
+        deliverables: createdDeliverables || []
+      }),
+      deliverables: formatForAPI(createdDeliverables || [])
     });
     
   } catch (error) {
@@ -509,11 +540,31 @@ export async function PUT(request) {
       }
     }
 
+    // Handle budget field mapping for updates
+    const updateFields = { ...projectData };
+    if (projectData.budget_amount !== undefined || projectData.currency !== undefined || projectData.budget_type !== undefined) {
+      // Get current project to merge budget fields
+      const currentProject = await Project.findById(id);
+      if (currentProject) {
+        updateFields.budget = {
+          amount: projectData.budget_amount !== undefined ? projectData.budget_amount : currentProject.budget?.amount || 0,
+          currency: projectData.currency !== undefined ? projectData.currency : currentProject.budget?.currency || 'USD',
+          type: projectData.budget_type !== undefined ? projectData.budget_type : currentProject.budget?.type || 'Fixed',
+          allocated: currentProject.budget?.allocated || 0,
+          spent: currentProject.budget?.spent || 0
+        };
+        // Remove flat budget fields
+        delete updateFields.budget_amount;
+        delete updateFields.currency;
+        delete updateFields.budget_type;
+      }
+    }
+
     // Update the project
     const updatedProject = await Project.findByIdAndUpdate(
       id,
       {
-        ...projectData,
+        ...updateFields,
         updated_by: defaultUser,
         updated_at: new Date()
       },
@@ -529,12 +580,20 @@ export async function PUT(request) {
     
     console.log('Project updated successfully');
     
+    // Flatten budget fields for frontend compatibility and normalize IDs
+    const updatedProjectData = updatedProject.toObject();
+    const flattenedProject = formatForAPI({
+      ...updatedProjectData,
+      budget_amount: updatedProjectData.budget?.amount || 0,
+      currency: updatedProjectData.budget?.currency || 'USD',
+      budget_type: updatedProjectData.budget?.type || 'Fixed'
+    });
+
     return NextResponse.json({ 
       success: true, 
       message: 'Project updated successfully',
-      project: {
-        ...updatedProject.toObject(),
-        id: updatedProject._id.toString()
+      data: {
+        project: flattenedProject
       }
     });
     
@@ -564,7 +623,7 @@ export async function DELETE(request) {
     console.log('Deleting project with ID:', projectId);
     
     // Validate ObjectId format
-    if (!projectId.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!isValidObjectId(projectId)) {
       return NextResponse.json({ 
         error: 'Invalid project ID format',
         details: 'Project ID must be a valid MongoDB ObjectId' 
