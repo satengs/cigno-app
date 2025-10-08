@@ -235,20 +235,72 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             lockedAt: section.lockedAt
           }))
         });
-        setCurrentView('storyline'); // Switch to storyline view if storyline exists
         setCurrentSectionIndex(0);
         setStorylineDirty(false);
       } else {
         console.log('📝 No existing storyline found for this deliverable');
         setGeneratedStoryline(null);
-        setCurrentView('detailed'); // Default to detailed view
         setStorylineDirty(false);
       }
     } catch (error) {
       console.error('❌ Error loading existing storyline:', error);
       setGeneratedStoryline(null);
-      setCurrentView('detailed');
       setStorylineDirty(false);
+    }
+  };
+
+  // Load existing storyline without auto-switching to storyline view
+  const loadExistingStorylineWithoutAutoSwitch = async (deliverableId) => {
+    if (!deliverableId) return null;
+    
+    try {
+      console.log('🔍 Loading existing storyline for deliverable (no auto-switch):', deliverableId);
+      
+      const response = await fetch(`/api/storylines?deliverableId=${deliverableId}`);
+      if (!response.ok) {
+        console.log('❌ Failed to fetch storylines from API');
+        return null;
+      }
+
+      const result = await response.json();
+      const storylines = Array.isArray(result?.data?.storylines)
+        ? result.data.storylines
+        : Array.isArray(result?.data)
+          ? result.data
+          : [];
+
+      const existingStoryline = storylines[0] || result?.data?.storyline || null;
+
+      if (existingStoryline) {
+        console.log('✅ Found existing storyline:', existingStoryline._id);
+        
+        const storylineData = {
+          ...existingStoryline,
+          sections: (existingStoryline.sections || []).map((section, index) => ({
+            id: section.id || section._id || `section_${index + 1}`,
+            title: section.title,
+            description: section.description,
+            status: section.status || 'draft',
+            order: section.order ?? index,
+            keyPoints: section.keyPoints || [],
+            contentBlocks: section.contentBlocks || [],
+            estimatedSlides: section.estimatedSlides || 3,
+            locked: !!section.locked,
+            lockedBy: section.lockedBy,
+            lockedAt: section.lockedAt
+          }))
+        };
+        
+        setGeneratedStoryline(storylineData);
+        setStorylineDirty(false);
+        return storylineData;
+      } else {
+        console.log('ℹ️ No existing storyline found for deliverable:', deliverableId);
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error loading existing storyline:', error);
+      return null;
     }
   };
 
@@ -1139,19 +1191,43 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   if (selectedItem.type === 'deliverable') {
     const storylineTitle = selectedItem?.title || formData.name;
 
-    const handleStorylineTabClick = () => {
+    const handleStorylineTabClick = async () => {
       if (generatedStoryline) {
         setCurrentView('storyline');
       } else {
-        handleGenerateStoryline();
+        // First try to load existing storyline from database
+        const deliverableId = selectedItem?._id || selectedItem?.id;
+        if (deliverableId) {
+          const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
+          if (existingStoryline) {
+            setCurrentView('storyline');
+          } else {
+            // Only generate if no existing storyline was found
+            handleGenerateStoryline();
+          }
+        } else {
+          handleGenerateStoryline();
+        }
       }
     };
 
-    const handleLayoutTabClick = () => {
+    const handleLayoutTabClick = async () => {
       if (generatedStoryline) {
         setCurrentView('layout');
       } else {
-        handleGenerateStoryline();
+        // First try to load existing storyline from database
+        const deliverableId = selectedItem?._id || selectedItem?.id;
+        if (deliverableId) {
+          const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
+          if (existingStoryline) {
+            setCurrentView('layout');
+          } else {
+            // Only generate if no existing storyline was found
+            handleGenerateStoryline();
+          }
+        } else {
+          handleGenerateStoryline();
+        }
       }
     };
 
@@ -1180,8 +1256,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         return (
           <DeliverableLayoutView
             hasStoryline={!!generatedStoryline}
+            storyline={generatedStoryline}
             onGenerateStoryline={handleGenerateStoryline}
             isGeneratingStoryline={isGeneratingStoryline}
+            onApplyLayout={(layoutId) => {
+              console.log('Applying layout to storyline:', layoutId);
+              // TODO: Implement layout application logic
+            }}
           />
         );
       }
