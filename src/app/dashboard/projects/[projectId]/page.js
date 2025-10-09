@@ -14,7 +14,7 @@ import {
   Trash2,
   FileText
 } from 'lucide-react';
-import { normalizeId, getIdString } from '@/lib/utils/idUtils';
+import { normalizeId, getIdString } from '../../../../lib/utils/idUtils';
 
 const toDateInputValue = (value) => {
   if (!value) return '';

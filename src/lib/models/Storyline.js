@@ -37,11 +37,6 @@ const sectionSchema = new mongoose.Schema({
       type: String
     }]
   }],
-  estimatedSlides: {
-    type: Number,
-    default: 3,
-    min: 1
-  },
   locked: {
     type: Boolean,
     default: false
@@ -193,7 +188,7 @@ storylineSchema.pre('save', function(next) {
   this.updated_at = new Date();
   this.totalSections = this.sections ? this.sections.length : 0;
   this.estimatedDuration = this.sections ? 
-    this.sections.reduce((acc, section) => acc + (section.estimatedSlides * 2), 0) : 0; // 2 min per slide
+    this.sections.length * 2 : 0; // 2 min per section (each section = 1 slide)
   next();
 });
 

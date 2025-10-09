@@ -492,7 +492,7 @@ export default function DeliverableLayoutView({
                         {section.title || `Section ${index + 1}`}
                       </div>
                       <div className="text-xs text-gray-600 mt-1">
-                        {section.status || 'draft'} • {section.estimatedSlides || 3} slides
+                        {section.status || 'draft'} • 1 slide
                       </div>
                     </button>
                   ))}

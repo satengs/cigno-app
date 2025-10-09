@@ -10,8 +10,8 @@ import {
 import ClientDetailView from '../ui/ClientDetailView';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { UnifiedAddModal } from '../ui';
-import { getIdString, isValidObjectId } from '@/lib/utils/idUtils';
-import { normalizeStatus } from '@/lib/constants/enums';
+import { getIdString, isValidObjectId } from '../../lib/utils/idUtils';
+import { normalizeStatus } from '../../lib/constants/enums';
 import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
 import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
 import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
@@ -183,18 +183,70 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     if (selectedItem && selectedItem.type === 'deliverable') {
       console.log('🎯 Deliverable selected:', selectedItem._id || selectedItem.id);
       
-      setFormData({
-        name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
-        audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
-        type: selectedItem.type || 'Strategy Presentation',
-        format: selectedItem.format || 'PPT',
-        due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
-        document_length: selectedItem.document_length || 25,
-        brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
-        brief_quality: selectedItem.brief_quality || 7.5,
-        strengths: selectedItem.strengths || 'Technical requirements well defined',
-        improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
-      });
+      const fetchDeliverableData = async () => {
+        const deliverableId = selectedItem._id || selectedItem.id;
+        if (!deliverableId) return;
+        
+        try {
+          console.log('🔄 Fetching full deliverable data for:', deliverableId);
+          const response = await fetch(`/api/deliverables/${deliverableId}`);
+          if (response.ok) {
+            const data = await response.json();
+            const deliverableData = data.data?.deliverable || data.data || data;
+            
+            console.log('✅ Fetched deliverable data:', deliverableData);
+            
+            setFormData({
+              name: deliverableData.name || selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
+              audience: deliverableData.audience || selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
+              type: deliverableData.type || selectedItem.type || 'Strategy Presentation',
+              format: deliverableData.format || selectedItem.format || 'PPT',
+              due_date: deliverableData.due_date ? new Date(deliverableData.due_date).toISOString().split('T')[0] : 
+                       selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
+              document_length: deliverableData.document_length || selectedItem.document_length || 25,
+              brief: deliverableData.brief || selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
+              brief_quality: deliverableData.brief_quality || selectedItem.brief_quality || 7.5,
+              strengths: deliverableData.strengths || selectedItem.strengths || 'Technical requirements well defined',
+              improvements: deliverableData.improvements || selectedItem.improvements || 'Add geographical scope and timeline constraints'
+            });
+          } else {
+            console.log('⚠️ Failed to fetch deliverable data, using selectedItem data');
+            // Fallback to selectedItem data if API call fails
+            setFormData({
+              name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
+              audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
+              type: selectedItem.type || 'Strategy Presentation',
+              format: selectedItem.format || 'PPT',
+              due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
+              document_length: selectedItem.document_length || 25,
+              brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
+              brief_quality: selectedItem.brief_quality || 7.5,
+              strengths: selectedItem.strengths || 'Technical requirements well defined',
+              improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error fetching deliverable data:', error);
+          // Fallback to selectedItem data if error occurs
+          setFormData({
+            name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
+            audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
+            type: selectedItem.type || 'Strategy Presentation',
+            format: selectedItem.format || 'PPT',
+            due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
+            document_length: selectedItem.document_length || 25,
+            brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
+            brief_quality: selectedItem.brief_quality || 7.5,
+            strengths: selectedItem.strengths || 'Technical requirements well defined',
+            improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
+          });
+        }
+      };
+      
+      fetchDeliverableData();
+
+      // Ensure we start with the detailed view (settings page)
+      setCurrentView('detailed');
 
       // Load existing storyline if available
       const deliverableId = selectedItem._id || selectedItem.id;
@@ -244,13 +296,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             order: section.order ?? index,
             keyPoints: section.keyPoints || [],
             contentBlocks: section.contentBlocks || [],
-            estimatedSlides: section.estimatedSlides || 3,
             locked: !!section.locked,
             lockedBy: section.lockedBy,
             lockedAt: section.lockedAt
           }))
         });
-        setCurrentView('storyline');
+        // Don't automatically switch to storyline view - let user choose
         setCurrentSectionIndex(0);
         setStorylineDirty(false);
       } else {
@@ -304,7 +355,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             order: section.order ?? index,
             keyPoints: section.keyPoints || [],
             contentBlocks: section.contentBlocks || [],
-            estimatedSlides: section.estimatedSlides || 3,
             locked: !!section.locked,
             lockedBy: section.lockedBy,
             lockedAt: section.lockedAt
@@ -969,7 +1019,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                 order: index + 1,
                 keyPoints: section.keyPoints || [],
                 contentBlocks: section.contentBlocks || [],
-                estimatedSlides: section.estimatedSlides || 3,
                 locked: !!section.locked,
                 lockedBy: section.lockedBy,
                 lockedAt: section.lockedAt
@@ -1009,7 +1058,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                   order: section.order ?? index,
                   keyPoints: section.keyPoints || [],
                   contentBlocks: section.contentBlocks || [],
-                  estimatedSlides: section.estimatedSlides || 3,
                   locked: !!section.locked,
                   lockedBy: section.lockedBy,
                   lockedAt: section.lockedAt
@@ -1028,7 +1076,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                   order: index + 1,
                   keyPoints: section.keyPoints || [],
                   contentBlocks: section.contentBlocks || [],
-                  estimatedSlides: section.estimatedSlides || 3,
                   locked: !!section.locked
                 }))
               });
@@ -1046,7 +1093,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                 order: index + 1,
                 keyPoints: section.keyPoints || [],
                 contentBlocks: section.contentBlocks || [],
-                estimatedSlides: section.estimatedSlides || 3,
                 locked: !!section.locked
               }))
             });
@@ -1527,6 +1573,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             isOpen={showImproveBrief}
             onClose={() => setShowImproveBrief(false)}
             onSave={handleBriefSave}
+            currentBrief={formData.brief}
             deliverable={selectedItem}
             projectData={{
               name: selectedItem?.metadata?.project_name || 'Unknown Project',

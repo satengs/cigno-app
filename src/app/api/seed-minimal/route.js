@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
+import connectDB from '../../lib/db/mongoose';
 import mongoose from 'mongoose';
-import { Organisation, User, Client, Project, Deliverable, Contact } from '@/lib/models';
+import { Organisation, User, Client, Project, Deliverable, Contact } from '../../lib/models';
 
 export async function POST() {
   try {

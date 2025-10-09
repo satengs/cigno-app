@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import DataPublisher from '@/lib/models/DataPublisher';
-import User from '@/lib/models/User';
-import Organisation from '@/lib/models/Organisation';
-import Project from '@/lib/models/Project';
+import connectDB from '../../../lib/db/mongoose';
+import DataPublisher from '../../../lib/models/DataPublisher';
+import User from '../../../lib/models/User';
+import Organisation from '../../../lib/models/Organisation';
+import Project from '../../../lib/models/Project';
 
 export async function GET() {
   try {

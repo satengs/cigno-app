@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import Project from '@/lib/models/Project';
-import User from '@/lib/models/User';
-import Client from '@/lib/models/Client';
-import Contact from '@/lib/models/Contact';
-import Organisation from '@/lib/models/Organisation';
-import Deliverable from '@/lib/models/Deliverable';
-import MenuItemModel from '@/lib/models/MenuItemModel';
-import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
+import connectDB from '../../lib/db/mongoose';
+import Project from '../../lib/models/Project';
+import User from '../../lib/models/User';
+import Client from '../../lib/models/Client';
+import Contact from '../../lib/models/Contact';
+import Organisation from '../../lib/models/Organisation';
+import Deliverable from '../../lib/models/Deliverable';
+import MenuItemModel from '../../lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '../../lib/utils/idUtils';
 
 export async function GET() {
   try {

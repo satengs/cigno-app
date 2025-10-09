@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import Contact from '@/lib/models/Contact';
-import User from '@/lib/models/User';
-import Client from '@/lib/models/Client';
+import connectDB from '../../../lib/db/mongoose';
+import Contact from '../../../lib/models/Contact';
+import User from '../../../lib/models/User';
+import Client from '../../../lib/models/Client';
 
 export async function GET() {
   try {

@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import LeftNav from '../../components/layout/LeftNav';
 import RightSection from '../../components/layout/RightSection';
 import ContentPart from '../../components/layout/ContentPart';
 import { useMenuManager } from '../../lib/hooks/useMenuManager';
 
-export default function Dashboard() {
+function DashboardWithSearchParams() {
+  const searchParams = useSearchParams();
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const processedUrlRef = useRef(null);
+
   // Get real data from database using useMenuManager
   const { 
     menuStructure, 
@@ -17,11 +22,6 @@ export default function Dashboard() {
     expandItem,
     collapseItem 
   } = useMenuManager();
-
-  const searchParams = useSearchParams();
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const processedUrlRef = useRef(null);
 
   // Handle URL parameters for deliverable selection
   useEffect(() => {
@@ -161,5 +161,20 @@ export default function Dashboard() {
       </div>
       
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    }>
+      <DashboardWithSearchParams />
+    </Suspense>
   );
 }

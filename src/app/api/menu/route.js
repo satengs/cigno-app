@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import MenuItemModel from '@/lib/models/MenuItemModel';
-import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
+import connectDB from '../../../lib/db/mongoose';
+import MenuItemModel from '../../../lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -13,7 +13,7 @@ export async function GET() {
     console.log(`Found ${allItems.length} menu items in database`);
     
     // Also fetch deliverables from the Deliverable collection to add as menu items
-    const Deliverable = (await import('@/lib/models/Deliverable')).default;
+    const Deliverable = (await import('../../../lib/models/Deliverable')).default;
     const allDeliverables = await Deliverable.find({ is_active: true }).lean();
     console.log(`Found ${allDeliverables.length} deliverables in database`);
     

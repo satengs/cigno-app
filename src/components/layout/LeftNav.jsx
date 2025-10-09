@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, Building2, Target, Plus, MoreHo
 import { UnifiedAddModal } from '../ui';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ThemeToggle from '../theme/ThemeToggle';
-import dataService from '@/lib/services/DataService';
+import dataService from '../../lib/services/DataService';
 import { normalizeId, idsEqual } from '../../lib/utils/idUtils';
 
 export default function LeftNav({ 

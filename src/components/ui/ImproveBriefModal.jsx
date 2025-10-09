@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Save, X, Loader2, RefreshCw } from 'lucide-react';
+import { Sparkles, Save, X, Loader2, RefreshCw, Eye, Edit3 } from 'lucide-react';
 import Modal from './modals/Modal';
 import Button from './buttons/Button';
 
@@ -18,6 +18,22 @@ export default function ImproveBriefModal({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [hasImproved, setHasImproved] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
+  const [qualityScore, setQualityScore] = useState(null);
+  const [improvements, setImprovements] = useState([]);
+  const [editableBrief, setEditableBrief] = useState('');
+
+  // Helper function to convert HTML to plain text
+  const htmlToText = (html) => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return temp.textContent || temp.innerText || '';
+  };
+
+  // Helper function to convert plain text to HTML (basic)
+  const textToHtml = (text) => {
+    return text.replace(/\n/g, '<br>');
+  };
 
   // Reset state when modal opens
   useEffect(() => {
@@ -25,12 +41,19 @@ export default function ImproveBriefModal({
       setImprovedBrief('');
       setError('');
       setHasImproved(false);
+      setShowComparison(false);
+      setQualityScore(null);
+      setImprovements([]);
+      setEditableBrief('');
       // Don't automatically start improving - wait for user to click
     }
   }, [isOpen]);
 
   const improveBrief = async () => {
-    if (!currentBrief.trim()) {
+    // Use the current improved brief if available, otherwise use the original brief
+    const briefToImprove = improvedBrief.trim() || currentBrief.trim();
+    
+    if (!briefToImprove) {
       setError('No brief content to improve');
       return;
     }
@@ -48,7 +71,7 @@ export default function ImproveBriefModal({
         },
         body: JSON.stringify({
           deliverableId: deliverableId,
-          currentBrief: currentBrief,
+          currentBrief: briefToImprove,
           deliverableData: {
             title: deliverable.name,
             type: deliverable.type,
@@ -94,7 +117,24 @@ export default function ImproveBriefModal({
         }
         
         setImprovedBrief(briefContent);
+        setEditableBrief(htmlToText(briefContent));
         setHasImproved(true);
+        setShowComparison(true);
+        
+        // Extract quality score and improvements if available
+        if (result.data.response) {
+          try {
+            const parsedResponse = JSON.parse(result.data.response);
+            if (parsedResponse.qualityScore) {
+              setQualityScore(parsedResponse.qualityScore);
+            }
+            if (parsedResponse.improvements) {
+              setImprovements(parsedResponse.improvements);
+            }
+          } catch (e) {
+            // Ignore parsing errors for quality score
+          }
+        }
       } else {
         throw new Error(result.error || 'Failed to improve brief');
       }
@@ -107,7 +147,9 @@ export default function ImproveBriefModal({
   };
 
   const handleSave = async () => {
-    if (!improvedBrief.trim()) {
+    const briefToSave = showComparison ? improvedBrief : textToHtml(editableBrief);
+    
+    if (!briefToSave.trim()) {
       setError('No improved brief to save');
       return;
     }
@@ -117,7 +159,7 @@ export default function ImproveBriefModal({
 
     try {
       if (onSave) {
-        await onSave(improvedBrief);
+        await onSave(briefToSave);
       }
       onClose();
     } catch (error) {
@@ -138,9 +180,9 @@ export default function ImproveBriefModal({
       isOpen={isOpen}
       onClose={handleClose}
       title="Improve Brief with AI"
-      subtitle="AI-enhanced brief based on your current content"
-      size="lg"
-      className="max-h-[90vh] overflow-hidden flex flex-col"
+      subtitle="Compare and enhance your brief with AI assistance"
+      size="xl"
+      className="max-h-[95vh] overflow-hidden flex flex-col"
     >
       <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
         {/* Initial State - Show Improve Button */}
@@ -196,46 +238,148 @@ export default function ImproveBriefModal({
           </div>
         )}
 
-        {/* Improved Brief Content */}
-        {hasImproved && !isImproving && (
+        {/* Comparison View */}
+        {hasImproved && !isImproving && showComparison && (
           <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-medium text-gray-700">
-                Improved Brief Content
-              </label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={improveBrief}
-                disabled={isImproving}
-                className="flex items-center space-x-2"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Improve Again</span>
-              </Button>
+            {/* Header with Quality Score and Actions */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <h3 className="text-lg font-medium text-gray-900">Brief Comparison</h3>
+                {qualityScore && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600">Quality Score:</span>
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                      {qualityScore}/10
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowComparison(!showComparison)}
+                  className="flex items-center space-x-2"
+                >
+                  {showComparison ? <Edit3 className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <span>{showComparison ? 'Edit Mode' : 'Compare Mode'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={improveBrief}
+                  disabled={isImproving}
+                  className="flex items-center space-x-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Improve Again</span>
+                </Button>
+              </div>
             </div>
-            
-            <textarea
-              value={improvedBrief}
-              onChange={(e) => setImprovedBrief(e.target.value)}
-              placeholder="Improved brief content will appear here..."
-              className="flex-1 w-full p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              style={{ minHeight: '300px' }}
-            />
-            
-            <p className="text-xs text-gray-500 mt-2">
-              You can edit the improved brief above before saving.
-            </p>
+
+            {/* Side by Side Comparison */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden">
+              {/* Current Brief */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">Current Brief</label>
+                  <span className="text-xs text-gray-500">{currentBrief.length} characters</span>
+                </div>
+                <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-y-auto">
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {currentBrief || 'No brief content available'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Improved Brief */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">AI-Improved Brief</label>
+                  <span className="text-xs text-gray-500">{improvedBrief.length} characters</span>
+                </div>
+                <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="h-full p-4 bg-white overflow-y-auto">
+                    <div 
+                      className="prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: improvedBrief }}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  This is the AI-improved brief rendered as HTML. Click "Edit Mode" to modify the content.
+                </p>
+              </div>
+            </div>
+
+            {/* Improvements List */}
+            {improvements.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Key Improvements Made:</h4>
+                <ul className="space-y-1">
+                  {improvements.slice(0, 5).map((improvement, index) => (
+                    <li key={index} className="text-xs text-gray-600 flex items-start space-x-2">
+                      <span className="text-green-500 mt-1">•</span>
+                      <span>{improvement}</span>
+                    </li>
+                  ))}
+                  {improvements.length > 5 && (
+                    <li className="text-xs text-gray-500">
+                      +{improvements.length - 5} more improvements...
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Original Brief Reference */}
-        {currentBrief && (
-          <div className="border-t pt-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Original Brief:</h4>
-            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 max-h-32 overflow-y-auto">
-              {currentBrief}
+        {/* Edit Mode - Full Screen Improved Brief */}
+        {hasImproved && !isImproving && !showComparison && (
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-gray-700">
+                Edit Improved Brief
+              </label>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditableBrief(htmlToText(improvedBrief));
+                    setShowComparison(true);
+                  }}
+                  className="flex items-center space-x-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>Compare Mode</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setImprovedBrief(textToHtml(editableBrief));
+                    improveBrief();
+                  }}
+                  disabled={isImproving}
+                  className="flex items-center space-x-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Improve Again</span>
+                </Button>
+              </div>
             </div>
+            
+            <textarea
+              value={editableBrief}
+              onChange={(e) => setEditableBrief(e.target.value)}
+              placeholder="Improved brief content will appear here..."
+              className="flex-1 w-full p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+            
+            <p className="text-xs text-gray-500 mt-2">
+              You can edit the improved brief above before saving. Changes will be converted to HTML when saved.
+            </p>
           </div>
         )}
       </div>
@@ -251,7 +395,7 @@ export default function ImproveBriefModal({
         </Button>
         <Button
           onClick={handleSave}
-          disabled={!hasImproved || !improvedBrief.trim() || isImproving || isSaving}
+          disabled={!hasImproved || (!improvedBrief.trim() && !editableBrief.trim()) || isImproving || isSaving}
         >
           <Save className="w-4 h-4 mr-2" />
           {isSaving ? 'Saving...' : 'Save Improved Brief'}

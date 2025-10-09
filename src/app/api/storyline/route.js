@@ -111,7 +111,6 @@ Make sure the storyline is:
                 type: 'Key Insights',
                 items: storylineResponse.executiveSummary?.keyMessages || []
               }],
-              estimatedSlides: storylineResponse.executiveSummary?.estimatedPages || 2,
               locked: false,
               created_at: new Date(),
               updated_at: new Date()
@@ -128,7 +127,6 @@ Make sure the storyline is:
                 type: getContentBlockType(section.contentType),
                 items: section.keyMessages || []
               }],
-              estimatedSlides: section.estimatedPages || 3,
               locked: false,
               created_at: new Date(),
               updated_at: new Date()
@@ -145,7 +143,6 @@ Make sure the storyline is:
                 type: 'Process Flow',
                 items: storylineResponse.callToAction?.keyMessages || []
               }],
-              estimatedSlides: storylineResponse.callToAction?.estimatedPages || 1,
               locked: false,
               created_at: new Date(),
               updated_at: new Date()

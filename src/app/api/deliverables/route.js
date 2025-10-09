@@ -178,7 +178,7 @@ export async function POST(request) {
 
     // Add deliverable to project's deliverables array
     try {
-      const Project = (await import('@/lib/models/Project')).default;
+      const Project = (await import('../../lib/models/Project')).default;
       await Project.findByIdAndUpdate(
         project,
         { $addToSet: { deliverables: saved._id } },

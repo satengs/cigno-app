@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import Organisation from '@/lib/models/Organisation';
-import User from '@/lib/models/User';
+import connectDB from '../../lib/db/mongoose';
+import Organisation from '../../lib/models/Organisation';
+import User from '../../lib/models/User';
 
 export async function GET() {
   try {

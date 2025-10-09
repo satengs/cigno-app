@@ -120,7 +120,6 @@ export async function POST(request) {
         order: section.order !== undefined ? section.order : index,
         keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
         contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
-        estimatedSlides: section.estimatedSlides || 3,
         locked: !!section.locked,
         lockedBy: section.locked ? section.lockedBy : undefined,
         lockedAt: section.locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,

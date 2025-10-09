@@ -71,10 +71,6 @@ export default function SectionNavigator({
     onUpdateSection?.(sectionId, { description: value });
   };
 
-  const handleEstimatedSlidesChange = (sectionId, value) => {
-    const slides = Number(value) || 1;
-    onUpdateSection?.(sectionId, { estimatedSlides: slides });
-  };
 
   const handleAddKeyPoint = (sectionId) => {
     const draft = (draftKeyPoints[sectionId] || '').trim();
@@ -237,22 +233,6 @@ export default function SectionNavigator({
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Estimated Slides</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={section.estimatedSlides || 3}
-                        onChange={(e) => handleEstimatedSlidesChange(section.id, e.target.value)}
-                        disabled={isLocked}
-                        className={`w-full rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                          isLocked 
-                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
-                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
-                        }`}
-                      />
-                    </div>
 
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Key Points</label>

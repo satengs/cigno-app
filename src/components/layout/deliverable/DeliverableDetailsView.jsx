@@ -145,12 +145,29 @@ export default function DeliverableDetailsView({
             Improve Brief
           </button>
         </div>
-        <textarea
-          value={formData.brief}
-          onChange={(e) => onInputChange('brief', e.target.value)}
-          rows={5}
-          className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
+        
+        {/* Check if brief contains HTML tags */}
+        {formData.brief && formData.brief.includes('<') && formData.brief.includes('>') ? (
+          <div className="w-full rounded-sm border border-gray-300 p-3 min-h-[120px] bg-white">
+            <div 
+              className="prose prose-sm max-w-none text-sm"
+              dangerouslySetInnerHTML={{ __html: formData.brief }}
+            />
+          </div>
+        ) : (
+          <textarea
+            value={formData.brief}
+            onChange={(e) => onInputChange('brief', e.target.value)}
+            rows={5}
+            className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          />
+        )}
+        
+        {formData.brief && formData.brief.includes('<') && formData.brief.includes('>') && (
+          <p className="text-xs text-gray-500">
+            This brief contains HTML formatting. Use "Improve Brief" to modify the content.
+          </p>
+        )}
       </div>
 
       <div className="space-y-4 rounded-sm border border-gray-200 bg-gray-50 p-6">
