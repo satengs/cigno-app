@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import connectDB from '../../lib/db/mongoose';
-import MenuItemModel from '../../lib/models/MenuItemModel';
+import connectDB from '../../../lib/db/mongoose';
+import MenuItemModel from '../../../lib/models/MenuItemModel';
 
 export async function POST() {
   try {

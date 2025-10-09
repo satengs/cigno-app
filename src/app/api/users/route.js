@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import connectDB from '../../lib/db/mongoose';
-import User from '../../lib/models/User';
-import Organisation from '../../lib/models/Organisation';
-import Client from '../../lib/models/Client';
-import Project from '../../lib/models/Project';
-import Deliverable from '../../lib/models/Deliverable';
+import connectDB from '../../../lib/db/mongoose';
+import User from '../../../lib/models/User';
+import Organisation from '../../../lib/models/Organisation';
+import Client from '../../../lib/models/Client';
+import Project from '../../../lib/models/Project';
+import Deliverable from '../../../lib/models/Deliverable';
 
 export async function GET() {
   try {
@@ -77,7 +77,7 @@ export async function POST(request) {
     
     // Add user to organisation
     if (userData.organisation) {
-      const Organisation = (await import('../../lib/models/Organisation')).default;
+      const Organisation = (await import('../../../lib/models/Organisation')).default;
       await Organisation.findByIdAndUpdate(
         userData.organisation,
         { $push: { users: savedUser._id } }

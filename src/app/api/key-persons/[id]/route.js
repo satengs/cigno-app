@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import KeyPerson from '../../../lib/models/KeyPerson';
-import connectDB from '../../../lib/db/mongoose';
+import KeyPerson from '../../../../lib/models/KeyPerson';
+import connectDB from '../../../../lib/db/mongoose';
 import mongoose from 'mongoose';
 
 // GET /api/key-persons/[id]

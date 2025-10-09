@@ -1,3 +1,5 @@
+import path from 'path';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable container deployment optimizations
@@ -45,6 +47,14 @@ const nextConfig = {
   images: {
     unoptimized: true, // Disable Next.js image optimization for containers
     domains: [],
+  },
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@': path.resolve(process.cwd(), 'src'),
+    };
+    return config;
   },
 };
 
