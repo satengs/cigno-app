@@ -32,7 +32,7 @@ export async function POST(request) {
 
 Deliverable focus:
 - Title: ${deliverableData?.name || 'Unnamed Deliverable'}
-- Type: ${deliverableData?.type || 'deliverable'}
+- Type: ${deliverableData?.type || 'recommendation'}
 - Format: ${deliverableData?.format || 'unspecified'}
 - Priority: ${deliverableData?.priority || 'medium'}
 - Due date: ${deliverableData?.due_date || deliverableData?.dueDate || 'not provided'}

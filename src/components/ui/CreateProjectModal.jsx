@@ -35,11 +35,7 @@ export default function CreateProjectModal({
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [deliverables, setDeliverables] = useState([
-    { name: 'Strategy Presentation', type: 'Presentation' },
-    { name: 'Technical Report', type: 'Report' },
-    { name: 'Implementation Roadmap', type: 'Strategy' }
-  ]);
+  const [deliverables, setDeliverables] = useState([]);
   const [keyPersons, setKeyPersons] = useState([]);
   const [users, setUsers] = useState(availableUsers);
   const [loadingKeyPersons, setLoadingKeyPersons] = useState(false);

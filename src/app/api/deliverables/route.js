@@ -66,7 +66,7 @@ export async function POST(request) {
     }
 
     // Validate enum values
-    const VALID_TYPES = ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Other'];
+    const VALID_TYPES = ['Recommendation', 'Workshop Document', 'Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'];
     const VALID_STATUSES = ['draft', 'in_review', 'approved', 'in_progress', 'completed', 'delivered', 'rejected'];
     const VALID_PRIORITIES = ['low', 'medium', 'high', 'critical'];
 
@@ -174,6 +174,20 @@ export async function POST(request) {
           throw saveError;
         }
       }
+    }
+
+    // Add deliverable to project's deliverables array
+    try {
+      const Project = (await import('@/lib/models/Project')).default;
+      await Project.findByIdAndUpdate(
+        project,
+        { $addToSet: { deliverables: saved._id } },
+        { new: true }
+      );
+      console.log('✅ Added deliverable to project deliverables array');
+    } catch (updateError) {
+      console.error('⚠️ Failed to update project deliverables array:', updateError);
+      // Don't fail the request if this update fails
     }
 
     return NextResponse.json({

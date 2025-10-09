@@ -108,67 +108,102 @@ export default function StorylineGenerationForm({
     const strengths = [];
     const improvements = [];
 
-    // Check for technical requirements
-    if (brief.toLowerCase().includes('technical') || brief.toLowerCase().includes('infrastructure')) {
-      score += 2;
-      strengths.push('Technical requirements well defined');
-    } else {
-      improvements.push('Add technical requirements');
-    }
-
-    // Check for regulatory compliance
-    if (brief.toLowerCase().includes('regulatory') || brief.toLowerCase().includes('compliance')) {
-      score += 2;
-      strengths.push('Regulatory considerations included');
-    } else {
-      improvements.push('Include regulatory compliance aspects');
-    }
-
-    // Check for strategic positioning
-    if (brief.toLowerCase().includes('strategic') || brief.toLowerCase().includes('positioning')) {
-      score += 2;
-      strengths.push('Strategic positioning addressed');
-    } else {
-      improvements.push('Define strategic positioning');
-    }
-
-    // Check for geographical scope
-    if (brief.toLowerCase().includes('geographical') || brief.toLowerCase().includes('region') || brief.toLowerCase().includes('scope')) {
+    // Demo-specific scoring logic for UBS Switzerland scenario
+    const briefLower = brief.toLowerCase();
+    
+    // Check for basic elements (20% score)
+    if (briefLower.includes('strategy') || briefLower.includes('product')) {
       score += 1;
-      strengths.push('Geographical scope specified');
-    } else {
-      improvements.push('Add geographical scope');
+      strengths.push('Strategy/product focus identified');
     }
-
-    // Check for timeline constraints
-    if (brief.toLowerCase().includes('timeline') || brief.toLowerCase().includes('deadline') || brief.toLowerCase().includes('schedule')) {
+    
+    if (briefLower.includes('retirement') || briefLower.includes('pension')) {
       score += 1;
-      strengths.push('Timeline constraints mentioned');
-    } else {
-      improvements.push('Add timeline constraints');
+      strengths.push('Retirement/pension focus clear');
     }
-
-    // Check for competitive advantage
-    if (brief.toLowerCase().includes('competitive') || brief.toLowerCase().includes('advantage')) {
+    
+    if (briefLower.includes('ubs') || briefLower.includes('switzerland')) {
       score += 1;
-      strengths.push('Competitive advantage considered');
-    } else {
-      improvements.push('Address competitive advantage');
+      strengths.push('Client and geography specified');
     }
 
-    // Check brief length
-    if (brief.length > 100) {
+    // Check for detailed elements (80% score)
+    if (briefLower.includes('market sizing') || briefLower.includes('market size')) {
+      score += 2;
+      strengths.push('Market sizing included');
+    } else {
+      improvements.push('Add market sizing requirements');
+    }
+
+    if (briefLower.includes('competition') || briefLower.includes('competitive') || briefLower.includes('competitors')) {
+      score += 2;
+      strengths.push('Competitive analysis specified');
+    } else {
+      improvements.push('Include competitive analysis');
+    }
+
+    if (briefLower.includes('capabilities') || briefLower.includes('current')) {
+      score += 1;
+      strengths.push('Current capabilities mentioned');
+    } else {
+      improvements.push('Include current capabilities assessment');
+    }
+
+    if (briefLower.includes('gap') || briefLower.includes('assessment')) {
+      score += 1;
+      strengths.push('Gap assessment included');
+    } else {
+      improvements.push('Add gap assessment requirements');
+    }
+
+    if (briefLower.includes('partnership') || briefLower.includes('partners')) {
+      score += 1;
+      strengths.push('Partnership considerations included');
+    } else {
+      improvements.push('Consider partnership opportunities');
+    }
+
+    if (briefLower.includes('products') || briefLower.includes('new products')) {
+      score += 1;
+      strengths.push('New products strategy mentioned');
+    } else {
+      improvements.push('Define new product strategy');
+    }
+
+    // Check for strategic depth
+    if (briefLower.includes('tactical') || briefLower.includes('strategic moves') || briefLower.includes('transformation')) {
+      score += 1;
+      strengths.push('Strategic depth included');
+    } else {
+      improvements.push('Add strategic moves and transformation roadmap');
+    }
+
+    // Check brief length and detail
+    if (brief.length > 200) {
       score += 1;
       strengths.push('Comprehensive brief provided');
     } else {
       improvements.push('Expand brief with more details');
     }
 
-    const finalScore = Math.min(10, Math.max(0, score));
+    // Convert to percentage (0-100)
+    const finalScore = Math.min(100, Math.max(0, Math.round((score / 10) * 100)));
+    
+    // Generate demo-specific feedback
+    let feedback = '';
+    if (finalScore < 30) {
+      feedback = 'Be more specific on target geographies, strategic content to be developed (e.g. market sizing, competitive analysis, etc.), and \'so what\' of deck (e.g. suggested tactical / strategic moves, transformation roadmap, buy vs build strategy, etc.)';
+    } else if (finalScore >= 70) {
+      feedback = 'Good enough brief to generate an initial storyline';
+    } else {
+      feedback = 'Brief needs more strategic depth and specific requirements to generate high-quality content';
+    }
+
     setBriefQuality({
       score: finalScore,
       strengths: strengths.length > 0 ? strengths : ['Brief provided'],
-      improvements: improvements.length > 0 ? improvements : ['Brief looks good']
+      improvements: improvements.length > 0 ? improvements : ['Brief looks good'],
+      feedback: feedback
     });
   };
 

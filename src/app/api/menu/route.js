@@ -12,16 +12,16 @@ export async function GET() {
     const allItems = await MenuItemModel.find({}).lean();
     console.log(`Found ${allItems.length} menu items in database`);
     
-    if (allItems.length === 0) {
-      console.log('No menu items found, returning empty structure');
-      return NextResponse.json({ rootItems: [] });
-    }
+    // Also fetch deliverables from the Deliverable collection to add as menu items
+    const Deliverable = (await import('@/lib/models/Deliverable')).default;
+    const allDeliverables = await Deliverable.find({ is_active: true }).lean();
+    console.log(`Found ${allDeliverables.length} deliverables in database`);
     
     // Build the hierarchical structure
     const itemMap = new Map();
     const rootItems = [];
     
-    // First pass: create a map of all items with normalized IDs
+    // First pass: create a map of all menu items with normalized IDs
     allItems.forEach(item => {
       const normalizedItem = formatForAPI({
         ...item,
@@ -30,7 +30,52 @@ export async function GET() {
       itemMap.set(item._id.toString(), normalizedItem);
     });
     
-    // Second pass: build the hierarchy
+    // Add deliverables as menu items
+    allDeliverables.forEach(deliverable => {
+      const deliverableMenuItem = formatForAPI({
+        _id: deliverable._id,
+        title: deliverable.name,
+        description: deliverable.brief || '',
+        type: 'deliverable',
+        status: deliverable.status || 'draft',
+        parentId: null, // Will be set based on project mapping below
+        order: 0,
+        isCollapsed: false,
+        isCollapsible: false,
+        children: [],
+        metadata: {
+          deliverable_id: deliverable._id.toString(),
+          business_entity_id: deliverable._id.toString(),
+          project_id: deliverable.project ? deliverable.project.toString() : null,
+          format: deliverable.format,
+          due_date: deliverable.due_date,
+          priority: deliverable.priority
+        },
+        brief: deliverable.brief || '',
+        dueDate: deliverable.due_date,
+        priority: deliverable.priority || 'medium'
+      });
+      
+      // Find the parent project menu item
+      if (deliverable.project) {
+        const projectId = deliverable.project.toString();
+        // Find menu item with project_id in metadata
+        const parentProject = Array.from(itemMap.values()).find(item => 
+          item.type === 'project' && 
+          (item.metadata?.project_id === projectId || item.metadata?.business_entity_id === projectId)
+        );
+        
+        if (parentProject) {
+          deliverableMenuItem.parentId = parentProject._id;
+          parentProject.children.push(deliverableMenuItem);
+          console.log(`Added deliverable "${deliverable.name}" to project "${parentProject.title}"`);
+        } else {
+          console.log(`No parent project found for deliverable "${deliverable.name}" with project ID ${projectId}`);
+        }
+      }
+    });
+    
+    // Second pass: build the hierarchy for menu items only (deliverables already added above)
     allItems.forEach(item => {
       const itemWithId = itemMap.get(item._id.toString());
       

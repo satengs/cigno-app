@@ -129,7 +129,7 @@ describe('Deliverables Functionality Integration Test', () => {
       ];
 
       // Verify all options use valid enum values
-      const validTypes = ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Other'];
+      const validTypes = ['Recommendation', 'Workshop Document', 'Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'];
       
       typeOptions.forEach(option => {
         expect(validTypes).toContain(option.value);
@@ -245,7 +245,7 @@ describe('Deliverables Functionality Integration Test', () => {
     it('should have valid enum constraints', () => {
       const validEnums = {
         format: ['PDF', 'DOCX', 'PPTX', 'XLSX', 'HTML', 'TXT', 'IMAGE', 'VIDEO', 'AUDIO', 'OTHER'],
-        type: ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Other'],
+        type: ['Recommendation', 'Workshop Document', 'Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'],
         status: ['draft', 'in_review', 'approved', 'in_progress', 'completed', 'delivered', 'rejected'],
         priority: ['low', 'medium', 'high', 'critical']
       };

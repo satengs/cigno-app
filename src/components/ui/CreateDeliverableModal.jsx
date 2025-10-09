@@ -191,17 +191,12 @@ export default function CreateDeliverableModal({
   ];
 
   const typeOptions = [
-    { value: 'Presentation', label: 'Presentation' },
-    { value: 'Report', label: 'Report' },
-    { value: 'Strategy', label: 'Strategy' },
-    { value: 'Analysis', label: 'Analysis' },
-    { value: 'Design', label: 'Design' },
-    { value: 'Code', label: 'Code' },
-    { value: 'Documentation', label: 'Documentation' },
-    { value: 'Other', label: 'Other' }
+    { value: 'Recommendation', label: 'Recommendation' },
+    { value: 'Workshop Document', label: 'Workshop Document' }
   ];
 
   const sizeOptions = [
+    { value: '5 slides', label: '5 slides' },
     { value: '10 slides', label: '10 slides' },
     { value: '15 slides', label: '15 slides' },
     { value: '20 slides', label: '20 slides' },

@@ -153,6 +153,7 @@ export default function Dashboard() {
           onItemSelect={handleItemSelect}
           onItemDeleted={handleItemDeleted}
           onDeliverableNavigate={handleDeliverableNavigate}
+          refreshFromDatabase={refreshFromDatabase}
         />
 
         {/* Right Section */}

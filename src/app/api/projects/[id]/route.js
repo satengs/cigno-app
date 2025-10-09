@@ -18,9 +18,10 @@ export async function GET(request, { params }) {
     }
 
     const project = await Project.findById(id)
-      .populate('client_id', 'name industry')
-      .populate('owner', 'first_name last_name')
-      .populate('assigned_team', 'first_name last_name');
+      .populate('client', 'name industry')
+      .populate('internal_owner', 'first_name last_name')
+      .populate('client_owner', 'name email_address')
+      .populate('deliverables', 'name status due_date type format');
 
     if (!project) {
       return NextResponse.json(
@@ -44,11 +45,11 @@ export async function GET(request, { params }) {
     // Enrich project data with calculated fields
     const enrichedProject = {
       ...project.toObject(),
-      client_name: project.client_id?.name || 'Unknown Client',
+      client_name: project.client?.name || 'Unknown Client',
       deliverables_count: deliverables.length,
       progress_percentage: progressPercentage,
       days_remaining: daysRemaining,
-      budget_percentage: project.budget_used || 0
+      budget_percentage: project.budget?.spent || 0
     };
 
     return NextResponse.json(enrichedProject);
@@ -79,8 +80,8 @@ export async function PATCH(request, { params }) {
       id,
       { ...updates, updated_at: new Date() },
       { new: true, runValidators: true }
-    ).populate('client_id', 'name')
-     .populate('owner', 'first_name last_name');
+    ).populate('client', 'name')
+     .populate('internal_owner', 'first_name last_name');
 
     if (!project) {
       return NextResponse.json(

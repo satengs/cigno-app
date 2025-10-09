@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '../../../../lib/db/mongoose.js';
 import Storyline from '../../../../lib/models/Storyline.js';
+import User from '../../../../lib/models/User.js';
 import { 
   createSuccessResponse, 
   createErrorResponse, 

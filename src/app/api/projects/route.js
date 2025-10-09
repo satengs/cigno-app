@@ -3,6 +3,7 @@ import connectDB from '@/lib/db/mongoose';
 import Project from '@/lib/models/Project';
 import User from '@/lib/models/User';
 import Client from '@/lib/models/Client';
+import Contact from '@/lib/models/Contact';
 import Organisation from '@/lib/models/Organisation';
 import Deliverable from '@/lib/models/Deliverable';
 import MenuItemModel from '@/lib/models/MenuItemModel';
@@ -201,7 +202,10 @@ export async function POST(request) {
     let deliverablesArray = projectData.deliverables;
     
     // If no deliverables provided, try to generate them from project description using AI
-    if (!deliverablesArray || !Array.isArray(deliverablesArray) || deliverablesArray.length === 0) {
+    // Only if explicitly enabled via environment variable or project data flag
+    const enableAIDeliverableGeneration = process.env.ENABLE_AI_DELIVERABLE_GENERATION === 'true' || projectData.enableAIDeliverableGeneration === true;
+    
+    if (enableAIDeliverableGeneration && (!deliverablesArray || !Array.isArray(deliverablesArray) || deliverablesArray.length === 0)) {
       if (projectData.description) {
         console.log('No deliverables provided, analyzing project description with AI...');
         try {
@@ -233,6 +237,8 @@ export async function POST(request) {
           console.log('AI analysis error:', aiError.message, '- proceeding without auto-generated deliverables');
         }
       }
+    } else if (!enableAIDeliverableGeneration) {
+      console.log('AI deliverable generation is disabled, proceeding without auto-generated deliverables');
     }
     
     if (deliverablesArray && Array.isArray(deliverablesArray) && deliverablesArray.length > 0) {
@@ -258,14 +264,17 @@ export async function POST(request) {
           
           // Map type values to valid enum values
           const mapType = (type) => {
-            if (!type) return 'Report';
+            if (!type) return 'Recommendation';
 
             const normalized = type.toString().trim();
-            if (!normalized) return 'Report';
+            if (!normalized) return 'Recommendation';
 
             const lower = normalized.toLowerCase();
 
             const typeMap = {
+              recommendation: 'Recommendation',
+              'workshop document': 'Workshop Document',
+              workshop: 'Workshop Document',
               document: 'Documentation',
               documentation: 'Documentation',
               manual: 'Documentation',
@@ -301,8 +310,14 @@ export async function POST(request) {
             if (lower.includes('storyline')) return 'Storyline';
             if (lower.includes('design')) return 'Design';
             if (lower.includes('doc')) return 'Documentation';
+            
+            // Handle invalid types like "deliverable" by defaulting to "Other"
+            if (lower === 'deliverable' || lower === 'item' || lower === 'task') {
+              return 'Other';
+            }
 
-            return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+            // For any other unrecognized type, default to "Other" instead of capitalizing
+            return 'Other';
           };
           
           // Map format values to valid enum values

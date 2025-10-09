@@ -13,8 +13,8 @@ const deliverableSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'],
-    default: 'Report'
+    enum: ['Recommendation', 'Workshop Document', 'Presentation', 'Report', 'Strategy', 'Analysis', 'Design', 'Code', 'Documentation', 'Dashboard', 'API', 'Brief', 'Storyline', 'Other'],
+    default: 'Recommendation'
   },
   length: {
     type: Number, // Pages, words, minutes, etc.

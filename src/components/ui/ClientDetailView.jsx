@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Edit2, 
   Save, 
@@ -23,12 +23,15 @@ import {
 import Button from './buttons/Button';
 import Input from './forms/Input';
 import Select from './forms/Select';
+import { UnifiedAddModal } from './';
+import ConfirmationModal from './ConfirmationModal';
 
 export default function ClientDetailView({ 
   client, 
   onUpdate, 
   onDelete,
-  onAddProject 
+  onAddProject,
+  refreshFromDatabase
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editingField, setEditingField] = useState(null);
@@ -48,9 +51,17 @@ export default function ClientDetailView({
     keyPeople: true,
     projects: true
   });
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addItemType, setAddItemType] = useState(null);
+  const [parentId, setParentId] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const usersFetched = useRef(false);
 
   const industryOptions = [
     { value: '', label: 'Select industry...' },
+    { value: 'financial-services', label: 'Financial Services' },
     { value: 'banking', label: 'Banking' },
     { value: 'insurance', label: 'Insurance' },
     { value: 'fintech', label: 'Fintech' },
@@ -60,10 +71,10 @@ export default function ClientDetailView({
 
   const ownerOptions = [
     { value: '', label: 'Select team member...' },
-    { value: 'john-doe', label: 'John Doe' },
-    { value: 'jane-smith', label: 'Jane Smith' },
-    { value: 'mike-wilson', label: 'Mike Wilson' },
-    { value: 'sarah-jones', label: 'Sarah Jones' }
+    ...availableUsers.map(user => ({
+      value: user.id || user._id,
+      label: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || user.username || 'Unknown User'
+    }))
   ];
 
   const roleOptions = [
@@ -78,8 +89,34 @@ export default function ClientDetailView({
     { value: 'other', label: 'Other' }
   ];
 
+  // Fetch available users
+  useEffect(() => {
+    // Only fetch once using ref to prevent infinite loops
+    if (!usersFetched.current) {
+      usersFetched.current = true;
+      const fetchUsers = async () => {
+        try {
+          console.log('ClientDetailView: Fetching users...');
+          const response = await fetch('/api/users');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.users) {
+              console.log('ClientDetailView: Users fetched successfully:', data.users.length);
+              setAvailableUsers(data.users);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching users:', error);
+        }
+      };
+
+      fetchUsers();
+    }
+  }, []);
+
   // Initialize form data from client
   useEffect(() => {
+    console.log('ClientDetailView: Client changed, reinitializing form data...', client?.id || client?._id);
     if (client) {
       setFormData({
         clientName: client.title || '',
@@ -96,6 +133,16 @@ export default function ClientDetailView({
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Helper function to get owner display name
+  const getOwnerDisplayName = (ownerId) => {
+    if (!ownerId) return 'Not specified';
+    const user = availableUsers.find(user => (user.id || user._id) === ownerId);
+    if (user) {
+      return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || user.username || 'Unknown User';
+    }
+    return ownerId; // Fallback to showing ID if user not found
   };
 
   const handleEditField = (field) => {
@@ -205,61 +252,189 @@ export default function ClientDetailView({
     }));
   };
 
+  const handleAddItem = (itemType, parent = null) => {
+    setAddItemType(itemType);
+    setParentId(parent);
+    setShowAddModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setAddItemType(null);
+    setParentId(null);
+  };
+
+  const handleSaveItem = async (itemData) => {
+    try {
+      // Call the onAddProject callback if it exists
+      if (onAddProject) {
+        await onAddProject(client, itemData);
+      }
+      handleCloseModal();
+    } catch (error) {
+      console.error('Error saving item:', error);
+    }
+  };
+
+  const handleRemoveItem = (itemType, itemId, itemTitle) => {
+    console.log('🗑️ ClientDetailView: Starting remove item process...');
+    console.log('📝 Remove item data:', {
+      type: itemType,
+      id: itemId,
+      title: itemTitle
+    });
+    
+    // Show appropriate confirmation dialog based on item type
+    let confirmMessage = '';
+    switch (itemType) {
+      case 'client':
+        confirmMessage = `Are you sure you want to remove "${itemTitle}"?\n\nThis will also remove ALL associated projects and deliverables.\n\nThis action cannot be undone.`;
+        break;
+      case 'project':
+        confirmMessage = `Are you sure you want to remove "${itemTitle}"?\n\nThis will also remove ALL associated deliverables.\n\nThis action cannot be undone.`;
+        break;
+      case 'deliverable':
+        confirmMessage = `Are you sure you want to remove "${itemTitle}"?\n\nThis action cannot be undone.`;
+        break;
+      default:
+        confirmMessage = `Are you sure you want to remove "${itemTitle}"?\n\nThis action cannot be undone.`;
+    }
+
+    setPendingDelete({ type: itemType, id: itemId, title: itemTitle, message: confirmMessage });
+    setShowConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    const { type, id, title } = pendingDelete;
+    
+    try {
+      console.log('🗑️ Removing item of type:', type, 'with ID:', id);
+
+      // Call the appropriate API endpoint based on item type
+      let endpoint = '';
+      switch (type) {
+        case 'client':
+          endpoint = `/api/clients?id=${id}`;
+          break;
+        case 'project':
+          endpoint = `/api/projects?id=${id}`;
+          break;
+        case 'deliverable':
+          endpoint = `/api/deliverables?id=${id}`;
+          break;
+        default:
+          throw new Error(`Unknown item type: ${type}`);
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('❌ Delete request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url,
+        });
+        
+        let errorMessage = `Failed to remove ${type}`;
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } else {
+            const errorText = await response.text();
+            console.error('Non-JSON error response:', errorText.substring(0, 200));
+            errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+          }
+        } catch (parseError) {
+          console.error('Error parsing error response:', parseError);
+          errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      console.log('✅ Item removed successfully');
+
+      // Call the onDelete callback if it exists
+      if (onDelete) {
+        await onDelete(client);
+      }
+
+      // Refresh the left menu data
+      if (refreshFromDatabase) {
+        console.log('🔄 Refreshing dashboard data after deletion...');
+        refreshFromDatabase();
+      }
+
+      setShowConfirm(false);
+      setPendingDelete(null);
+    } catch (error) {
+      console.error('💥 Error removing item:', error);
+      alert(`Failed to remove ${type}: ${error.message}`);
+    }
+  };
+
   const renderEditableField = (field, label, value, type = 'text', options = null) => {
     const isEditing = editingField === field;
     
     return (
-      <div className="space-y-2">
-        <label className="block text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
           {label}
         </label>
-        <div className="flex items-center space-x-2">
-          {isEditing ? (
-            <div className="flex-1 flex items-center space-x-2">
-              {type === 'select' ? (
-                <Select
-                  value={formData[field]}
-                  onChange={(e) => handleInputChange(field, e.target.value)}
-                  options={options || []}
-                  className="flex-1"
-                />
-              ) : (
-                <Input
-                  value={formData[field]}
-                  onChange={(e) => handleInputChange(field, e.target.value)}
-                  className="flex-1"
-                />
-              )}
-              <button
-                onClick={() => handleSaveField(field)}
-                className="p-1 text-green-600 hover:text-green-700"
-                title="Save"
+        {isEditing ? (
+          <div className="flex items-center space-x-2">
+            {type === 'select' ? (
+              <select
+                value={formData[field]}
+                onChange={(e) => handleInputChange(field, e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <Save className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleCancelEdit}
-                className="p-1 text-gray-600 hover:text-gray-700"
-                title="Cancel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-between">
-              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                {value || 'Not specified'}
-              </span>
-              <button
-                onClick={() => handleEditField(field)}
-                className="p-1 text-gray-600 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Edit"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
+                {options?.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={formData[field]}
+                onChange={(e) => handleInputChange(field, e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            )}
+            <button
+              onClick={() => handleSaveField(field)}
+              className="p-2 text-green-600 hover:text-green-700"
+              title="Save"
+            >
+              <Save className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleCancelEdit}
+              className="p-2 text-gray-600 hover:text-gray-700"
+              title="Cancel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div 
+            className="group flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md text-sm cursor-pointer hover:border-gray-400 focus-within:ring-2 focus-within:ring-blue-500"
+            onClick={() => handleEditField(field)}
+          >
+            <span className="text-gray-900">
+              {value || <span className="text-gray-500 italic">Not specified</span>}
+            </span>
+            <Edit2 className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100" />
+          </div>
+        )}
       </div>
     );
   };
@@ -273,256 +448,256 @@ export default function ClientDetailView({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="bg-white">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center space-x-4">
-          {/* Logo */}
-          <div className="w-16 h-16 border-2 border-dashed rounded-lg flex items-center justify-center" style={{ borderColor: 'var(--border-secondary)' }}>
-            {formData.logo ? (
-              <img 
-                src={formData.logo instanceof File ? URL.createObjectURL(formData.logo) : formData.logo} 
-                alt="Client logo" 
-                className="w-full h-full object-contain rounded-lg"
-              />
-            ) : (
-              <Building2 className="w-8 h-8" style={{ color: 'var(--text-secondary)' }} />
-            )}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {formData.clientName || 'Unnamed Client'}
-            </h1>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {formData.website || 'No website'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <input
-            type="file"
-            id="logo-upload"
-            accept="image/png,image/jpeg,image/svg+xml"
-            onChange={handleLogoUpload}
-            className="hidden"
-          />
-          <label
-            htmlFor="logo-upload"
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors text-sm"
-          >
-            <Upload className="w-4 h-4 mr-1 inline" />
-            Upload Logo
-          </label>
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {formData.clientName || 'Unnamed Client'}
+          </h1>
           <button
-            onClick={() => onDelete?.(client)}
-            className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+            onClick={() => {
+              const businessEntityId = client.metadata?.business_entity_id || 
+                                      client.metadata?.client_id || 
+                                      client._id || 
+                                      client.id;
+              handleRemoveItem('client', businessEntityId, client.title);
+            }}
+            className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
             title="Delete client"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-5 h-5" />
           </button>
         </div>
-      </div>
-
-      {/* Description */}
-      <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-          {formData.clientName} is a leading multinational investment bank headquartered in {formData.location || 'London'}, 
-          serving institutional clients worldwide with comprehensive financial services including corporate banking, 
-          investment management, and advisory services.
+        <p className="text-gray-600 mb-2">
+          {client.metadata?.description || 'No description available'}
         </p>
-        <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+        <a href="#" className="text-blue-600 text-sm hover:underline">
           Source: Company overview document
-        </p>
+        </a>
       </div>
 
-      {/* Basic Information */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          {renderEditableField('website', 'Website', formData.website, 'text')}
-          {renderEditableField('location', 'Location', formData.location, 'text')}
-        </div>
-        <div className="space-y-4">
-          {renderEditableField('industry', 'Industry', formData.industry, 'select', industryOptions)}
-          {renderEditableField('owner', 'Owner', formData.owner, 'select', ownerOptions)}
-        </div>
-      </div>
-
-      {/* Tags */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-          Tags
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {formData.tags.map((tag, index) => (
-            <div
-              key={index}
-              className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-800"
-            >
-              {tag}
-              <button
-                type="button"
-                onClick={() => handleRemoveTag(tag)}
-                className="ml-2 text-gray-600 hover:text-gray-800"
-              >
-                <X className="w-3 h-3" />
-              </button>
+      {/* Content */}
+      <div className="px-6 pb-6 space-y-6">
+        {/* Logo Section */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">Logo:</label>
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-gray-800 rounded flex items-center justify-center">
+              {formData.logo ? (
+                <img 
+                  src={formData.logo instanceof File ? URL.createObjectURL(formData.logo) : formData.logo} 
+                  alt="Client logo" 
+                  className="w-full h-full object-contain rounded"
+                />
+              ) : (
+                <span className="text-white font-semibold text-lg">
+                  {formData.clientName ? formData.clientName.split(' ').map(word => word[0]).join('').substring(0, 3) : 'GBC'}
+                </span>
+              )}
             </div>
-          ))}
+            <div>
+              <input
+                type="file"
+                id="logo-upload"
+                accept="image/png,image/jpeg,image/svg+xml"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+              <label
+                htmlFor="logo-upload"
+                className="inline-block px-3 py-1 bg-gray-600 text-white rounded text-sm cursor-pointer hover:bg-gray-700"
+              >
+                Upload Logo
+              </label>
+              <p className="text-xs text-gray-500 mt-1">PNG, JPG or SVG (max 2MB)</p>
+            </div>
+          </div>
         </div>
-        <div className="flex space-x-2">
+
+        {/* Basic Information */}
+        <div className="grid grid-cols-2 gap-4">
+          {renderEditableField('website', 'Website:', formData.website, 'text')}
+          {renderEditableField('location', 'Location:', formData.location, 'text')}
+          {renderEditableField('industry', 'Industry:', formData.industry, 'select', industryOptions)}
+          {renderEditableField('owner', 'Owner:', getOwnerDisplayName(formData.owner), 'select', ownerOptions)}
+        </div>
+
+        {/* Tags */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">Tags:</label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {formData.tags.map((tag, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag)}
+                  className="ml-2 text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
           <input
             type="text"
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
             placeholder="Add tag..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleAddTag}
-            disabled={!newTag.trim()}
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add
-          </Button>
         </div>
-      </div>
 
-      {/* Key People */}
-      <div>
-        <div 
-          className="flex items-center justify-between cursor-pointer mb-3"
-          onClick={() => toggleSection('keyPeople')}
-        >
-          <div className="flex items-center space-x-2">
+        {/* Contacts */}
+        <div>
+          <div 
+            className="flex items-center justify-between cursor-pointer mb-3"
+            onClick={() => toggleSection('keyPeople')}
+          >
+            <label className="text-sm font-medium text-gray-700">Contacts:</label>
             {expandedSections.keyPeople ? (
-              <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+              <ChevronDown className="w-4 h-4 text-gray-500" />
             ) : (
-              <ChevronUp className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+              <ChevronUp className="w-4 h-4 text-gray-500" />
             )}
-            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Key People
-            </label>
           </div>
-        </div>
-        
-        {expandedSections.keyPeople && (
-          <div className="space-y-3">
-            <div className="space-y-2">
+          
+          {expandedSections.keyPeople && (
+            <div className="space-y-3">
               {formData.keyPeople.map((person) => (
                 <div
                   key={person.id}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                    <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
                       <User className="w-4 h-4 text-gray-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">{person.name}</p>
-                      <p className="text-xs text-gray-600">{person.role}</p>
+                      <p className="text-sm font-medium text-gray-900">{person.name}</p>
+                      <p className="text-xs text-gray-500">{person.email || `${person.name.toLowerCase().replace(' ', '.')}@company.com`}</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleRemoveKeyPerson(person.id)}
-                    className="text-gray-600 hover:text-gray-800"
+                    className="text-gray-400 hover:text-gray-600 p-1"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ))}
-            </div>
-            <div className="space-y-2">
               <div className="flex space-x-2">
                 <input
                   type="text"
                   value={newKeyPerson.name}
                   onChange={(e) => handleKeyPersonInputChange('name', e.target.value)}
-                  placeholder="Name"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Add contact..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <Select
-                  value={newKeyPerson.role}
-                  onChange={(e) => handleKeyPersonInputChange('role', e.target.value)}
-                  options={roleOptions}
-                  className="w-32"
-                />
+                <button
+                  type="button"
+                  onClick={handleAddKeyPerson}
+                  disabled={!newKeyPerson.name.trim()}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md text-sm hover:bg-gray-700 disabled:opacity-50"
+                >
+                  Add
+                </button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddKeyPerson}
-                disabled={!newKeyPerson.name.trim() || !newKeyPerson.role}
-                className="w-full"
+            </div>
+          )}
+        </div>
+
+        {/* Projects */}
+        <div>
+          <div 
+            className="flex items-center justify-between cursor-pointer mb-3"
+            onClick={() => toggleSection('projects')}
+          >
+            <label className="text-sm font-medium text-gray-700">Projects:</label>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAddItem('project', client.id || client._id);
+                }}
+                className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                title="Add Project"
               >
-                <Plus className="w-4 h-4 mr-1" />
-                Add key person
-              </Button>
+                <Plus className="w-4 h-4" />
+              </button>
+              {expandedSections.projects ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-gray-500" />
+              )}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Projects */}
-      <div>
-        <div 
-          className="flex items-center justify-between cursor-pointer mb-3"
-          onClick={() => toggleSection('projects')}
-        >
-          <div className="flex items-center space-x-2">
-            {expandedSections.projects ? (
-              <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-            ) : (
-              <ChevronUp className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-            )}
-            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Projects
-            </label>
-          </div>
-          <button
-            onClick={() => onAddProject?.(client)}
-            className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-          >
-            <Plus className="w-4 h-4 mr-1 inline" />
-            Add Project
-          </button>
-        </div>
-        
-        {expandedSections.projects && (
-          <div className="space-y-2">
-            {client.projects && client.projects.length > 0 ? (
-              client.projects.map((project) => (
-                <div
-                  key={project.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex items-center space-x-3">
-                    <Folder className="w-4 h-4 text-gray-600" />
-                    <div>
-                      <p className="text-sm font-medium">{project.title}</p>
-                      <p className="text-xs text-gray-600">{project.status}</p>
+          
+          {expandedSections.projects && (
+            <div className="space-y-3">
+              {client.projects && client.projects.length > 0 ? (
+                client.projects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <Folder className="w-5 h-5 text-gray-500" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{project.title}</p>
+                        <p className="text-xs text-gray-500">{project.status}</p>
+                      </div>
                     </div>
+                    <button className="text-gray-400 hover:text-gray-600 p-1">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button className="text-gray-600 hover:text-gray-800">
-                    <MoreHorizontal className="w-4 h-4" />
+                ))
+              ) : (
+                <div className="text-center py-6 text-gray-400">
+                  <Folder className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm mb-1">No projects yet</p>
+                  <button
+                    onClick={() => handleAddItem('project', client.id || client._id)}
+                    className="text-blue-600 text-sm hover:underline"
+                  >
+                    Create your first project to get started
                   </button>
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Folder className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>No projects yet</p>
-                <p className="text-sm">Add a project to get started</p>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Unified Add Modal */}
+      {showAddModal && (
+        <UnifiedAddModal
+          isOpen={showAddModal}
+          onClose={handleCloseModal}
+          onAdd={handleSaveItem}
+          itemType={addItemType}
+          parentId={parentId}
+        />
+      )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={confirmDelete}
+        title="Confirm Deletion"
+        message={pendingDelete?.message || ''}
+        confirmText="Yes, Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

@@ -9,13 +9,14 @@ import {
 } from 'lucide-react';
 import ClientDetailView from '../ui/ClientDetailView';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
+import { UnifiedAddModal } from '../ui';
 import { getIdString, isValidObjectId } from '@/lib/utils/idUtils';
 import { normalizeStatus } from '@/lib/constants/enums';
 import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
 import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
 import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
 
-export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate }) {
+export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase }) {
   const [formData, setFormData] = useState({
     name: '',
     audience: [],
@@ -52,6 +53,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   });
   const [projectDeliverables, setProjectDeliverables] = useState([]);
   const [isLoadingProjectDeliverables, setIsLoadingProjectDeliverables] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addItemType, setAddItemType] = useState(null);
+  const [parentId, setParentId] = useState(null);
   const [isDeliverablesOpen, setIsDeliverablesOpen] = useState(true);
 
   const formatDateForInput = useCallback((value) => {
@@ -177,6 +181,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   // Update form data when selectedItem changes
   useEffect(() => {
     if (selectedItem && selectedItem.type === 'deliverable') {
+      console.log('🎯 Deliverable selected:', selectedItem._id || selectedItem.id);
+      
       setFormData({
         name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
         audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
@@ -191,7 +197,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       });
 
       // Load existing storyline if available
-      loadExistingStoryline(selectedItem._id || selectedItem.id);
+      const deliverableId = selectedItem._id || selectedItem.id;
+      console.log('🔍 Auto-loading storyline for deliverable:', deliverableId);
+      loadExistingStoryline(deliverableId);
     }
   }, [selectedItem]);
 
@@ -209,12 +217,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const result = await response.json();
+      console.log('🔍 API Response:', result);
+      console.log('🔍 Result data:', result?.data);
+      console.log('🔍 Storylines array:', result?.data?.storylines);
+      
       const storylines = Array.isArray(result?.data?.storylines)
         ? result.data.storylines
         : Array.isArray(result?.data)
           ? result.data
           : [];
+      console.log('🔍 Parsed storylines:', storylines);
+      
       const existingStoryline = storylines[0] || result?.data?.storyline || null;
+      console.log('🔍 Existing storyline:', existingStoryline);
 
       if (existingStoryline) {
         console.log('✅ Found existing storyline:', existingStoryline._id);
@@ -235,6 +250,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             lockedAt: section.lockedAt
           }))
         });
+        setCurrentView('storyline');
         setCurrentSectionIndex(0);
         setStorylineDirty(false);
       } else {
@@ -263,13 +279,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const result = await response.json();
+      console.log('🔍 API Response (no-auto-switch):', result);
+      
       const storylines = Array.isArray(result?.data?.storylines)
         ? result.data.storylines
         : Array.isArray(result?.data)
           ? result.data
           : [];
+      console.log('🔍 Parsed storylines (no-auto-switch):', storylines);
 
       const existingStoryline = storylines[0] || result?.data?.storyline || null;
+      console.log('🔍 Existing storyline (no-auto-switch):', existingStoryline);
 
       if (existingStoryline) {
         console.log('✅ Found existing storyline:', existingStoryline._id);
@@ -476,8 +496,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         setCurrentView('layout');
       } else if (view === 'details') {
         setCurrentView('detailed');
-      } else {
-        setCurrentView('detailed');
       }
     }
   }, [selectedItem]);
@@ -497,7 +515,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           ? providedDeliverables
           : menuDeliverables;
 
-      const projectId = selectedItem._id || selectedItem.id || metadata.project_id || metadata.projectId;
+      const projectId = metadata.project_id || metadata.projectId || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id;
       const clientId = metadata.client_id || metadata.clientId || selectedItem.client_id || selectedItem.clientId;
 
       const normalized = normalizeDeliverableList(sourceDeliverables).map((item, index) => ({
@@ -524,12 +542,77 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         deliverables: normalized
       });
 
-      fetchProjectDeliverables(projectId);
+      // Use the business entity ID (actual project ID) instead of menu item ID
+      const businessEntityId = metadata.project_id || metadata.projectId || selectedItem.metadata?.business_entity_id;
+      if (businessEntityId) {
+        fetchProjectDeliverables(businessEntityId);
+      }
     } else {
       setProjectDeliverables([]);
       setIsDeliverablesOpen(true);
     }
   }, [selectedItem, normalizeDeliverableList, fetchProjectDeliverables, formatDateForInput]);
+
+  // Load existing storyline when selectedItem changes
+  useEffect(() => {
+    console.log('🎯 useEffect triggered with selectedItem:', selectedItem);
+    console.log('🎯 selectedItem type:', selectedItem?.type);
+    console.log('🎯 selectedItem?._id:', selectedItem?._id);
+    console.log('🎯 selectedItem?.id:', selectedItem?.id);
+    
+    const loadExistingStoryline = async () => {
+      if (selectedItem?.type !== 'deliverable') {
+        console.log('❌ Early return: not a deliverable');
+        return;
+      }
+      
+      if (!selectedItem?._id && !selectedItem?.id) {
+        console.log('❌ Early return: no valid selectedItem ID');
+        return;
+      }
+      
+      const deliverableId = selectedItem._id || selectedItem.id;
+      
+      try {
+        console.log('🔍 Loading existing storyline for deliverable:', deliverableId);
+        
+        // Load actual storyline from database
+        const response = await fetch(`/api/storylines?deliverableId=${deliverableId}`);
+        
+        if (response.ok) {
+          const result = await response.json();
+          
+          if (result.ok && result.data.storylines.length > 0) {
+            const existingStoryline = result.data.storylines[0];
+            console.log('✅ Found existing storyline:', existingStoryline._id);
+            console.log('🔧 Storyline sections:', existingStoryline.sections?.length);
+            
+            // Use the database storyline directly - it already has the right structure
+            const convertedStoryline = {
+              ...existingStoryline,
+              sections: existingStoryline.sections
+            };
+            
+            console.log('🔧 Setting storyline state with', convertedStoryline.sections?.length, 'sections');
+            setGeneratedStoryline(convertedStoryline);
+            setCurrentSectionIndex(0);
+            setStorylineDirty(false);
+          } else {
+            console.log('📝 No existing storyline found for this deliverable');
+            setGeneratedStoryline(null);
+          }
+        } else {
+          console.log('❌ Failed to fetch storylines from API');
+          setGeneratedStoryline(null);
+        }
+      } catch (error) {
+        console.error('❌ Error loading existing storyline:', error);
+        setGeneratedStoryline(null);
+      }
+    };
+
+    loadExistingStoryline();
+  }, [selectedItem]);
 
   const handleProjectFormChange = (field, value) => {
     setProjectForm(prev => ({ ...prev, [field]: value }));
@@ -554,22 +637,46 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }));
   };
 
-  const handleRemoveDeliverable = (deliverableId) => {
+  const handleRemoveDeliverable = async (deliverableId) => {
     if (!deliverableId) return;
 
-    setProjectDeliverables(prev => (
-      Array.isArray(prev)
-        ? prev.filter(item => item.id !== deliverableId)
-        : prev
-    ));
+    try {
+      // Delete from database first
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'DELETE',
+      });
 
-    setProjectForm(prev => ({
-      ...prev,
-      deliverables: (Array.isArray(prev.deliverables) ? prev.deliverables : []).filter(item => (item.id || item._id) !== deliverableId)
-    }));
+      if (!response.ok) {
+        console.error('Failed to delete deliverable from database');
+        alert('Failed to delete deliverable');
+        return;
+      }
 
-    if (selectedItem?.type === 'deliverable' && (selectedItem.id === deliverableId || selectedItem._id === deliverableId)) {
-      onItemSelect?.(null);
+      console.log('Deliverable deleted from database successfully');
+
+      // Update UI state only after successful database deletion
+      setProjectDeliverables(prev => (
+        Array.isArray(prev)
+          ? prev.filter(item => item.id !== deliverableId)
+          : prev
+      ));
+
+      setProjectForm(prev => ({
+        ...prev,
+        deliverables: (Array.isArray(prev.deliverables) ? prev.deliverables : []).filter(item => (item.id || item._id) !== deliverableId)
+      }));
+
+      if (selectedItem?.type === 'deliverable' && (selectedItem.id === deliverableId || selectedItem._id === deliverableId)) {
+        onItemSelect?.(null);
+      }
+
+      // Refresh data to ensure consistency
+      if (refreshFromDatabase) {
+        await refreshFromDatabase();
+      }
+    } catch (error) {
+      console.error('Error deleting deliverable:', error);
+      alert('Error deleting deliverable');
     }
   };
 
@@ -615,6 +722,34 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       improvements: improvements
     }));
     setShowImproveBrief(false);
+  };
+
+  const handleAddDeliverable = (project) => {
+    const businessEntityId = project.metadata?.business_entity_id || 
+                            project.metadata?.project_id || 
+                            project._id || 
+                            project.id;
+    setAddItemType('deliverable');
+    setParentId(businessEntityId);
+    setShowAddModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setAddItemType(null);
+    setParentId(null);
+  };
+
+  const handleSaveItem = async (itemData) => {
+    try {
+      // Refresh the data after creating a deliverable
+      if (refreshFromDatabase) {
+        await refreshFromDatabase();
+      }
+      handleCloseModal();
+    } catch (error) {
+      console.error('Error saving item:', error);
+    }
   };
 
   const handleGenerateStoryline = async () => {
@@ -960,7 +1095,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           onDelete={async (clientToDelete) => {
             console.log('Deleting client:', clientToDelete);
           }}
+          refreshFromDatabase={refreshFromDatabase}
         />
+        
+        {/* Unified Add Modal */}
+        {showAddModal && (
+          <UnifiedAddModal
+            isOpen={showAddModal}
+            onClose={handleCloseModal}
+            onAdd={handleSaveItem}
+            itemType={addItemType}
+            parentId={parentId}
+          />
+        )}
       </div>
     );
   }
@@ -1115,9 +1262,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                   )}
                   <button
                     type="button"
-                    className="flex items-center justify-center h-6 w-6 rounded-sm border border-gray-200 text-gray-500"
-                    disabled
-                    title="Add deliverable (coming soon)"
+                    onClick={() => handleAddDeliverable(selectedItem)}
+                    className="flex items-center justify-center h-6 w-6 rounded-sm border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+                    title="Add deliverable"
                   >
                     <Plus className="h-3 w-3" />
                   </button>
@@ -1136,7 +1283,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                     </div>
                   ) : (
                     normalizedDeliverables.map((deliverable, index) => {
-                      const baseTypes = ['Presentation', 'Report', 'Strategy', 'Analysis', 'Documentation', 'Other'];
+                      const baseTypes = ['Workshop Document', 'Recommendation'];
                       const typeOptions = deliverable.type && !baseTypes.includes(deliverable.type)
                         ? [deliverable.type, ...baseTypes]
                         : baseTypes;
@@ -1199,6 +1346,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             </div>
           </section>
         </div>
+        
+        {/* Unified Add Modal */}
+        {showAddModal && (
+          <UnifiedAddModal
+            isOpen={showAddModal}
+            onClose={handleCloseModal}
+            onAdd={handleSaveItem}
+            itemType={addItemType}
+            parentId={parentId}
+          />
+        )}
       </div>
     );
   }
@@ -1213,11 +1371,18 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       } else {
         // First try to load existing storyline from database
         const deliverableId = selectedItem?._id || selectedItem?.id;
+        console.log('🎯 Storyline tab clicked for deliverable:', deliverableId);
         if (deliverableId) {
+          // Force reload the storyline from database
+          await loadExistingStoryline(deliverableId);
+          
+          // Check again if we have a storyline after loading
           const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
           if (existingStoryline) {
+            console.log('✅ Found storyline, switching to storyline view');
             setCurrentView('storyline');
           } else {
+            console.log('❌ No storyline found, generating new one');
             handleGenerateStoryline();
           }
         }
@@ -1245,19 +1410,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       if (currentView === 'storyline') {
         return (
           <DeliverableStorylineView
-            hasStoryline={!!generatedStoryline}
-            storyline={generatedStoryline}
-            onGenerateStoryline={handleGenerateStoryline}
+            generatedStoryline={generatedStoryline}
+            storylineDirty={storylineDirty}
+            isSavingStoryline={isSavingStoryline}
+            isGeneratingStoryline={isGeneratingStoryline}
             onSaveStoryline={handleSaveStoryline}
-            onSectionUpdate={handleSectionUpdate}
-            onSectionStatusChange={handleSectionStatusChange}
+            onGenerateStoryline={handleGenerateStoryline}
+            currentSectionIndex={currentSectionIndex}
+            onSectionChange={setCurrentSectionIndex}
+            onUpdateSection={handleSectionUpdate}
+            onStatusChange={handleSectionStatusChange}
             onToggleLock={handleToggleLock}
             onKeyPointsChange={handleKeyPointsChange}
-            isGeneratingStoryline={isGeneratingStoryline}
-            isSavingStoryline={isSavingStoryline}
-            currentSectionIndex={currentSectionIndex}
-            onSectionNavigate={setCurrentSectionIndex}
-            isDirty={storylineDirty}
+            title={storylineTitle}
           />
         );
       }
@@ -1355,6 +1520,32 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         <div className="flex-1 overflow-y-auto min-h-0">
           {deliverableView}
         </div>
+
+        {/* Improve Brief Modal */}
+        {showImproveBrief && (
+          <ImproveBriefModal
+            isOpen={showImproveBrief}
+            onClose={() => setShowImproveBrief(false)}
+            onSave={handleBriefSave}
+            deliverable={selectedItem}
+            projectData={{
+              name: selectedItem?.metadata?.project_name || 'Unknown Project',
+              client_name: selectedItem?.metadata?.client_name || 'Unknown Client',
+              industry: selectedItem?.metadata?.industry || 'General'
+            }}
+          />
+        )}
+
+        {/* Unified Add Modal */}
+        {showAddModal && (
+          <UnifiedAddModal
+            isOpen={showAddModal}
+            onClose={handleCloseModal}
+            onAdd={handleSaveItem}
+            itemType={addItemType}
+            parentId={parentId}
+          />
+        )}
       </div>
     );
   }
@@ -1367,6 +1558,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         <p className="text-lg mb-2">Unsupported item type</p>
         <p className="text-sm">Item type: {selectedItem?.type}</p>
       </div>
+      
+      {/* Unified Add Modal */}
+      {showAddModal && (
+        <UnifiedAddModal
+          isOpen={showAddModal}
+          onClose={handleCloseModal}
+          onAdd={handleSaveItem}
+          itemType={addItemType}
+          parentId={parentId}
+        />
+      )}
     </div>
   );
 }

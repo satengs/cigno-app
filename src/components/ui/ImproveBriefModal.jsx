@@ -76,7 +76,18 @@ export default function ImproveBriefModal({
         } else if (result.data.message) {
           briefContent = result.data.message;
         } else if (result.data.response) {
-          briefContent = result.data.response;
+          // Check if response is a JSON string that needs parsing
+          try {
+            const parsedResponse = JSON.parse(result.data.response);
+            if (parsedResponse.improvedBrief) {
+              briefContent = parsedResponse.improvedBrief;
+            } else {
+              briefContent = result.data.response;
+            }
+          } catch (e) {
+            // If not JSON, use the response as is
+            briefContent = result.data.response;
+          }
         } else {
           // Fallback to the whole data object as string if structured response not found
           briefContent = typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2);
