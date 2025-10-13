@@ -8,10 +8,12 @@ export async function POST(request) {
   try {
     await dbConnect();
     
-    const { deliverableData, deliverableId, userId } = await request.json();
+    const { deliverableData, deliverableId, userId, isRegeneration, existingStoryline } = await request.json();
     
     console.log('🔍 API Debug - Received deliverableId:', deliverableId);
     console.log('🔍 API Debug - Received deliverableData:', deliverableData);
+    console.log('🔍 API Debug - isRegeneration:', isRegeneration);
+    console.log('🔍 API Debug - existingStoryline sections:', existingStoryline?.sections?.length);
     console.log('🔍 API Debug - Type of deliverableId:', typeof deliverableId);
     
     // Extract key information from deliverable data
@@ -25,8 +27,54 @@ export async function POST(request) {
       dueDate
     } = deliverableData;
 
+    // Handle regeneration logic if this is a regeneration request
+    let lockedSections = [];
+    let draftSections = [];
+    let regenerationContext = '';
+    
+    if (isRegeneration && existingStoryline) {
+      console.log('🔄 Processing regeneration request with existing storyline');
+      
+      // Filter sections into locked and draft
+      lockedSections = existingStoryline.sections?.filter(section => 
+        section.locked === true || section.status === 'final'
+      ) || [];
+      
+      draftSections = existingStoryline.sections?.filter(section => 
+        section.locked !== true && section.status !== 'final'
+      ) || [];
+      
+      console.log('📊 Regeneration breakdown:', {
+        totalSections: existingStoryline.sections?.length || 0,
+        lockedSections: lockedSections.length,
+        draftSections: draftSections.length
+      });
+
+      // Create regeneration context for the AI prompt
+      regenerationContext = `
+**REGENERATION CONTEXT:**
+- This is a storyline REGENERATION preserving ${lockedSections.length} locked sections
+- Only regenerate the ${draftSections.length} draft sections listed below
+- Maintain flow and order with existing locked sections
+
+**LOCKED SECTIONS (PRESERVE EXACTLY):**
+${lockedSections.map(section => `
+- Order ${section.order}: "${section.title}" (Status: ${section.status})
+  Key Points: ${section.keyPoints?.slice(0, 2).join(', ') || 'None'}
+`).join('')}
+
+**SECTIONS TO REGENERATE:**
+${draftSections.map(section => `
+- Order ${section.order}: "${section.title}" (Status: ${section.status})
+  Current Description: ${section.description || 'None'}
+`).join('')}
+
+IMPORTANT: Only generate new content for draft sections. Maintain logical flow with locked sections.
+`;
+    }
+
     // Create a detailed prompt for the storyline generation agent
-    const storylinePrompt = `
+    const storylinePrompt = `${regenerationContext}
 You are a strategic consultant and presentation expert. Generate a comprehensive storyline for the following deliverable:
 
 **Deliverable Details:**
@@ -92,13 +140,73 @@ Make sure the storyline is:
     if (deliverable && deliverableId) {
       try {
         // Convert storylineResponse to database format
-        const storylineDoc = {
-          deliverable: deliverableId,
-          title: `${name} Storyline`,
-          executiveSummary: storylineResponse.executiveSummary?.keyMessages?.join('. ') || 'AI-generated executive summary.',
-          presentationFlow: 'Structured narrative flow connecting all sections logically.',
-          callToAction: storylineResponse.callToAction?.keyMessages?.join('. ') || 'Recommended next steps based on analysis.',
-          sections: [
+        let sections = [];
+        
+        if (isRegeneration && existingStoryline) {
+          // For regeneration: merge locked sections with new AI-generated sections
+          console.log('🔄 Merging locked sections with regenerated content');
+          
+          // Create a map of new sections from AI response
+          const newSections = [
+            // Executive Summary section (only if not locked)
+            ...(lockedSections.some(s => s.order === 0) ? [] : [{
+              id: 'exec_summary',
+              title: storylineResponse.executiveSummary?.title || 'Executive Summary',
+              description: storylineResponse.executiveSummary?.keyMessages?.join('. ') || '',
+              status: 'draft',
+              order: 0,
+              keyPoints: storylineResponse.executiveSummary?.keyMessages || [],
+              contentBlocks: [{
+                type: 'Key Insights',
+                items: storylineResponse.executiveSummary?.keyMessages || []
+              }],
+              locked: false,
+              created_at: new Date(),
+              updated_at: new Date()
+            }]),
+            // Main sections (only for non-locked orders)
+            ...((storylineResponse.mainSections || []).map((section, index) => {
+              const order = index + 1;
+              return lockedSections.some(s => s.order === order) ? null : {
+                id: `section_${order}`,
+                title: section.title,
+                description: section.keyMessages?.join('. ') || '',
+                status: 'draft',
+                order: order,
+                keyPoints: section.keyMessages || [],
+                contentBlocks: [{
+                  type: getContentBlockType(section.contentType),
+                  items: section.keyMessages || []
+                }],
+                locked: false,
+                created_at: new Date(),
+                updated_at: new Date()
+              };
+            }).filter(Boolean))
+          ];
+          
+          // Merge locked and new sections, maintaining order
+          const maxOrder = Math.max(...existingStoryline.sections.map(s => s.order || 0), 0);
+          for (let i = 0; i <= maxOrder; i++) {
+            const lockedSection = lockedSections.find(s => s.order === i);
+            const newSection = newSections.find(s => s.order === i);
+            
+            if (lockedSection) {
+              sections.push(lockedSection); // Keep locked section unchanged
+            } else if (newSection) {
+              sections.push(newSection); // Use new AI-generated section
+            }
+          }
+          
+          console.log('✅ Merged sections:', {
+            totalSections: sections.length,
+            preservedLocked: lockedSections.length,
+            regeneratedNew: sections.length - lockedSections.length
+          });
+          
+        } else {
+          // For new generation: create sections normally
+          sections = [
             // Executive Summary section
             {
               id: 'exec_summary',
@@ -147,7 +255,16 @@ Make sure the storyline is:
               created_at: new Date(),
               updated_at: new Date()
             }
-          ],
+          ];
+        }
+        
+        const storylineDoc = {
+          deliverable: deliverableId,
+          title: `${name} Storyline`,
+          executiveSummary: storylineResponse.executiveSummary?.keyMessages?.join('. ') || 'AI-generated executive summary.',
+          presentationFlow: 'Structured narrative flow connecting all sections logically.',
+          callToAction: storylineResponse.callToAction?.keyMessages?.join('. ') || 'Recommended next steps based on analysis.',
+          sections: sections,
           topic: name,
           industry: 'Financial Services', // Default based on CBDC context
           audience: Array.isArray(audience) ? audience : audience ? [audience] : [],

@@ -7,8 +7,6 @@ import {
   GripVertical,
   Lock,
   Unlock,
-  MoreHorizontal,
-  Edit3,
   FileText
 } from 'lucide-react';
 
@@ -35,12 +33,13 @@ export default function SectionNavigator({
   onToggleLock,
   onKeyPointsChange
 }) {
-  const [expandedSectionId, setExpandedSectionId] = useState(sections[currentSectionIndex]?.id);
+  const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [draftKeyPoints, setDraftKeyPoints] = useState({});
 
-  useEffect(() => {
-    setExpandedSectionId(sections[currentSectionIndex]?.id);
-  }, [currentSectionIndex, sections]);
+  // Removed auto-expansion based on currentSectionIndex
+  // useEffect(() => {
+  //   setExpandedSectionId(sections[currentSectionIndex]?.id);
+  // }, [currentSectionIndex, sections]);
 
   useEffect(() => {
     setDraftKeyPoints({});
@@ -60,7 +59,8 @@ export default function SectionNavigator({
 
   const handleToggleExpand = (sectionId, index) => {
     setExpandedSectionId(prev => (prev === sectionId ? null : sectionId));
-    onSectionChange?.(index);
+    // Don't change the current section index just for expanding/collapsing
+    // onSectionChange?.(index);
   };
 
   const handleTitleChange = (sectionId, value) => {
@@ -113,6 +113,20 @@ export default function SectionNavigator({
           >
             <div className="flex items-center justify-between p-5">
               <div className="flex items-center space-x-4 flex-1 min-w-0">
+                {/* Collapse Arrow */}
+                <button
+                  onClick={() => handleToggleExpand(section.id, index)}
+                  className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-200 transition-colors"
+                  title={isExpanded ? 'Collapse section' : 'Expand section'}
+                  style={{ backgroundColor: 'transparent' }}
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                  ) : (
+                    <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+                  )}
+                </button>
+                
                 <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
                   isCurrentSection 
                     ? 'bg-blue-100 text-blue-700'
@@ -150,7 +164,12 @@ export default function SectionNavigator({
               
               <div className="flex items-center space-x-2 ml-4">
                 <button
-                  onClick={() => onToggleLock?.(section.id, !section.locked)}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleLock?.(section.id, !section.locked);
+                  }}
                   className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
                     section.locked 
                       ? 'bg-green-100 text-green-700 hover:bg-green-200' 
@@ -159,22 +178,6 @@ export default function SectionNavigator({
                   title={section.locked ? 'Unlock section' : 'Lock section'}
                 >
                   {section.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                </button>
-                
-                <button
-                  onClick={() => handleToggleExpand(section.id, index)}
-                  className="flex items-center justify-center h-8 w-8 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
-                  title={isExpanded ? 'Collapse section' : 'Expand section'}
-                >
-                  <Edit3 className="h-4 w-4" />
-                </button>
-                
-                <button
-                  className="flex items-center justify-center h-8 w-8 rounded-lg bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed"
-                  disabled
-                  title="More options (coming soon)"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -187,6 +190,7 @@ export default function SectionNavigator({
                       <label className="block text-sm font-medium text-gray-700 mb-2">Section Title</label>
                       <input
                         type="text"
+                        id={`section-title-${section.id}`}
                         value={section.title || ''}
                         onChange={(e) => handleTitleChange(section.id, e.target.value)}
                         disabled={isLocked}

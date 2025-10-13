@@ -79,6 +79,9 @@ const CignoContextAwareChat = ({
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, userMessage]);
+      
+      // Save user message to database
+      await contextManager.saveMessage(currentContext.chatId, userMessage);
 
       // Send to CIGNO API
       const { requestId } = await contextManager.sendMessage(
@@ -89,15 +92,21 @@ const CignoContextAwareChat = ({
       // Poll for response
       const result = await contextManager.pollForResponse(requestId);
       
-      // Add assistant response to UI
-      setMessages(prev => [...prev, {
+      // Create assistant message
+      const assistantMessage = {
         role: 'assistant',
         content: result.response || 'Response received',
         html: result.html,
         followUpQuestions: result.followUpQuestions || [],
         footnotes: result.footnotes || {},
         timestamp: new Date().toISOString()
-      }]);
+      };
+      
+      // Add assistant response to UI
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Save assistant message to database
+      await contextManager.saveMessage(currentContext.chatId, assistantMessage);
 
     } catch (error) {
       console.error('Failed to send message:', error);

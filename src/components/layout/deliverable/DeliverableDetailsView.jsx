@@ -12,7 +12,8 @@ export default function DeliverableDetailsView({
   onGenerateStoryline,
   isGeneratingStoryline,
   onNewAudienceChange,
-  onNewAudienceKeyDown
+  onNewAudienceKeyDown,
+  onSave
 }) {
   return (
     <div className="p-6 space-y-8">
@@ -208,6 +209,16 @@ export default function DeliverableDetailsView({
           </button>
         </div>
       )}
+
+      {/* Save Button */}
+      <div className="flex justify-end pt-6 border-t border-gray-200">
+        <button
+          onClick={onSave}
+          className="px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded-sm hover:bg-gray-800 transition-colors"
+        >
+          Save Changes
+        </button>
+      </div>
 
     </div>
   );

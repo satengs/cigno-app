@@ -12,7 +12,7 @@ export async function GET() {
     const allItems = await MenuItemModel.find({}).lean();
     console.log(`Found ${allItems.length} menu items in database`);
     
-    // Also fetch deliverables from the Deliverable collection to add as menu items
+    // Also fetch deliverables to ensure they appear in menu if no menu item exists
     const Deliverable = (await import('../../../lib/models/Deliverable')).default;
     const allDeliverables = await Deliverable.find({ is_active: true }).lean();
     console.log(`Found ${allDeliverables.length} deliverables in database`);
@@ -30,52 +30,73 @@ export async function GET() {
       itemMap.set(item._id.toString(), normalizedItem);
     });
     
-    // Add deliverables as menu items
+    // Second pass: Add deliverables as menu items ONLY if no menu item already exists for them
     allDeliverables.forEach(deliverable => {
-      const deliverableMenuItem = formatForAPI({
-        _id: deliverable._id,
-        title: deliverable.name,
-        description: deliverable.brief || '',
-        type: 'deliverable',
-        status: deliverable.status || 'draft',
-        parentId: null, // Will be set based on project mapping below
-        order: 0,
-        isCollapsed: false,
-        isCollapsible: false,
-        children: [],
-        metadata: {
-          deliverable_id: deliverable._id.toString(),
-          business_entity_id: deliverable._id.toString(),
-          project_id: deliverable.project ? deliverable.project.toString() : null,
-          format: deliverable.format,
-          due_date: deliverable.due_date,
-          priority: deliverable.priority
-        },
-        brief: deliverable.brief || '',
-        dueDate: deliverable.due_date,
-        priority: deliverable.priority || 'medium'
-      });
+      const deliverableId = deliverable._id.toString();
       
-      // Find the parent project menu item
-      if (deliverable.project) {
-        const projectId = deliverable.project.toString();
-        // Find menu item with project_id in metadata
-        const parentProject = Array.from(itemMap.values()).find(item => 
-          item.type === 'project' && 
-          (item.metadata?.project_id === projectId || item.metadata?.business_entity_id === projectId)
-        );
+      // Check if a menu item already exists for this deliverable
+      const existingMenuItem = Array.from(itemMap.values()).find(item => 
+        item.type === 'deliverable' && (
+          item.metadata?.deliverableId === deliverableId ||
+          item.metadata?.deliverable_id === deliverableId ||
+          item.metadata?.business_entity_id === deliverableId
+        )
+      );
+      
+      if (!existingMenuItem) {
+        console.log(`Creating missing menu item for deliverable: ${deliverable.name}`);
         
-        if (parentProject) {
-          deliverableMenuItem.parentId = parentProject._id;
-          parentProject.children.push(deliverableMenuItem);
-          console.log(`Added deliverable "${deliverable.name}" to project "${parentProject.title}"`);
-        } else {
-          console.log(`No parent project found for deliverable "${deliverable.name}" with project ID ${projectId}`);
+        const deliverableMenuItem = formatForAPI({
+          _id: deliverable._id,
+          title: deliverable.name,
+          description: deliverable.brief || '',
+          type: 'deliverable',
+          status: deliverable.status || 'draft',
+          parentId: null, // Will be set based on project mapping below
+          order: 0,
+          isCollapsed: false,
+          isCollapsible: false,
+          children: [],
+          metadata: {
+            deliverableId: deliverable._id.toString(),
+            deliverable_id: deliverable._id.toString(),
+            business_entity_id: deliverable._id.toString(),
+            project_id: deliverable.project ? deliverable.project.toString() : null,
+            format: deliverable.format,
+            due_date: deliverable.due_date,
+            priority: deliverable.priority
+          },
+          brief: deliverable.brief || '',
+          dueDate: deliverable.due_date,
+          priority: deliverable.priority || 'medium'
+        });
+        
+        // Find the parent project menu item
+        if (deliverable.project) {
+          const projectId = deliverable.project.toString();
+          // Find menu item with project_id in metadata
+          const parentProject = Array.from(itemMap.values()).find(item => 
+            item.type === 'project' && 
+            (item.metadata?.project_id === projectId || item.metadata?.business_entity_id === projectId)
+          );
+          
+          if (parentProject) {
+            deliverableMenuItem.parentId = parentProject._id;
+            parentProject.children.push(deliverableMenuItem);
+            console.log(`Added deliverable "${deliverable.name}" to project "${parentProject.title}"`);
+          } else {
+            console.log(`No parent project found for deliverable "${deliverable.name}" with project ID ${projectId}`);
+          }
         }
+        
+        // Add to the itemMap so it's included in the hierarchy
+        itemMap.set(deliverableId, deliverableMenuItem);
+      } else {
+        console.log(`Menu item already exists for deliverable: ${deliverable.name}`);
       }
     });
     
-    // Second pass: build the hierarchy for menu items only (deliverables already added above)
+    // Third pass: build the hierarchy for all menu items (including auto-generated ones)
     allItems.forEach(item => {
       const itemWithId = itemMap.get(item._id.toString());
       

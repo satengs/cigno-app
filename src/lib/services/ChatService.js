@@ -2,6 +2,24 @@
  * Chat Service
  * Manages chat conversations and AI interactions
  */
+
+// Dynamic import for server-only modules
+async function getServerModules() {
+  if (typeof window !== 'undefined') {
+    return { ChatMessage: null, connectDB: null };
+  }
+  
+  const [chatMessageModule, connectDBModule] = await Promise.all([
+    import('../models/ChatMessage.js'),
+    import('../db/mongoose.js')
+  ]);
+  
+  return {
+    ChatMessage: chatMessageModule.default,
+    connectDB: connectDBModule.default
+  };
+}
+
 export default class ChatService {
   constructor(aiProvider = null) {
     this.aiProvider = aiProvider;
@@ -42,6 +60,9 @@ export default class ChatService {
       
       conversation.messages.push(userMsg);
 
+      // Save user message to database
+      await this.saveMessageToDatabase(threadId, userMsg);
+
       // Generate AI response
       let assistantMessage;
       if (this.aiProvider && this.aiProvider.isAvailable()) {
@@ -76,6 +97,9 @@ export default class ChatService {
       
       conversation.messages.push(assistantMsg);
       conversation.lastActivity = new Date().toISOString();
+
+      // Save assistant message to database
+      await this.saveMessageToDatabase(threadId, assistantMsg);
 
       return {
         threadId,
@@ -180,12 +204,116 @@ export default class ChatService {
   }
 
   /**
+   * Save message to database
+   * @param {string} threadId - Thread identifier
+   * @param {Object} message - Message object
+   */
+  async saveMessageToDatabase(threadId, message) {
+    try {
+      const { ChatMessage, connectDB } = await getServerModules();
+      
+      if (!ChatMessage || !connectDB) {
+        console.log('Client side - skipping database save');
+        return;
+      }
+
+      await connectDB();
+
+      const messageData = {
+        messageId: message.id,
+        threadId: threadId,
+        projectId: this.extractProjectIdFromThread(threadId) || 'unknown',
+        userId: 'cigno-user',
+        role: message.role,
+        content: message.content,
+        type: 'text',
+        timestamp: new Date(message.timestamp)
+      };
+
+      await ChatMessage.createMessage(messageData);
+      console.log(`💾 Saved ${message.role} message to database`);
+    } catch (error) {
+      console.error('Failed to save message to database:', error);
+    }
+  }
+
+  /**
+   * Extract project ID from thread ID
+   * @param {string} threadId - Thread identifier
+   * @returns {string|null} Project ID or null
+   */
+  extractProjectIdFromThread(threadId) {
+    // Try to extract project ID from thread ID pattern: project_XXX_timestamp
+    const match = threadId.match(/^project_([^_]+)_/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Load conversation from database
+   * @param {string} threadId - Thread identifier
+   * @returns {Promise<Object|null>} Conversation object or null if not found
+   */
+  async loadConversationFromDatabase(threadId) {
+    try {
+      const { ChatMessage, connectDB } = await getServerModules();
+      
+      if (!ChatMessage || !connectDB) {
+        return null;
+      }
+
+      await connectDB();
+
+      const messages = await ChatMessage.getThreadMessages(threadId, 100);
+      
+      if (messages.length === 0) {
+        return null;
+      }
+
+      // Convert database messages to conversation format
+      const conversationMessages = messages.map(msg => ({
+        id: msg.messageId,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp
+      }));
+
+      const conversation = {
+        threadId,
+        messages: conversationMessages,
+        createdAt: messages[0].timestamp,
+        lastActivity: messages[messages.length - 1].timestamp,
+        metadata: {
+          title: 'Loaded Conversation',
+          messageCount: messages.length
+        }
+      };
+
+      return conversation;
+    } catch (error) {
+      console.error('Failed to load conversation from database:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get conversation by thread ID
    * @param {string} threadId - Thread identifier
    * @returns {Object|null} Conversation object or null if not found
    */
-  getConversation(threadId) {
-    return this.conversations.get(threadId) || null;
+  async getConversation(threadId) {
+    // First check in-memory conversations
+    let conversation = this.conversations.get(threadId);
+    
+    if (!conversation) {
+      // Try to load from database
+      conversation = await this.loadConversationFromDatabase(threadId);
+      if (conversation) {
+        // Cache in memory for future use
+        this.conversations.set(threadId, conversation);
+      }
+    }
+    
+    return conversation;
   }
 
   /**

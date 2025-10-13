@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import parseProjectDescription from '@/lib/parsers/projectDescriptionParser';
+import parseProjectDescription from '../../../../lib/parsers/projectDescriptionParser';
 
 // Configuration for optional remote enrichment. Network issues are handled gracefully.
 const AI_CONFIG = {

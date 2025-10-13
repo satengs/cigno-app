@@ -397,11 +397,7 @@ export default function CreateProjectModal({
 
   const deliverableTypeOptions = [
     { value: 'Presentation', label: 'Presentation' },
-    { value: 'Report', label: 'Report' },
-    { value: 'Strategy', label: 'Strategy' },
-    { value: 'Analysis', label: 'Analysis' },
-    { value: 'Design', label: 'Design' },
-    { value: 'Other', label: 'Other' }
+    { value: 'Report', label: 'Report' }
   ];
 
   return (

@@ -312,6 +312,17 @@ export function useMenuManager() {
         }
       }
       
+      // Clean up chat context if it's a project deletion
+      if (item.type === 'project') {
+        console.log('🗑️ Cleaning up chat context for deleted project:', businessEntityId);
+        try {
+          const chatContextManager = (await import('../chat/ChatContextManager.js')).default;
+          chatContextManager.removeProjectContext(businessEntityId);
+        } catch (chatError) {
+          console.warn('⚠️ Failed to clean up chat context:', chatError.message);
+        }
+      }
+      
       // Remove the item from the local menu manager for immediate UI update
       menuManager.removeItem(itemId);
       setMenuStructure(menuManager.getRootItems());

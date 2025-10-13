@@ -16,7 +16,7 @@ import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
 import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
 import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
 
-export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase }) {
+export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase, onViewChange, selectedLayout, onStorylineChange }) {
   const [formData, setFormData] = useState({
     name: '',
     audience: [],
@@ -200,7 +200,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               name: deliverableData.name || selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: deliverableData.audience || selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: deliverableData.type || selectedItem.type || 'Strategy Presentation',
-              format: deliverableData.format || selectedItem.format || 'PPT',
+              format: mapFormatFromSchema(deliverableData.format || selectedItem.format || 'PPT'),
               due_date: deliverableData.due_date ? new Date(deliverableData.due_date).toISOString().split('T')[0] : 
                        selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
               document_length: deliverableData.document_length || selectedItem.document_length || 25,
@@ -216,7 +216,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: selectedItem.type || 'Strategy Presentation',
-              format: selectedItem.format || 'PPT',
+              format: mapFormatFromSchema(selectedItem.format || 'PPT'),
               due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
               document_length: selectedItem.document_length || 25,
               brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
@@ -249,8 +249,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       setCurrentView('detailed');
 
       // Load existing storyline if available
-      const deliverableId = selectedItem._id || selectedItem.id;
+      // For deliverable menu items, use the actual deliverable ID from metadata, not the menu item ID
+      const deliverableId = selectedItem.type === 'deliverable' 
+        ? (selectedItem.metadata?.deliverableId || selectedItem.metadata?.deliverable_id || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id)
+        : (selectedItem._id || selectedItem.id);
       console.log('🔍 Auto-loading storyline for deliverable:', deliverableId);
+      console.log('🔍 Selected item type:', selectedItem.type);
+      console.log('🔍 Selected item metadata:', selectedItem.metadata);
       loadExistingStoryline(deliverableId);
     }
   }, [selectedItem]);
@@ -664,6 +669,20 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     loadExistingStoryline();
   }, [selectedItem]);
 
+  // Notify parent when view changes
+  useEffect(() => {
+    if (onViewChange) {
+      onViewChange(currentView);
+    }
+  }, [currentView, onViewChange]);
+
+  // Notify parent when storyline changes
+  useEffect(() => {
+    if (onStorylineChange) {
+      onStorylineChange(generatedStoryline);
+    }
+  }, [generatedStoryline, onStorylineChange]);
+
   const handleProjectFormChange = (field, value) => {
     setProjectForm(prev => ({ ...prev, [field]: value }));
   };
@@ -799,6 +818,118 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       handleCloseModal();
     } catch (error) {
       console.error('Error saving item:', error);
+    }
+  };
+
+  // Map UI format values to database schema format values
+  const mapFormatToSchema = (uiFormat) => {
+    const formatMap = {
+      'PPT': 'PPTX',
+      'DOC': 'DOCX', 
+      'XLS': 'XLSX'
+    };
+    return formatMap[uiFormat] || uiFormat;
+  };
+
+  const mapFormatFromSchema = (schemaFormat) => {
+    const formatMap = {
+      'PPTX': 'PPT',
+      'DOCX': 'DOC',
+      'XLSX': 'XLS'
+    };
+    return formatMap[schemaFormat] || schemaFormat;
+  };
+
+  const handleSaveDeliverable = async () => {
+    if (!selectedItem?._id) {
+      console.error('No deliverable ID to save');
+      return;
+    }
+
+    try {
+      console.log('💾 Saving deliverable changes:', formData);
+      console.log('💾 SelectedItem project info:', {
+        project: selectedItem.project,
+        project_id: selectedItem.project_id,
+        metadata: selectedItem.metadata
+      });
+
+      // Ensure we have the required project field
+      const projectId = selectedItem.project || selectedItem.project_id || selectedItem.metadata?.project_id || selectedItem.metadata?.projectId;
+      
+      if (!projectId) {
+        console.error('❌ Missing required project ID');
+        alert('Cannot save: Missing project information. Please refresh the page and try again.');
+        return;
+      }
+
+      // Ensure we have required due_date
+      if (!formData.due_date) {
+        console.error('❌ Missing required due_date');
+        alert('Cannot save: Due date is required. Please set a due date.');
+        return;
+      }
+
+      // Ensure we have required brief
+      if (!formData.brief || formData.brief.trim() === '') {
+        console.error('❌ Missing required brief');
+        alert('Cannot save: Brief is required. Please add a brief description.');
+        return;
+      }
+      
+      // Prepare the payload with proper field mapping
+      const payload = {
+        name: formData.name,
+        format: mapFormatToSchema(formData.format),
+        brief: formData.brief,
+        // Map UI fields to schema fields
+        length: parseInt(formData.document_length) || 0,
+        due_date: formData.due_date ? new Date(formData.due_date) : null,
+        // Only include project if it exists
+        ...(projectId && { project: projectId }),
+        // Only include type if it's valid according to schema enum
+        ...(formData.type && { type: formData.type }),
+        // Add any additional fields that exist in formData and schema
+        ...(formData.priority && { priority: formData.priority }),
+        ...(formData.estimated_hours && { estimated_hours: parseInt(formData.estimated_hours) || 0 }),
+        ...(formData.notes && { notes: formData.notes }),
+        ...(formData.tags && { tags: formData.tags }),
+        // Set updated_by field - use existing user ID if available
+        ...(selectedItem.created_by && { updated_by: selectedItem.created_by }),
+        ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
+      };
+
+      console.log('💾 Payload being sent:', payload);
+
+      const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        console.log('✅ Deliverable saved successfully');
+        // Refresh the data to reflect the changes
+        if (refreshFromDatabase) {
+          await refreshFromDatabase();
+        }
+        alert('Deliverable saved successfully!');
+      } else {
+        let errorMessage = 'Failed to save deliverable changes';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+          console.error('❌ Failed to save deliverable:', errorData);
+        } catch (parseError) {
+          console.error('❌ Failed to parse error response:', parseError);
+        }
+        alert(errorMessage);
+      }
+    } catch (error) {
+      console.error('❌ Error saving deliverable:', error);
+      alert('Error saving deliverable changes');
     }
   };
 
@@ -1118,10 +1249,98 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   };
 
+  const handleRegenerateStoryline = async (options = {}) => {
+    if (!selectedItem || selectedItem.type !== 'deliverable') {
+      alert('Storyline regeneration is only available for deliverables');
+      return;
+    }
+
+    if (!generatedStoryline) {
+      alert('No existing storyline to regenerate. Please generate a storyline first.');
+      return;
+    }
+
+    setIsGeneratingStoryline(true);
+    
+    try {
+      console.log('🔄 Starting storyline regeneration...', {
+        storylineId: generatedStoryline._id,
+        options
+      });
+
+      // Use the existing storyline generation API for regeneration
+      // Get deliverable ID from selectedItem
+      const metadata = selectedItem.metadata || {};
+      const rawDeliverableId = metadata.deliverableId || selectedItem._id || selectedItem.id;
+      const deliverableId = getIdString(rawDeliverableId);
+
+      const response = await fetch('/api/storyline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliverableData: {
+            name: selectedItem.name || selectedItem.title || formData.name,
+            type: selectedItem.type || formData.type,
+            audience: selectedItem.audience || formData.audience || [],
+            brief: selectedItem.brief || formData.brief,
+            format: selectedItem.format || formData.format,
+            documentLength: selectedItem.document_length || formData.document_length,
+            dueDate: selectedItem.due_date || formData.due_date
+          },
+          deliverableId: deliverableId,
+          userId: selectedItem.created_by || selectedItem.updated_by,
+          isRegeneration: true,
+          existingStoryline: generatedStoryline
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Regeneration failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ Storyline regenerated successfully:', result);
+        
+        // Update the storyline state with the regenerated storyline
+        const regeneratedStoryline = result.storyline;
+        setGeneratedStoryline(regeneratedStoryline);
+        setStorylineDirty(true); // Mark as dirty so user can save
+        
+        // Calculate preservation stats
+        const totalSections = regeneratedStoryline.sections?.length || 0;
+        const lockedSections = regeneratedStoryline.sections?.filter(s => s.locked).length || 0;
+        const regeneratedSections = totalSections - lockedSections;
+        
+        // Show success message with details
+        alert(
+          `Storyline regenerated successfully!\n\n` +
+          `• ${lockedSections} section${lockedSections === 1 ? '' : 's'} preserved (locked)\n` +
+          `• ${regeneratedSections} section${regeneratedSections === 1 ? '' : 's'} regenerated\n\n` +
+          `Remember to save your changes.`
+        );
+        
+      } else {
+        throw new Error(result.error || 'Regeneration failed');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error regenerating storyline:', error);
+      const errorMessage = error.message || error.toString() || 'Unknown error occurred';
+      alert(`Failed to regenerate storyline: ${errorMessage}`);
+    } finally {
+      setIsGeneratingStoryline(false);
+    }
+  };
+
   // Handle different content types
   if (!selectedItem) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-50">
+      <div className="flex-1 h-full flex items-center justify-center bg-gray-50">
         <div className="text-center text-gray-500">
           <p className="text-lg mb-2">Select an item from the menu</p>
           <p className="text-sm">Choose a client, project, or deliverable to view details</p>
@@ -1132,7 +1351,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
   if (selectedItem.type === 'client') {
     return (
-      <div className="flex-1 p-6 flex flex-col min-h-0">
+      <div className="flex-1 h-full p-6 flex flex-col min-h-0">
         <ClientDetailView 
           client={selectedItem}
           onUpdate={async (updatedClient) => {
@@ -1164,7 +1383,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       : normalizeDeliverableList(projectForm.deliverables || []);
 
     return (
-      <div className="flex-1 overflow-y-auto" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="flex-1 h-full overflow-y-auto" style={{ backgroundColor: 'var(--bg-primary)' }}>
         <div className="px-8 py-10 space-y-6">
           <header className="space-y-1">
             <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -1416,7 +1635,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         setCurrentView('storyline');
       } else {
         // First try to load existing storyline from database
-        const deliverableId = selectedItem?._id || selectedItem?.id;
+        const deliverableId = selectedItem?.type === 'deliverable' 
+          ? (selectedItem.metadata?.deliverableId || selectedItem.metadata?.deliverable_id || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id)
+          : (selectedItem?._id || selectedItem?.id);
         console.log('🎯 Storyline tab clicked for deliverable:', deliverableId);
         if (deliverableId) {
           // Force reload the storyline from database
@@ -1440,7 +1661,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         setCurrentView('layout');
       } else {
         // First try to load existing storyline from database
-        const deliverableId = selectedItem?._id || selectedItem?.id;
+        const deliverableId = selectedItem?.type === 'deliverable' 
+          ? (selectedItem.metadata?.deliverableId || selectedItem.metadata?.deliverable_id || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id)
+          : (selectedItem?._id || selectedItem?.id);
         if (deliverableId) {
           const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
           if (existingStoryline) {
@@ -1462,6 +1685,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             isGeneratingStoryline={isGeneratingStoryline}
             onSaveStoryline={handleSaveStoryline}
             onGenerateStoryline={handleGenerateStoryline}
+            onRegenerateStoryline={handleRegenerateStoryline}
             currentSectionIndex={currentSectionIndex}
             onSectionChange={setCurrentSectionIndex}
             onUpdateSection={handleSectionUpdate}
@@ -1481,6 +1705,23 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             onGenerateStoryline={handleGenerateStoryline}
             isGeneratingStoryline={isGeneratingStoryline}
             selectedLayoutType={selectedItem?._layoutType}
+            selectedLayout={selectedLayout}
+            onStorylineChange={setGeneratedStoryline}
+            onApplyLayoutToAll={(layoutId) => {
+              // Apply the layout to all sections in the storyline
+              if (generatedStoryline) {
+                const updatedStoryline = {
+                  ...generatedStoryline,
+                  sections: generatedStoryline.sections?.map(section => ({
+                    ...section,
+                    layout: layoutId,
+                    layoutAppliedAt: new Date().toISOString()
+                  })) || []
+                };
+                setGeneratedStoryline(updatedStoryline);
+                console.log(`✅ Applied layout ${layoutId} to all ${generatedStoryline.sections?.length || 0} sections`);
+              }
+            }}
           />
         );
       }
@@ -1503,12 +1744,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               handleAddAudience();
             }
           }}
+          onSave={handleSaveDeliverable}
         />
       );
     })();
 
     return (
-      <div className="flex-1 flex flex-col min-h-0" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="flex-1 flex flex-col h-full min-h-0" style={{ backgroundColor: 'var(--bg-primary)' }}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-4">
           <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -1600,7 +1842,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
   // Default fallback
   return (
-    <div className="flex-1 flex items-center justify-center bg-gray-50">
+    <div className="flex-1 h-full flex items-center justify-center bg-gray-50">
       <div className="text-center text-gray-500">
         <p className="text-lg mb-2">Unsupported item type</p>
         <p className="text-sm">Item type: {selectedItem?.type}</p>

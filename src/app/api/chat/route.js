@@ -120,7 +120,7 @@ export async function POST(request) {
     const result = await chatService.sendMessage(finalThreadId, message);
 
     // Get the full conversation for response
-    const conversation = chatService.getConversation(finalThreadId);
+    const conversation = await chatService.getConversation(finalThreadId);
     
     if (!conversation) {
       const errorResponse = createErrorResponse('INTERNAL_ERROR', 'Failed to retrieve conversation after sending message');
@@ -165,7 +165,7 @@ export async function GET(request) {
       return NextResponse.json(errorResponse, { status: 400 });
     }
 
-    const conversation = chatService.getConversation(threadId);
+    const conversation = await chatService.getConversation(threadId);
     
     if (!conversation) {
       const errorResponse = createErrorResponse('NOT_FOUND', 'Conversation not found');

@@ -890,7 +890,7 @@ const mapProjectStatusToMenu = (status) => {
       <div
         data-testid="left-nav"
         ref={sidebarRef}
-        className="border-r flex flex-col transition-all duration-300 ease-in-out sidebar-container"
+        className="border-r flex flex-col h-full transition-all duration-300 ease-in-out sidebar-container"
         style={{ 
           width: isCollapsed ? 64 : sidebarWidth,
           backgroundColor: 'var(--bg-secondary)',

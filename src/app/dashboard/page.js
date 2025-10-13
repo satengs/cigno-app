@@ -11,6 +11,9 @@ function DashboardWithSearchParams() {
   const searchParams = useSearchParams();
   const [selectedItem, setSelectedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentContentView, setCurrentContentView] = useState('detailed');
+  const [selectedLayout, setSelectedLayout] = useState('title-2-columns');
+  const [currentStoryline, setCurrentStoryline] = useState(null);
   const processedUrlRef = useRef(null);
 
   // Get real data from database using useMenuManager
@@ -130,6 +133,23 @@ function DashboardWithSearchParams() {
     handleItemSelect(normalized);
   };
 
+  const handleApplyLayoutToAll = (layoutId) => {
+    console.log(`Dashboard: Apply layout ${layoutId} to all slides`);
+    // Apply the layout to all sections in the current storyline
+    if (currentStoryline) {
+      const updatedStoryline = {
+        ...currentStoryline,
+        sections: currentStoryline.sections?.map(section => ({
+          ...section,
+          layout: layoutId,
+          layoutAppliedAt: new Date().toISOString()
+        })) || []
+      };
+      setCurrentStoryline(updatedStoryline);
+      console.log(`✅ Applied layout ${layoutId} to all ${currentStoryline.sections?.length || 0} sections from RightSection`);
+    }
+  };
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Left Navigation - Always Full Height */}
@@ -154,10 +174,21 @@ function DashboardWithSearchParams() {
           onItemDeleted={handleItemDeleted}
           onDeliverableNavigate={handleDeliverableNavigate}
           refreshFromDatabase={refreshFromDatabase}
+          onViewChange={setCurrentContentView}
+          selectedLayout={selectedLayout}
+          onStorylineChange={setCurrentStoryline}
         />
 
         {/* Right Section */}
-        <RightSection isModalOpen={isModalOpen} selectedItem={selectedItem} />
+        <RightSection 
+          isModalOpen={isModalOpen} 
+          selectedItem={selectedItem} 
+          showLayoutOptions={selectedItem?._view === 'layout' || currentContentView === 'layout'}
+          selectedLayout={selectedLayout}
+          onLayoutChange={setSelectedLayout}
+          storyline={currentStoryline}
+          onApplyLayoutToAll={handleApplyLayoutToAll}
+        />
       </div>
       
     </div>

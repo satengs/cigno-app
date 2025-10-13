@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/db/mongoose';
-import Project from '@/lib/models/Project';
-import User from '@/lib/models/User';
-import Client from '@/lib/models/Client';
-import Contact from '@/lib/models/Contact';
-import Organisation from '@/lib/models/Organisation';
-import Deliverable from '@/lib/models/Deliverable';
-import MenuItemModel from '@/lib/models/MenuItemModel';
-import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
+import connectDB from '../../../lib/db/mongoose';
+import Project from '../../../lib/models/Project';
+import User from '../../../lib/models/User';
+import Client from '../../../lib/models/Client';
+import Contact from '../../../lib/models/Contact';
+import Organisation from '../../../lib/models/Organisation';
+import Deliverable from '../../../lib/models/Deliverable';
+import MenuItemModel from '../../../lib/models/MenuItemModel';
+import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -680,6 +680,33 @@ export async function DELETE(request) {
     
     console.log('Menu items deleted successfully');
     
+    // Delete chat messages associated with this project
+    console.log('Deleting chat messages for project...');
+    try {
+      const { ChatMessage } = await import('../../../lib/models/ChatMessage.js');
+      
+      // Delete all chat messages where threadId contains the project ID
+      // Chat threads for projects follow pattern: project_{projectId}_{timestamp}
+      const chatDeleteResult = await ChatMessage.deleteMany({
+        projectId: projectId
+      });
+      
+      console.log(`Deleted ${chatDeleteResult.deletedCount} chat messages for project ${projectId}`);
+      
+      // Also clean up any thread-based messages (fallback)
+      const threadDeleteResult = await ChatMessage.deleteMany({
+        threadId: { $regex: `^project_${projectId}_` }
+      });
+      
+      if (threadDeleteResult.deletedCount > 0) {
+        console.log(`Deleted ${threadDeleteResult.deletedCount} additional thread-based chat messages`);
+      }
+      
+    } catch (chatError) {
+      console.error('Failed to delete chat messages (continuing with project deletion):', chatError.message);
+      // Don't fail the project deletion if chat cleanup fails
+    }
+    
     // Delete the project
     const deletedProject = await Project.findByIdAndDelete(projectId);
     
@@ -690,11 +717,11 @@ export async function DELETE(request) {
       }, { status: 404 });
     }
     
-    console.log('Project and all associated deliverables deleted successfully');
+    console.log('Project, deliverables, menu items, and chat messages deleted successfully');
     
     return NextResponse.json({ 
       success: true,
-      message: 'Project and all associated deliverables deleted successfully',
+      message: 'Project and all associated data deleted successfully (deliverables, menu items, chat messages)',
       deletedProject: {
         id: deletedProject._id.toString(),
         title: deletedProject.title

@@ -16,18 +16,52 @@ import {
   Globe,
   X,
   Lightbulb,
-  TrendingUp
+  TrendingUp,
+  Layout,
+  Check,
+  Download,
+  FileText,
+  Presentation,
+  Sheet
 } from 'lucide-react';
 import { authService } from '../../lib/auth/AuthService';
+import { useStorylineExport } from '../../lib/export/exportUtils';
+import ExportPreviewModal from '../ui/ExportPreviewModal';
+import chatContextManager from '../../lib/chat/ChatContextManager';
 
-export default function RightSection({ isModalOpen = false, selectedItem = null }) {
+export default function RightSection({ isModalOpen = false, selectedItem = null, showLayoutOptions = false, selectedLayout = 'title-2-columns', onLayoutChange, storyline = null, onApplyLayoutToAll }) {
   // State for collapsible sections
   const [expandedSections, setExpandedSections] = useState({
+    layoutOptions: true, // Default to expanded
     internalResources: true,
     externalResources: true,
-    relatedInsights: true, // Default to expanded
+    relatedInsights: true,
     aiAssistant: false
   });
+
+  // Export functionality
+  const { download } = useStorylineExport(storyline, selectedLayout);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+
+  const handleExport = async (format) => {
+    if (!storyline || !storyline.sections?.length) {
+      console.warn('No storyline data available for export');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      await download(format);
+      console.log(`✅ Successfully exported storyline as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error(`❌ Export failed for ${format}:`, error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Layout selection is now managed by parent component
 
   // State for resource groups
   const [expandedGroups, setExpandedGroups] = useState({
@@ -44,18 +78,13 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
   const [isUpdatingRelevance, setIsUpdatingRelevance] = useState(false);
 
 
-  // AI Assistant state
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: 'assistant',
-      content: 'Hello! I\'m your Cigno AI assistant, specialized in EMEA Financial Services consulting. I can help you with:\n\n• **Strategic Analysis**: Wealth management, investment banking, retail banking\n• **Regulatory Compliance**: EMEA financial regulations and compliance\n• **Market Research**: Financial services trends and opportunities\n• **Deliverable Creation**: Presentations, reports, and strategic documents\n\nHow can I assist you with your consulting needs today?',
-      timestamp: Date.now() - 60000
-    }
-  ]);
+  // AI Assistant state - now managed by ChatContextManager
+  const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [currentChatContext, setCurrentChatContext] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Resize state
@@ -77,7 +106,7 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
     if (expandedSections.aiAssistant) {
       setExpandedSections(prev => ({
         ...prev,
-        relatedInsights: false
+        layoutOptions: false
       }));
     }
   }, [expandedSections.aiAssistant]);
@@ -97,12 +126,60 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
     scrollToBottom();
   }, [messages]);
 
+  // Fetch current user from database on component mount
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+          const data = await response.json();
+          // Get the first user (admin user)
+          const adminUser = data.users?.[0];
+          if (adminUser) {
+            setCurrentUser(adminUser);
+            console.log('✅ Current user loaded:', adminUser.name || adminUser.email);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Failed to fetch current user:', error);
+        // Fallback to default user
+        setCurrentUser({ _id: 'admin-user', name: 'Admin User', email: 'admin@cigno.app' });
+      }
+    };
+
+    fetchCurrentUser();
+  }, []);
+
+  // Handle project context switching ONLY when a project is directly selected
+  useEffect(() => {
+    if (!currentUser || !selectedItem) {
+      return;
+    }
+
+    // Only switch chat context when a PROJECT is directly selected
+    if (selectedItem.type === 'project') {
+      console.log(`🔀 Switching to project chat: ${selectedItem.name}`);
+      
+      // Switch to project chat context
+      const chatContext = chatContextManager.switchToProject(selectedItem, currentUser._id);
+      
+      if (chatContext) {
+        setCurrentChatContext(chatContext);
+        setMessages(chatContext.messages || []);
+        console.log(`💬 Loaded ${chatContext.messages?.length || 0} messages for project: ${selectedItem.name}`);
+      }
+    }
+    // For other item types (deliverables, clients), keep the current chat context
+    // Don't switch or clear the chat - maintain the current project's chat
+  }, [selectedItem, currentUser]);
+
   const toggleSection = (sectionName) => {
     setExpandedSections(prev => {
       const newState = { ...prev };
       
-      // If opening AI assistant, automatically close related insights
+      // If opening AI assistant, automatically close other sections
       if (sectionName === 'aiAssistant' && !prev[sectionName]) {
+        newState.layoutOptions = false;
         newState.relatedInsights = false;
       }
       
@@ -185,7 +262,6 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
     }
   };
 
-
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -196,10 +272,17 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
       timestamp: Date.now()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Add message to current chat context
+    if (currentChatContext) {
+      chatContextManager.addMessageToCurrentChat(userMessage);
+      setMessages(chatContextManager.getCurrentMessages());
+    } else {
+      setMessages(prev => [...prev, userMessage]);
+    }
     const currentInputValue = inputValue; // Save the input value before clearing
     setInputValue('');
     setIsLoading(true);
+    const messageStartTime = Date.now();
 
     try {
       console.log('🚀 Sending message to ai.vave.ch:', currentInputValue);
@@ -215,8 +298,10 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
           },
           body: JSON.stringify({
             message: currentInputValue,
-            userId: 'cigno-dashboard-user',
-            chatId: `chat_${Date.now()}`
+            userId: currentChatContext?.userId || 'cigno-dashboard-user',
+            chatId: currentChatContext?.chatId || `chat_${Date.now()}`,
+            projectId: currentChatContext?.projectId,
+            projectName: currentChatContext?.projectName
           })
         });
 
@@ -247,13 +332,14 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
                   
                   // Handle different response types from the API
                   if (data.type === 'narrative') {
-                    // Add narrative message
+                    // Add narrative message to UI only (don't save to database)
                     const narrativeMessage = {
                       id: `narrative_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                       role: 'narrative',
                       content: data.content,
                       timestamp: data.timestamp || new Date().toISOString()
                     };
+                    // Only update UI state, don't save temporary messages to database
                     setMessages(prev => [...prev, narrativeMessage]);
                   } else if (data.role === 'assistant' && data.content) {
                     // Handle streaming assistant response
@@ -311,6 +397,29 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
         // Final response handling
         if (fullResponse) {
           console.log('✅ External AI response completed:', fullResponse);
+          
+          // Create final AI response and save to database
+          const finalAIResponse = {
+            id: Date.now() + 1,
+            type: 'assistant',
+            content: fullResponse,
+            timestamp: new Date().toISOString()
+          };
+          
+          // Save to chat context manager for persistence
+          if (currentChatContext) {
+            chatContextManager.addMessageToCurrentChat(finalAIResponse, {
+              provider: 'external-api',
+              responseTime: Date.now() - messageStartTime
+            });
+            console.log('💾 Saved external AI response to database');
+            
+            // Clean up temporary narrative messages and show only persisted messages
+            setMessages(chatContextManager.getCurrentMessages());
+          } else {
+            // If no chat context, just filter out narrative messages from local state
+            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([finalAIResponse]));
+          }
         } else {
           // Fallback if no response received
           const aiResponse = {
@@ -319,7 +428,19 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
             content: 'I received your message but couldn\'t process the response format.',
             timestamp: Date.now()
           };
-          setMessages(prev => [...prev, aiResponse]);
+          
+          // Add to chat context manager for persistence
+          if (currentChatContext) {
+            chatContextManager.addMessageToCurrentChat(aiResponse, {
+              provider: 'external-fallback',
+              responseTime: Date.now() - messageStartTime
+            });
+            // Clean up temporary narrative messages
+            setMessages(chatContextManager.getCurrentMessages());
+          } else {
+            // Filter out narrative messages and add fallback response
+            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([aiResponse]));
+          }
         }
         
         setIsLoading(false);
@@ -364,7 +485,19 @@ export default function RightSection({ isModalOpen = false, selectedItem = null 
             content: lastMessage.content,
             timestamp: Date.now()
           };
-          setMessages(prev => [...prev, aiResponse]);
+          
+          // Add to chat context manager for persistence
+          if (currentChatContext) {
+            chatContextManager.addMessageToCurrentChat(aiResponse, {
+              provider: 'local-api',
+              responseTime: Date.now() - messageStartTime
+            });
+            // Clean up temporary narrative messages
+            setMessages(chatContextManager.getCurrentMessages());
+          } else {
+            // Filter out narrative messages and add local API response
+            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([aiResponse]));
+          }
           console.log('✅ Local AI response added:', lastMessage.content);
         } else {
           throw new Error('No assistant message found in local response');
@@ -393,7 +526,19 @@ While I'm currently running in offline mode, I can still assist you with:
 Could you rephrase your question in the context of financial services consulting, or let me know how I can help with your consulting needs?`,
         timestamp: Date.now()
       };
-      setMessages(prev => [...prev, fallbackResponse]);
+      
+      // Add to chat context manager for persistence
+      if (currentChatContext) {
+        chatContextManager.addMessageToCurrentChat(fallbackResponse, {
+          provider: 'fallback',
+          responseTime: Date.now() - messageStartTime
+        });
+        // Clean up temporary narrative messages
+        setMessages(chatContextManager.getCurrentMessages());
+      } else {
+        // Filter out narrative messages and add fallback response
+        setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([fallbackResponse]));
+      }
       setIsLoading(false);
     }
   };
@@ -636,7 +781,105 @@ Could you rephrase your question in the context of financial services consulting
       ];
   };
 
-      const relatedInsights = getRelatedInsights(selectedItem);
+  // Layout options data
+  const LAYOUT_OPTIONS = [
+    {
+      id: 'title-2-columns',
+      name: 'Title + 2 Columns',
+      description: 'Header with two equal content columns',
+      recommended: true,
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="flex gap-1 p-1 h-12">
+            <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'bcg-matrix',
+      name: 'BCG Matrix',
+      description: '2x2 matrix for strategic analysis',
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-2 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="grid grid-cols-2 gap-1 p-1 h-11">
+            <div className="rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'three-columns',
+      name: '3 Columns',
+      description: 'Three equal content columns',
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="flex gap-1 p-1 h-12">
+            <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'full-width',
+      name: 'Full Width',
+      description: 'Single column full width content',
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="p-1 h-12">
+            <div className="w-full h-full rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'timeline',
+      name: 'Timeline Layout',
+      description: 'Horizontal timeline with milestones',
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="p-1 h-12 flex items-center">
+            <div className="flex-1 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+            <div className="w-2 h-2 rounded-full mx-1" style={{ backgroundColor: 'var(--text-primary)' }}></div>
+            <div className="flex-1 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+            <div className="w-2 h-2 rounded-full mx-1" style={{ backgroundColor: 'var(--text-primary)' }}></div>
+            <div className="flex-1 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'process-flow',
+      name: 'Process Flow',
+      description: 'Sequential process with arrows',
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="p-1 h-12 flex items-center justify-center gap-1">
+            <div className="w-3 h-6 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="w-1 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+            <div className="w-3 h-6 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+            <div className="w-1 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+            <div className="w-3 h-6 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+          </div>
+        </div>
+      )
+    }
+  ];
+
+
+  const relatedInsights = getRelatedInsights(selectedItem);
 
   // Sample resource data with relevance scores
   const internalResourcesGroups = [
@@ -735,7 +978,7 @@ Could you rephrase your question in the context of financial services consulting
 
   return (
     <div 
-      className="flex flex-col h-screen relative overflow-hidden border-l"
+      className="flex flex-col h-full relative overflow-hidden border-l"
       style={{ 
         width: `${rightSectionWidth}px`,
         backgroundColor: 'var(--bg-primary)',
@@ -765,8 +1008,151 @@ Could you rephrase your question in the context of financial services consulting
       </div>
 
 
-      {/* Internal Resources Section */}
-      <div className="flex flex-col">
+      {/* Layout Options Section - Replace Internal/External Resources when in layout mode */}
+      {showLayoutOptions ? (
+        <div className="flex flex-col flex-1 min-h-0">
+          <div 
+            className="flex items-center justify-between p-4 cursor-pointer transition-colors"
+            style={{ backgroundColor: 'transparent' }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+            onClick={() => toggleSection('layoutOptions')}
+          >
+            <div className="flex items-center space-x-2">
+              <Layout className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+              {expandedSections.layoutOptions ? (
+                <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+              ) : (
+                <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+              )}
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Layout Options</span>
+            </div>
+          </div>
+          
+          {expandedSections.layoutOptions && (
+            <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
+              {LAYOUT_OPTIONS.map((layout) => (
+                <div
+                  key={layout.id}
+                  onClick={() => onLayoutChange && onLayoutChange(layout.id)}
+                  className={`relative p-3 border rounded-lg cursor-pointer transition-all ${
+                    selectedLayout === layout.id
+                      ? 'shadow-sm'
+                      : 'hover:shadow-sm'
+                  }`}
+                  style={{
+                    borderColor: selectedLayout === layout.id ? 'var(--text-primary)' : 'var(--border-primary)',
+                    backgroundColor: 'var(--bg-primary)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedLayout !== layout.id) {
+                      e.target.style.borderColor = 'var(--border-secondary)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedLayout !== layout.id) {
+                      e.target.style.borderColor = 'var(--border-primary)';
+                    }
+                  }}
+                >
+                  {layout.recommended && (
+                    <div className="absolute -top-2 -right-2 text-white text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--text-primary)' }}>
+                      Recommended
+                    </div>
+                  )}
+                  
+                  <div className="flex items-start space-x-3">
+                    <div className="w-16 h-12 flex-shrink-0">
+                      {layout.preview}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                          {layout.name}
+                        </h3>
+                        {selectedLayout === layout.id && (
+                          <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-primary)' }} />
+                        )}
+                      </div>
+                      <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                        {layout.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Apply to All Slides Button */}
+              <div className="pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
+                <button
+                  onClick={() => onApplyLayoutToAll && onApplyLayoutToAll(selectedLayout)}
+                  className="w-full px-4 py-2 text-white text-sm font-medium rounded transition-colors"
+                  style={{ backgroundColor: 'var(--text-primary)' }}
+                  onMouseEnter={(e) => {
+                    e.target.style.opacity = '0.9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.opacity = '1';
+                  }}
+                  title={`Apply ${LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.name || selectedLayout} to all slides`}
+                >
+                  Apply to All Slides
+                </button>
+              </div>
+
+              {/* Export Options */}
+              {storyline && storyline.sections?.length > 0 && (
+                <div className="pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
+                  <h4 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+                    Export Storyline
+                  </h4>
+                  
+                  {/* Preview & Export Button */}
+                  <button
+                    onClick={() => setShowPreviewModal(true)}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded transition-colors"
+                    style={{ 
+                      backgroundColor: 'var(--text-primary)',
+                      color: 'white'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isExporting) {
+                        e.target.style.opacity = '0.9';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.opacity = '1';
+                    }}
+                  >
+                    <Eye size={16} />
+                    {isExporting ? 'Exporting...' : 'Preview & Export'}
+                  </button>
+
+                  {/* Export Info */}
+                  <div className="mt-3 p-2 rounded text-xs" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Download size={12} />
+                      <span>Export will include:</span>
+                    </div>
+                    <ul className="text-xs space-y-0.5 ml-4">
+                      <li>• All {storyline.sections?.length || 0} sections</li>
+                      <li>• Applied layouts per section</li>
+                      <li>• Content and key points</li>
+                      <li>• Cigno branding</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+        </div>
+      ) : (
+        <div className="flex flex-col flex-1 min-h-0 space-y-0">
+          {/* Internal Resources Section */}
+          <div className="flex flex-col">
         <div 
           className="flex items-center justify-between p-4 cursor-pointer transition-colors"
           style={{ backgroundColor: 'transparent' }}
@@ -1322,6 +1708,8 @@ Could you rephrase your question in the context of financial services consulting
           </div>
         )}
       </div>
+        </div>
+      )}
 
       {/* AI Assistant Section - FIXED AT BOTTOM */}
       <div 
@@ -1484,6 +1872,15 @@ Could you rephrase your question in the context of financial services consulting
           </div>
         )}
       </div>
+      
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        storyline={storyline}
+        selectedLayout={selectedLayout}
+        onExport={handleExport}
+      />
     </div>
   );
 }

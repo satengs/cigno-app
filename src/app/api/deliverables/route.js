@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import Deliverable from '@/lib/models/Deliverable';
-import MenuItemModel from '@/lib/models/MenuItemModel';
-import Project from '@/lib/models/Project';
-import User from '@/lib/models/User';
-import connectDB from '@/lib/db/mongoose';
-import { formatForAPI, isValidObjectId } from '@/lib/utils/idUtils';
+import Deliverable from '../../../lib/models/Deliverable';
+import MenuItemModel from '../../../lib/models/MenuItemModel';
+import Project from '../../../lib/models/Project';
+import User from '../../../lib/models/User';
+import connectDB from '../../../lib/db/mongoose';
+import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
 
 // GET /api/deliverables
 export async function GET(request) {

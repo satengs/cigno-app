@@ -48,14 +48,6 @@ const nextConfig = {
     unoptimized: true, // Disable Next.js image optimization for containers
     domains: [],
   },
-  webpack: (config) => {
-    config.resolve = config.resolve || {};
-    config.resolve.alias = {
-      ...(config.resolve.alias || {}),
-      '@': path.resolve(process.cwd(), 'src'),
-    };
-    return config;
-  },
 };
 
 export default nextConfig;
