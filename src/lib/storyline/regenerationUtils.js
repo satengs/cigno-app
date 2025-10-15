@@ -1,3 +1,5 @@
+import { createSectionRecord, ensureSectionHasRenderedContent } from './sectionUtils.js';
+
 /**
  * Storyline Regeneration Utilities
  * Handles regeneration of storylines while preserving locked sections
@@ -57,6 +59,35 @@ const incrementVersion = (version = "1.0") => {
   return `${major}.${newMinor}`;
 };
 
+const normalizeSummaryText = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join('. ');
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.keyMessages)) {
+      return value.keyMessages.filter(Boolean).join('. ');
+    }
+    if (typeof value.summary === 'string') {
+      return value.summary;
+    }
+    if (Array.isArray(value.summary)) {
+      return value.summary.filter(Boolean).join('. ');
+    }
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
 /**
  * Creates AI payload for regeneration, excluding locked sections
  * @param {Object} storyline - The original storyline
@@ -111,96 +142,85 @@ export const createRegenerationPayload = (storyline, draftSections, lockedSectio
  * @returns {Object} - Merged storyline
  */
 export const mergeRegeneratedStoryline = (originalStoryline, aiResponse, lockedSections) => {
-  const newSections = aiResponse.sections || [];
-  
-  // Create a map of locked sections by order
-  const lockedSectionsByOrder = {};
-  lockedSections.forEach(section => {
-    lockedSectionsByOrder[section.order] = section;
+  const timestamp = new Date();
+  const normalizedLockedSections = (lockedSections || []).map((section, index) => {
+    const orderValue = Number.isFinite(section.order) ? section.order : index;
+    return {
+      ...ensureSectionHasRenderedContent(section, {
+        order: orderValue,
+        fallbackTitle: section.title,
+        defaultContentType: section.contentBlocks?.[0]?.type
+      }),
+      order: orderValue,
+      locked: true
+    };
   });
-  
-  // Create a map of new sections by order for easy lookup
-  const newSectionsByOrder = {};
-  newSections.forEach(section => {
-    newSectionsByOrder[section.order] = section;
-  });
-  
-  // Merge sections maintaining original order
-  const mergedSections = [];
-  const originalSections = originalStoryline.sections || [];
-  const maxOrder = Math.max(...originalSections.map(s => s.order || 0), 0);
-  
-  for (let i = 0; i <= maxOrder; i++) {
-    if (lockedSectionsByOrder[i]) {
-      // Keep locked section exactly as is
-      mergedSections.push({
-        ...lockedSectionsByOrder[i],
-        // Ensure these properties are preserved
-        locked: true,
-        status: lockedSectionsByOrder[i].status || 'final'
-      });
-    } else if (newSectionsByOrder[i]) {
-      // Use new AI-generated section for this position
-      mergedSections.push({
-        ...newSectionsByOrder[i],
-        order: i,
-        locked: false,
-        status: 'draft',
-        id: newSectionsByOrder[i].id || `section_${i}`,
-        created_at: new Date(),
-        updated_at: new Date()
-      });
-    } else {
-      // Find next available new section or create placeholder
-      const availableNewSection = newSections.find(s => 
-        !mergedSections.some(merged => merged.id === s.id)
-      );
-      
-      if (availableNewSection) {
-        mergedSections.push({
-          ...availableNewSection,
-          order: i,
-          locked: false,
-          status: 'draft',
-          id: availableNewSection.id || `section_${i}`,
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-      }
-    }
-  }
-  
-  // Add any remaining new sections that couldn't be mapped to existing orders
-  const unmappedSections = newSections.filter(newSection => 
-    !mergedSections.some(merged => merged.id === newSection.id)
+
+  const lockedByOrder = new Map(
+    normalizedLockedSections.map(section => [section.order, section])
   );
-  
-  unmappedSections.forEach((section, index) => {
-    mergedSections.push({
-      ...section,
-      order: maxOrder + 1 + index,
-      locked: false,
-      status: 'draft',
-      id: section.id || `section_${maxOrder + 1 + index}`,
-      created_at: new Date(),
-      updated_at: new Date()
+
+  const newSectionCandidates = (Array.isArray(aiResponse.sections) ? aiResponse.sections : [])
+    .map((section, index) => {
+      const orderValue = Number.isFinite(section.order) ? section.order : index;
+      return createSectionRecord(section, {
+        id: section.id || `section_${orderValue}`,
+        order: orderValue,
+        status: section.status || 'draft',
+        locked: false,
+        fallbackTitle: section.title || `Section ${orderValue}`,
+        defaultContentType: section.contentType || section.contentBlocks?.[0]?.type || 'Content Block',
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
     });
-  });
-  
-  // Update storyline metadata while preserving locked sections
+
+  const newSectionsByOrder = new Map(
+    newSectionCandidates.map(section => [section.order, section])
+  );
+
+  const allOrders = new Set([
+    ...lockedByOrder.keys(),
+    ...newSectionsByOrder.keys()
+  ]);
+
+  const mergedSections = Array.from(allOrders)
+    .sort((a, b) => a - b)
+    .map(order => lockedByOrder.get(order) || newSectionsByOrder.get(order))
+    .filter(Boolean);
+
+  const executiveSummarySection = mergedSections.find(section => section.id === 'exec_summary');
+  const callToActionSection = mergedSections.find(section => section.id === 'call_to_action');
+
+  const executiveSummaryText = normalizeSummaryText(
+    executiveSummarySection?.description
+      || executiveSummarySection?.keyPoints?.join('. ')
+      || executiveSummarySection?.markdown
+      || aiResponse.executiveSummary
+      || originalStoryline.executiveSummary
+  );
+
+  const callToActionText = normalizeSummaryText(
+    callToActionSection?.description
+      || callToActionSection?.keyPoints?.join('. ')
+      || callToActionSection?.markdown
+      || aiResponse.callToAction
+      || originalStoryline.callToAction
+  );
+
   return {
     ...originalStoryline,
     sections: mergedSections,
-    executiveSummary: aiResponse.executiveSummary || originalStoryline.executiveSummary,
-    callToAction: aiResponse.callToAction || originalStoryline.callToAction,
+    executiveSummary: executiveSummaryText,
+    callToAction: callToActionText,
     presentationFlow: aiResponse.presentationFlow || originalStoryline.presentationFlow,
-    updated_at: new Date(),
+    updated_at: timestamp,
     updated_by: originalStoryline.updated_by,
     version: incrementVersion(originalStoryline.version),
     lastRegeneration: {
-      timestamp: new Date(),
+      timestamp,
       sectionsRegenerated: mergedSections.filter(s => !s.locked).length,
-      sectionsPreserved: lockedSections.length,
+      sectionsPreserved: normalizedLockedSections.length,
       regenerationType: 'partial'
     }
   };

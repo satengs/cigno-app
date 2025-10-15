@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '../../../../lib/db/mongoose.js';
 import Storyline from '../../../../lib/models/Storyline.js';
-import { 
+import {
   filterSectionsForRegeneration,
   createRegenerationPayload,
   mergeRegeneratedStoryline,
   validateRegenerationRequest,
   createStorylineBackup
 } from '../../../../lib/storyline/regenerationUtils.js';
+import { createSectionRecord, ensureSectionHasRenderedContent } from '../../../../lib/storyline/sectionUtils.js';
 
 /**
  * Simulates AI agent storyline generation
  * In production, this would call your actual AI service
  */
-async function generateStorylineWithAgent(prompt) {
+async function generateStorylineWithAgent(prompt, context = {}) {
   // Simulate AI processing delay
   await new Promise(resolve => setTimeout(resolve, 1000));
   
@@ -160,8 +161,15 @@ async function generateStorylineWithAgent(prompt) {
 export async function POST(request) {
   try {
     await dbConnect();
-    
-    const { storylineId, regenerationPayload, backup } = await request.json();
+
+    const {
+      storylineId,
+      regenerationPayload,
+      backup,
+      projectData = {},
+      deliverableData = {},
+      clientData = {}
+    } = await request.json();
     
     console.log('🔄 Storyline Regeneration Request:', {
       storylineId,
@@ -208,6 +216,32 @@ export async function POST(request) {
     });
     
     // Create AI prompt for regeneration
+    const structuredContext = {
+      project: projectData,
+      deliverable: deliverableData,
+      client: clientData,
+      regeneration: {
+        lockedSections: lockedSections.map(({ id, title, order, keyPoints, contentBlocks, status, description }) => ({
+          id,
+          title,
+          order,
+          status,
+          description,
+          keyPoints,
+          contentBlocks
+        })),
+        draftSections: draftSections.map(({ id, title, order, keyPoints, contentBlocks, status, description }) => ({
+          id,
+          title,
+          order,
+          status,
+          description,
+          keyPoints,
+          contentBlocks
+        }))
+      }
+    };
+
     const regenerationPrompt = `
 You are a strategic consultant regenerating a storyline while preserving locked sections.
 
@@ -217,43 +251,40 @@ You are a strategic consultant regenerating a storyline while preserving locked 
 - ${draftSections.length} sections need regeneration
 - Total sections: ${existingStoryline.sections.length}
 
-**LOCKED SECTIONS (DO NOT MODIFY):**
-${lockedSections.map(section => `
-- Order ${section.order}: "${section.title}" 
-  Key Points: ${section.keyPoints?.slice(0, 2).join(', ') || 'None'}
-`).join('')}
+**PROJECT CONTEXT:**
+${JSON.stringify(projectData || {}, null, 2)}
 
-**SECTIONS TO REGENERATE:**
-${draftSections.map(section => `
-- Order ${section.order}: "${section.title}"
-  Current Description: ${section.description || 'None'}
-  Current Status: ${section.status}
-  Current Key Points: ${section.keyPoints?.join(', ') || 'None'}
-`).join('')}
+**CLIENT CONTEXT:**
+${JSON.stringify(clientData || {}, null, 2)}
 
 **DELIVERABLE CONTEXT:**
-- Name: ${regenerationPayload.deliverableData.name}
-- Type: ${regenerationPayload.deliverableData.type}
-- Audience: ${regenerationPayload.deliverableData.audience?.join(', ') || 'General'}
-- Brief: ${regenerationPayload.deliverableData.brief}
-- Format: ${regenerationPayload.deliverableData.format}
-- Document Length: ${regenerationPayload.deliverableData.documentLength} pages
+${JSON.stringify(deliverableData || {}, null, 2)}
 
-**REQUIREMENTS:**
-1. Maintain logical flow with existing locked sections
-2. Regenerate ONLY the draft sections listed above
-3. Respect the existing section order (${lockedSections.map(s => `${s.order}: ${s.title}`).join(', ')}) 
-4. Ensure new content complements locked sections
-5. Maintain professional consulting style
-6. Generate 2-4 key points per section
-7. Include relevant content block types
+**CURRENT STORYLINE STRUCTURE:**
+${JSON.stringify(existingStoryline.sections.map(section => ({
+  id: section.id,
+  title: section.title,
+  status: section.locked ? 'LOCKED' : (section.status || 'draft'),
+  order: section.order,
+  description: section.description,
+  keyPoints: section.keyPoints
+})), null, 2)}
+
+**REGENERATION REQUIREMENTS:**
+1. Preserve locked sections exactly as provided
+2. Regenerate only the draft sections listed above
+3. Maintain storyline flow and logical progression
+4. Provide structured sections with titles, descriptions, key points, content blocks, and metadata
+5. Ensure consistent tone and professional language
+6. Include actionable insights and recommendations where relevant
+7. Indicate status for each section (draft/final)
 
 **OUTPUT FORMAT:**
-Generate a structured JSON response with updated sections that will replace the draft sections while preserving locked ones.
+Return a structured JSON object with the regenerated storyline (excluding unchanged locked sections) and clearly mark section IDs to facilitate merging.
 `;
     
     // Generate new storyline content with AI
-    const aiResponse = await generateStorylineWithAgent(regenerationPrompt);
+    const aiResponse = await generateStorylineWithAgent(regenerationPrompt, structuredContext);
     
     // Merge AI response with locked sections
     const mergedStoryline = mergeRegeneratedStoryline(

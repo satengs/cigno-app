@@ -6,6 +6,22 @@ import User from '../../../lib/models/User';
 import connectDB from '../../../lib/db/mongoose';
 import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
 
+const normalizeList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n;,•\-]+/)
+      .map(item => item.replace(/^[-•\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  return [String(value)];
+};
+
 // GET /api/deliverables
 export async function GET(request) {
   try {
@@ -54,7 +70,10 @@ export async function POST(request) {
       project,
       due_date,
       estimated_hours = 0,
-      notes = ''
+      notes = '',
+      brief_quality = null,
+      brief_strengths = [],
+      brief_improvements = []
     } = body;
 
     // Validate required fields
@@ -143,6 +162,12 @@ export async function POST(request) {
       due_date: parsedDueDate,
       estimated_hours: Number(estimated_hours),
       notes: notes || '',
+      brief_quality: typeof brief_quality === 'number'
+        ? brief_quality
+        : (brief_quality ? Number(brief_quality) : null),
+      brief_strengths: normalizeList(brief_strengths),
+      brief_improvements: normalizeList(brief_improvements),
+      brief_last_evaluated_at: brief_quality ? new Date() : undefined,
       created_by: defaultUserId,
       updated_by: defaultUserId
     });
@@ -261,9 +286,35 @@ export async function PUT(request) {
       );
     }
 
+    const sanitizedUpdateData = { ...updateData };
+
+    if ('brief_quality' in sanitizedUpdateData) {
+      const qualityValue = sanitizedUpdateData.brief_quality;
+      const numericQuality = Number(qualityValue);
+      sanitizedUpdateData.brief_quality = Number.isFinite(numericQuality)
+        ? Number(numericQuality.toFixed(1))
+        : null;
+    }
+
+    if ('brief_strengths' in sanitizedUpdateData) {
+      sanitizedUpdateData.brief_strengths = normalizeList(sanitizedUpdateData.brief_strengths);
+    }
+
+    if ('brief_improvements' in sanitizedUpdateData) {
+      sanitizedUpdateData.brief_improvements = normalizeList(sanitizedUpdateData.brief_improvements);
+    }
+
+    if (
+      'brief_quality' in sanitizedUpdateData ||
+      'brief_strengths' in sanitizedUpdateData ||
+      'brief_improvements' in sanitizedUpdateData
+    ) {
+      sanitizedUpdateData.brief_last_evaluated_at = new Date();
+    }
+
     const deliverable = await Deliverable.findByIdAndUpdate(
       id,
-      { ...updateData, updated_at: new Date() },
+      { ...sanitizedUpdateData, updated_at: new Date() },
       { new: true, runValidators: true }
     );
 

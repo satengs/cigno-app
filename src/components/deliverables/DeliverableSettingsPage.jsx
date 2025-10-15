@@ -5,6 +5,28 @@ import Button from '../ui/buttons/Button';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { FileText, Wand2, Save, ArrowLeft, X, Sparkles, BookOpen } from 'lucide-react';
 
+const normalizeInsightList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .flatMap(item => normalizeInsightList(item))
+      .map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n\r•\-;]+/)
+      .map(item => item.replace(/^[-•\d.\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'object') {
+    return Object.values(value)
+      .flatMap(item => normalizeInsightList(item))
+      .filter(Boolean);
+  }
+  return [String(value).trim()].filter(Boolean);
+};
+
 export default function DeliverableSettingsPage({ 
   deliverable,
   onSave,
@@ -14,7 +36,9 @@ export default function DeliverableSettingsPage({
 }) {
   const [formData, setFormData] = useState({
     brief: '',
-    briefQuality: 0,
+    briefQuality: null,
+    recognizedStrengths: [],
+    suggestedImprovements: [],
     notes: '',
     tags: []
   });
@@ -22,6 +46,22 @@ export default function DeliverableSettingsPage({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [showImproveBriefModal, setShowImproveBriefModal] = useState(false);
+
+  const qualityScore = Number.isFinite(Number(formData.briefQuality))
+    ? Number(Number(formData.briefQuality).toFixed(1))
+    : null;
+
+  const recognizedStrengths = Array.isArray(formData.recognizedStrengths)
+    ? formData.recognizedStrengths
+    : normalizeInsightList(formData.recognizedStrengths);
+
+  const suggestedImprovements = Array.isArray(formData.suggestedImprovements)
+    ? formData.suggestedImprovements
+    : normalizeInsightList(formData.suggestedImprovements);
+
+  const qualityPercent = qualityScore !== null
+    ? Math.min(100, Math.max(0, (qualityScore / 10) * 100))
+    : 0;
 
   useEffect(() => {
     if (deliverable) {
@@ -39,10 +79,29 @@ export default function DeliverableSettingsPage({
       const intelligentBrief = generateIntelligentBrief(deliverable);
       const intelligentTags = generateIntelligentTags(deliverable);
       const intelligentNotes = generateIntelligentNotes(deliverable);
+
+      const strengthInsights = normalizeInsightList(
+        deliverable.brief_strengths ??
+        deliverable.recognized_strengths ??
+        deliverable.recognizedStrengths ??
+        deliverable.strengths
+      );
+
+      const improvementInsights = normalizeInsightList(
+        deliverable.brief_improvements ??
+        deliverable.suggested_improvements ??
+        deliverable.suggestedImprovements ??
+        deliverable.improvements
+      );
+
+      const qualityValue = Number(deliverable.brief_quality ?? deliverable.briefQuality);
+      const normalizedQuality = Number.isFinite(qualityValue) ? Number(qualityValue.toFixed(1)) : null;
       
       setFormData({
         brief: deliverable.brief || intelligentBrief,
-        briefQuality: deliverable.briefQuality || 7.5, // Start with a good quality score
+        briefQuality: normalizedQuality,
+        recognizedStrengths: strengthInsights.length ? strengthInsights : ['Technical requirements well defined'],
+        suggestedImprovements: improvementInsights.length ? improvementInsights : ['Add geographical scope and timeline constraints'],
         notes: deliverable.notes || intelligentNotes,
         tags: deliverable.tags || intelligentTags
       });
@@ -160,13 +219,49 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
     }
   };
 
-  const handleImproveBriefSave = async (improvedBrief) => {
+  const handleImproveBriefSave = async (result) => {
     try {
+      if (!deliverable) {
+        throw new Error('No deliverable selected for saving.');
+      }
+
+      const isLegacyInvocation = typeof result === 'string' || Array.isArray(result);
+
+      const improvedBrief = !isLegacyInvocation && result && typeof result === 'object'
+        ? result.brief ?? result.improvedBrief ?? formData.brief
+        : (typeof result === 'string' ? result : formData.brief);
+
+      const qualityScoreValue = !isLegacyInvocation && result && typeof result === 'object'
+        ? result.qualityScore ?? result.score ?? formData.briefQuality
+        : formData.briefQuality;
+
+      const strengthsArray = !isLegacyInvocation && result && typeof result === 'object'
+        ? normalizeInsightList(result.strengths ?? result.strengthsText)
+        : [];
+
+      const improvementsArray = !isLegacyInvocation && result && typeof result === 'object'
+        ? normalizeInsightList(result.improvements ?? result.improvementsText)
+        : [];
+
+      const normalizedQuality = Number.isFinite(Number(qualityScoreValue))
+        ? Number(Number(qualityScoreValue).toFixed(1))
+        : formData.briefQuality;
+
+      const recognizedStrengths = strengthsArray.length
+        ? strengthsArray
+        : formData.recognizedStrengths;
+
+      const suggestedImprovements = improvementsArray.length
+        ? improvementsArray
+        : formData.suggestedImprovements;
+
       // Update the form data with the improved brief
       setFormData(prev => ({ 
         ...prev, 
         brief: improvedBrief,
-        briefQuality: 9.0 // Set a high quality score for AI-improved brief
+        briefQuality: normalizedQuality,
+        recognizedStrengths,
+        suggestedImprovements
       }));
       
       // Automatically save the improved brief to the database
@@ -178,7 +273,10 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         },
         body: JSON.stringify({
           id: deliverableId,
-          brief: improvedBrief
+          brief: improvedBrief,
+          brief_quality: normalizedQuality,
+          brief_strengths: recognizedStrengths,
+          brief_improvements: suggestedImprovements
         })
       });
 
@@ -212,6 +310,21 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         notes: formData.notes,
         tags: formData.tags
       };
+
+      if (formData.briefQuality !== undefined && formData.briefQuality !== null) {
+        const numericQuality = Number(formData.briefQuality);
+        if (Number.isFinite(numericQuality)) {
+          updateData.brief_quality = Number(numericQuality.toFixed(1));
+        }
+      }
+
+      if (Array.isArray(formData.recognizedStrengths)) {
+        updateData.brief_strengths = formData.recognizedStrengths;
+      }
+
+      if (Array.isArray(formData.suggestedImprovements)) {
+        updateData.brief_improvements = formData.suggestedImprovements;
+      }
 
       // Debug: Check the ID before sending
       const deliverableId = deliverable._id || deliverable.id;
@@ -338,20 +451,45 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
             )}
           </div>
           
-          {formData.briefQuality > 0 && (
-            <div className="mt-2 flex items-center space-x-2">
-              <span className="text-xs text-gray-500">AI Quality Score:</span>
-              <div className="flex items-center space-x-1">
-                <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-green-500 transition-all duration-300"
-                    style={{ width: `${(formData.briefQuality / 10) * 100}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-green-600">
-                  {formData.briefQuality}/10
+          {(qualityScore !== null || recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">AI Quality Score</span>
+                <span className="font-medium text-gray-800">
+                  {qualityScore !== null ? `${qualityScore} / 10` : 'Not evaluated'}
                 </span>
               </div>
+              <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${qualityPercent}%` }}
+                />
+              </div>
+
+              {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {recognizedStrengths.length > 0 && (
+                    <div className="border border-emerald-200 bg-white rounded-md p-3">
+                      <p className="text-sm font-medium text-emerald-700">Recognized Strengths</p>
+                      <ul className="mt-2 space-y-1 text-xs text-emerald-600">
+                        {recognizedStrengths.map((item, index) => (
+                          <li key={`recognized-${index}`}>• {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {suggestedImprovements.length > 0 && (
+                    <div className="border border-blue-200 bg-white rounded-md p-3">
+                      <p className="text-sm font-medium text-blue-700">Suggested Improvements</p>
+                      <ul className="mt-2 space-y-1 text-xs text-blue-600">
+                        {suggestedImprovements.map((item, index) => (
+                          <li key={`improvement-${index}`}>• {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           

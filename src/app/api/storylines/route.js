@@ -3,6 +3,7 @@ import dbConnect from '../../../lib/db/mongoose.js';
 import Storyline from '../../../lib/models/Storyline.js';
 import Deliverable from '../../../lib/models/Deliverable.js';
 import User from '../../../lib/models/User.js';
+import { createSectionRecord } from '../../../lib/storyline/sectionUtils.js';
 import { 
   createSuccessResponse, 
   createErrorResponse, 
@@ -112,20 +113,19 @@ export async function POST(request) {
 
     // Check if storyline already exists for this deliverable
     const normalizedSections = (sections || []).map((section, index) => {
-      return {
+      const normalizedStatus = normalizeStatus(section.status, SECTION_STATUS.DRAFT);
+
+      return createSectionRecord(section, {
         id: section.id || section.sectionId || `section_${index + 1}`,
-        title: section.title || `Section ${index + 1}`,
-        description: section.description || '',
-        status: normalizeStatus(section.status, SECTION_STATUS.DRAFT),
         order: section.order !== undefined ? section.order : index,
-        keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
-        contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+        status: normalizedStatus,
         locked: !!section.locked,
-        lockedBy: section.locked ? section.lockedBy : undefined,
-        lockedAt: section.locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
-        created_at: section.created_at ? new Date(section.created_at) : new Date(),
-        updated_at: new Date()
-      };
+        fallbackTitle: section.title || `Section ${index + 1}`,
+        defaultContentType: section.contentBlocks?.[0]?.type || 'Content Block',
+        createdAt: section.created_at ? new Date(section.created_at) : undefined,
+        updatedAt: section.updated_at ? new Date(section.updated_at) : undefined,
+        estimatedSlides: section.estimatedSlides
+      });
     });
 
     const storylinePayload = {

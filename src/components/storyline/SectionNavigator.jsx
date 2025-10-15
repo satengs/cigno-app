@@ -1,14 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
   GripVertical,
   Lock,
   Unlock,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
+import { createSectionRecord } from '../../lib/storyline/sectionUtils';
+import dynamic from 'next/dynamic';
+
+const ChartPreview = dynamic(() => import('./ChartPreview'), { ssr: false });
 
 const STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not Started' },
@@ -31,10 +36,13 @@ export default function SectionNavigator({
   onUpdateSection,
   onStatusChange,
   onToggleLock,
-  onKeyPointsChange
+  onKeyPointsChange,
+  onRemoveSection
 }) {
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [draftKeyPoints, setDraftKeyPoints] = useState({});
+  const [chartDrafts, setChartDrafts] = useState({});
+  const [chartErrors, setChartErrors] = useState({});
 
   // Removed auto-expansion based on currentSectionIndex
   // useEffect(() => {
@@ -43,9 +51,102 @@ export default function SectionNavigator({
 
   useEffect(() => {
     setDraftKeyPoints({});
+    setChartDrafts({});
+    setChartErrors({});
   }, [sections]);
 
   const statusBadgeClasses = useMemo(() => STATUS_BADGE_STYLES, []);
+
+  const handleMarkdownChange = useCallback((section, value) => {
+    if (!onUpdateSection) return;
+
+    const record = createSectionRecord(
+      { ...section, markdown: value },
+      {
+        id: section.id,
+        order: section.order ?? 0,
+        status: section.status,
+        locked: section.locked,
+        fallbackTitle: section.title,
+        defaultContentType: section.contentBlocks?.[0]?.type,
+        createdAt: section.created_at,
+        updatedAt: new Date(),
+        estimatedSlides: section.estimatedSlides
+      }
+    );
+
+    onUpdateSection(section.id, {
+      title: record.title,
+      description: record.description,
+      markdown: record.markdown,
+      html: record.html,
+      charts: record.charts,
+      keyPoints: record.keyPoints,
+      contentBlocks: record.contentBlocks,
+      estimatedSlides: record.estimatedSlides,
+      order: record.order
+    });
+  }, [onUpdateSection]);
+
+  const renderChartPreview = (charts = []) => {
+    if (!charts.length) return null;
+    return (
+      <div className="mt-3 space-y-3">
+        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Charts</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {charts.map((chart) => (
+            <ChartPreview key={chart.id} chart={chart} />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const getChartDraftValue = (chart) => {
+    if (chartDrafts[chart.id] !== undefined) {
+      return chartDrafts[chart.id];
+    }
+    try {
+      return JSON.stringify(chart.config || {}, null, 2);
+    } catch (error) {
+      return chart.raw || '';
+    }
+  };
+
+  const handleChartConfigDraftChange = (chartId, value) => {
+    setChartDrafts((prev) => ({ ...prev, [chartId]: value }));
+  };
+
+  const handleChartConfigSave = (sectionId, chart, value) => {
+    if (!onUpdateSection) return;
+    try {
+      const parsed = value.trim() ? JSON.parse(value) : {};
+      const section = sections.find((item) => item.id === sectionId);
+      if (!section) return;
+
+      const updatedCharts = (section.charts || []).map((item) =>
+        item.id === chart.id
+          ? {
+              ...item,
+              config: parsed,
+              raw: value
+            }
+          : item
+      );
+
+      onUpdateSection(sectionId, {
+        charts: updatedCharts
+      });
+
+      setChartErrors((prev) => ({ ...prev, [chart.id]: null }));
+      setChartDrafts((prev) => ({ ...prev, [chart.id]: value }));
+    } catch (error) {
+      setChartErrors((prev) => ({
+        ...prev,
+        [chart.id]: 'Invalid JSON configuration'
+      }));
+    }
+  };
 
   if (!sections.length) {
     return (
@@ -179,6 +280,24 @@ export default function SectionNavigator({
                 >
                   {section.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                 </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (section.locked) return;
+                    onRemoveSection?.(section.id);
+                  }}
+                  disabled={section.locked}
+                  className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
+                    section.locked
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-red-100 text-red-600 hover:bg-red-200'
+                  }`}
+                  title={section.locked ? 'Unlock to remove' : 'Remove section'}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             </div>
 
@@ -218,6 +337,85 @@ export default function SectionNavigator({
                         placeholder="Describe the purpose and coverage of this section..."
                       />
                     </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Markdown Content</label>
+                      <textarea
+                        value={section.markdown || ''}
+                        onChange={(e) => handleMarkdownChange(section, e.target.value)}
+                        disabled={isLocked}
+                        rows={6}
+                        className={`w-full font-mono text-sm rounded-lg border px-3 py-2.5 transition-colors resize-y min-h-[160px] ${
+                          isLocked
+                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
+                        }`}
+                        placeholder="Enter or edit markdown content for this section..."
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Rendered Preview</label>
+                      <div className="rounded-lg border border-gray-200 bg-white p-4 prose prose-sm prose-slate max-w-none">
+                        {section.html ? (
+                          <div dangerouslySetInnerHTML={{ __html: section.html }} />
+                        ) : (
+                          <p className="text-sm text-gray-400 italic">Markdown preview will appear here.</p>
+                        )}
+                      </div>
+                      {renderChartPreview(section.charts)}
+                    </div>
+
+                    {(section.charts || []).length > 0 && (
+                      <div className="md:col-span-2 space-y-5">
+                        <p className="text-sm font-medium text-gray-700">Chart Configuration</p>
+                        {(section.charts || []).map((chart) => {
+                          const draftValue = getChartDraftValue(chart);
+                          const errorMessage = chartErrors[chart.id];
+                          return (
+                            <div key={chart.id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800">{chart.title || chart.id}</p>
+                                  {chart.caption && (
+                                    <p className="text-xs text-gray-500 mt-1">{chart.caption}</p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleChartConfigSave(section.id, chart, draftValue)}
+                                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                                >
+                                  Apply JSON
+                                </button>
+                              </div>
+                              <textarea
+                                value={draftValue}
+                                onChange={(event) => handleChartConfigDraftChange(chart.id, event.target.value)}
+                                onBlur={() => handleChartConfigSave(section.id, chart, draftValue)}
+                                disabled={isLocked}
+                                rows={8}
+                                className={`w-full font-mono text-xs rounded-md border px-3 py-2 transition-colors ${
+                                  isLocked
+                                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : errorMessage
+                                      ? 'border-red-300 bg-red-50'
+                                      : 'border-gray-300 bg-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
+                                }`}
+                                placeholder="Paste valid JSON chart configuration here..."
+                              />
+                              {errorMessage ? (
+                                <p className="mt-2 text-xs font-medium text-red-600">{errorMessage}</p>
+                              ) : (
+                                <p className="mt-2 text-[11px] text-gray-400">
+                                  Update chart data and press Apply JSON to refresh the preview.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>

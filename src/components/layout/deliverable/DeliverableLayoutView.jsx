@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
 
 const LAYOUT_OPTIONS = [
   {
@@ -109,6 +109,65 @@ export default function DeliverableLayoutView({
 }) {
   const [previewSection, setPreviewSection] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const [slideGenerationState, setSlideGenerationState] = useState({});
+
+  const normalizeSlideData = (slide, index = 0, fallbackLayout = selectedLayout) => {
+    if (!slide) {
+      return {
+        title: `Slide ${index + 1}`,
+        summary: '',
+        bullets: [],
+        layout: fallbackLayout
+      };
+    }
+
+    if (typeof slide === 'string') {
+      const text = slide.trim();
+      const bullets = text
+        .split(/\n|•|-/)
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      return {
+        title: `Slide ${index + 1}`,
+        summary: text,
+        bullets,
+        layout: fallbackLayout
+      };
+    }
+
+    const rawBullets = Array.isArray(slide.bullets)
+      ? slide.bullets
+      : Array.isArray(slide.points)
+        ? slide.points
+        : Array.isArray(slide.keyPoints)
+          ? slide.keyPoints
+          : [];
+
+    const normalizedBullets = rawBullets
+      .map(item => (typeof item === 'string' ? item.trim() : item?.content || item?.text || item?.description || ''))
+      .filter(Boolean);
+
+    const summary =
+      typeof slide.summary === 'string'
+        ? slide.summary
+        : typeof slide.description === 'string'
+          ? slide.description
+          : typeof slide.content === 'string'
+            ? slide.content
+            : Array.isArray(slide.paragraphs)
+              ? slide.paragraphs.join(' ')
+              : '';
+
+    return {
+      title: slide.title || slide.heading || slide.name || `Slide ${index + 1}`,
+      subtitle: slide.subtitle || slide.subheading || '',
+      summary,
+      bullets: normalizedBullets,
+      notes: slide.notes || slide.speakerNotes || '',
+      layout: slide.layout || slide.format || fallbackLayout
+    };
+  };
 
   // Get the first section or use selected section for preview
   const currentSection = previewSection 
@@ -116,6 +175,433 @@ export default function DeliverableLayoutView({
     : storyline?.sections?.[0];
   
   const currentSectionIndex = storyline?.sections?.findIndex(s => s.id === currentSection?.id) ?? 0;
+
+  const cleanText = (value = '') => value.replace(/^[-*#>\s]+/, '').trim();
+
+  const normalizePoint = (point) => {
+    if (!point) return { title: '', content: '' };
+    if (typeof point === 'string') {
+      const trimmed = cleanText(point);
+      return { title: '', content: trimmed };
+    }
+    if (typeof point === 'object') {
+      const title = cleanText(point.title || point.heading || '');
+      const content = cleanText(point.content || point.text || point.description || point.summary || title || '');
+      return { title, content };
+    }
+    return { title: '', content: String(point) };
+  };
+
+  const sectionSlides = Array.isArray(currentSection?.slides)
+    ? currentSection.slides
+    : [];
+
+  const previewSlides = sectionSlides.map((slide, index) => normalizeSlideData(slide, index));
+
+  const sectionKeyPoints = Array.isArray(currentSection?.keyPoints) && !sectionSlides.length
+    ? currentSection.keyPoints.map(normalizePoint).filter(p => p.content)
+    : [];
+
+  const sectionContentBlocks = Array.isArray(currentSection?.contentBlocks) && !sectionSlides.length
+    ? currentSection.contentBlocks
+    : [];
+
+  const blockItems = sectionContentBlocks.flatMap(block => Array.isArray(block.items) ? block.items : []);
+  const normalizedBlockItems = sectionSlides.length
+    ? sectionSlides.flatMap((slide) => {
+        const bullets = Array.isArray(slide.bullets) ? slide.bullets : [];
+        return bullets.map(normalizePoint);
+      }).filter(p => p.content)
+    : blockItems.map(normalizePoint).filter(p => p.content);
+
+  const timelineItems = (sectionKeyPoints.length ? sectionKeyPoints : normalizedBlockItems).slice(0, 4);
+  const processFlowItems = (sectionKeyPoints.length ? sectionKeyPoints : normalizedBlockItems).slice(0, 4);
+  const quadrants = sectionKeyPoints.length >= 4
+    ? sectionKeyPoints.slice(0, 4)
+    : [...sectionKeyPoints, ...normalizedBlockItems].slice(0, 4);
+
+  const paddedQuadrants = [...quadrants];
+  const quadrantLabels = ['High Priority', 'Medium Priority', 'Opportunities', 'Risks'];
+  quadrantLabels.forEach((label, idx) => {
+    if (!paddedQuadrants[idx]) {
+      paddedQuadrants[idx] = { title: label, content: idx === 0 ? (currentSection?.description || 'Add key insight') : 'Add key insight for this quadrant.' };
+    }
+  });
+
+  const splitKeyPoints = () => {
+    if (!sectionKeyPoints.length) {
+      return [normalizedBlockItems.slice(0, 3), normalizedBlockItems.slice(3, 6)];
+    }
+    const midpoint = Math.ceil(sectionKeyPoints.length / 2);
+    return [sectionKeyPoints.slice(0, midpoint), sectionKeyPoints.slice(midpoint)];
+  };
+
+  const [leftColumnPoints, rightColumnPoints] = splitKeyPoints();
+
+  const deriveDescriptionBullets = () => {
+    const description = currentSection?.markdown || currentSection?.description || storyline?.executiveSummary || '';
+    return description
+      .split(/\n|\./)
+      .map(line => cleanText(line))
+      .filter(Boolean)
+      .map(line => ({ title: '', content: line }));
+  };
+
+  let columnLeft = [...leftColumnPoints];
+  let columnRight = [...rightColumnPoints];
+
+  if (!columnLeft.length && !columnRight.length) {
+    const descriptionBullets = deriveDescriptionBullets();
+    if (descriptionBullets.length) {
+      const midpoint = Math.ceil(descriptionBullets.length / 2);
+      columnLeft = descriptionBullets.slice(0, midpoint);
+      columnRight = descriptionBullets.slice(midpoint);
+    }
+  }
+
+  if (!columnLeft.length && normalizedBlockItems.length) {
+    columnLeft = normalizedBlockItems.slice(0, 3);
+  }
+
+  if (!columnRight.length && normalizedBlockItems.length > columnLeft.length) {
+    columnRight = normalizedBlockItems.slice(columnLeft.length, columnLeft.length + 3);
+  }
+
+  const getColumnItems = () => {
+    const base = sectionKeyPoints.length ? sectionKeyPoints : normalizedBlockItems;
+    const items = base.slice(0, 3);
+    while (items.length < 3) {
+      const index = items.length;
+      items.push({ title: `Phase ${index + 1}`, content: 'Add supporting detail.' });
+    }
+    return items;
+  };
+
+  const getTimelineItems = () => {
+    const items = timelineItems.length ? timelineItems.slice(0, 4) : [];
+    while (items.length < 4) {
+      const index = items.length;
+      items.push({ title: `Milestone ${index + 1}`, content: 'Describe the milestone.' });
+    }
+    return items;
+  };
+
+  const getProcessItems = () => {
+    const items = processFlowItems.length ? processFlowItems.slice(0, 4) : [];
+    while (items.length < 4) {
+      const index = items.length;
+      items.push({ title: `Step ${index + 1}`, content: 'Outline the action for this step.' });
+    }
+    return items;
+  };
+
+  const renderBullet = (point, index) => (
+    <p key={index}>• {point.content || point.title || `Point ${index + 1}`}</p>
+  );
+
+  const renderParagraph = () => {
+    if (currentSection?.html) {
+      return <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: currentSection.html }} />;
+    }
+    if (currentSection?.markdown) {
+      return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>{currentSection.description || currentSection.markdown}</p>;
+    }
+    if (currentSection?.description) {
+      return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>{currentSection.description}</p>;
+    }
+    return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>Add narrative content for this slide.</p>;
+  };
+
+  const renderSlidesPreview = () => {
+    if (!previewSlides.length) {
+      return null;
+    }
+
+    return (
+      <div className="h-full overflow-y-auto pr-2 space-y-4">
+        {previewSlides.map((slide, index) => {
+          const bullets = Array.isArray(slide.bullets)
+            ? slide.bullets.filter(Boolean)
+            : [];
+
+          return (
+            <div
+              key={`${slide.title || 'slide'}-${index}`}
+              className="border rounded-lg p-4 bg-white shadow-sm"
+              style={{ borderColor: 'var(--border-primary)' }}
+            >
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                <span>Slide {index + 1}</span>
+                {slide.layout && <span className="italic">{slide.layout}</span>}
+              </div>
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {slide.title || `Slide ${index + 1}`}
+              </h3>
+              {slide.subtitle && (
+                <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  {slide.subtitle}
+                </p>
+              )}
+              {slide.summary && (
+                <p className="text-sm mt-3" style={{ color: 'var(--text-primary)' }}>
+                  {slide.summary}
+                </p>
+              )}
+              {bullets.length > 0 && (
+                <ul className="mt-3 space-y-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {bullets.map((item, bulletIndex) => (
+                    <li key={bulletIndex}>• {typeof item === 'string' ? item : item?.content || item?.text || ''}</li>
+                  ))}
+                </ul>
+              )}
+              {slide.notes && (
+                <p className="text-xs mt-4 italic" style={{ color: 'var(--text-secondary)' }}>
+                  {slide.notes}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderPreviewContent = () => {
+    if (sectionSlides.length) {
+      return renderSlidesPreview();
+    }
+
+    switch (selectedLayout) {
+      case 'title-2-columns': {
+        const leftHeading = cleanText(
+          sectionContentBlocks[0]?.title || sectionContentBlocks[0]?.type || ''
+        ) || (columnLeft[0]?.title || '').trim();
+        const rightHeading = cleanText(
+          sectionContentBlocks[1]?.title || sectionContentBlocks[1]?.type || ''
+        ) || (columnRight[0]?.title || '').trim();
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Section Title'}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                Section {currentSectionIndex + 1} of {storyline?.sections?.length || 1}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-8 h-4/5">
+              <div className="space-y-4">
+                {leftHeading && (
+                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {leftHeading}
+                  </h3>
+                )}
+                {columnLeft.length ? (
+                  <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {columnLeft.map(renderBullet)}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">No key messages yet.</p>
+                )}
+              </div>
+              <div className="space-y-4">
+                {rightHeading && (
+                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {rightHeading}
+                  </h3>
+                )}
+                {columnRight.length ? (
+                  <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {columnRight.map(renderBullet)}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">No supporting points yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      case 'bcg-matrix': {
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Strategic Analysis Matrix'}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                Position insights across priority quadrants.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 h-4/5">
+              {paddedQuadrants.map((point, index) => {
+                const colors = [
+                  { bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', text: 'text-green-700' },
+                  { bg: 'bg-yellow-50', border: 'border-yellow-200', title: 'text-yellow-800', text: 'text-yellow-700' },
+                  { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-800', text: 'text-blue-700' },
+                  { bg: 'bg-red-50', border: 'border-red-200', title: 'text-red-800', text: 'text-red-700' }
+                ];
+                const color = colors[index % 4];
+                return (
+                  <div key={index} className={`border ${color.border} rounded p-4 ${color.bg}`}>
+                    <h3 className={`font-semibold ${color.title}`}>
+                      {point.title || `Quadrant ${index + 1}`}
+                    </h3>
+                    <p className={`text-sm ${color.text} mt-2`}>
+                      {point.content}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      case 'three-columns': {
+        const columnItems = getColumnItems();
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Section Overview'}
+              </h1>
+            </div>
+            <div className="grid grid-cols-3 gap-6 h-4/5">
+              {columnItems.map((point, index) => (
+                <div key={index} className="text-center">
+                  <div className="w-12 h-12 text-white rounded-full flex items-center justify-center text-lg font-bold mx-auto mb-4" style={{ backgroundColor: 'var(--text-primary)' }}>
+                    {index + 1}
+                  </div>
+                  <h3 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                    {point.title || `Point ${index + 1}`}
+                  </h3>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {point.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      case 'full-width': {
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Content Title'}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
+              </p>
+            </div>
+            <div className="space-y-6 h-4/5 overflow-y-auto">
+              {renderParagraph()}
+              {sectionKeyPoints.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
+                  <ul className="space-y-2">
+                    {sectionKeyPoints.map((point, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
+                        <span style={{ color: 'var(--text-primary)' }}>{point.content}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      case 'timeline': {
+        const items = getTimelineItems();
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Timeline'}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
+              </p>
+            </div>
+            <div className="h-4/5 flex items-center">
+              <div className="w-full">
+                <div className="flex items-center justify-between relative">
+                  <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+                  {items.map((item, index) => (
+                    <div key={index} className="relative bg-white px-2">
+                      <div className="w-4 h-4 rounded-full mx-auto mb-3" style={{ backgroundColor: 'var(--text-primary)' }}></div>
+                      <div className="text-center min-w-0">
+                        <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                          {item.title || `Milestone ${index + 1}`}
+                        </h4>
+                        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {item.content}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      case 'process-flow': {
+        const items = getProcessItems();
+        return (
+          <div className="h-full">
+            <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection?.title || storyline?.title || 'Process Flow'}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
+              </p>
+            </div>
+            <div className="h-4/5 flex items-center justify-center">
+              <div className="flex items-center space-x-4">
+                {items.map((item, index) => (
+                  <React.Fragment key={index}>
+                    <div className="text-center">
+                      <div className="w-24 h-16 rounded flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {item.title || `Step ${index + 1}`}
+                        </span>
+                      </div>
+                      <p className="text-xs max-w-24" style={{ color: 'var(--text-secondary)' }}>
+                        {item.content || `Outline step ${index + 1}.`}
+                      </p>
+                    </div>
+                    {index < items.length - 1 && (
+                      <div className="flex items-center">
+                        <div className="w-8 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+                        <div className="w-2 h-2 border-t-2 border-r-2 transform rotate-45 -ml-1" style={{ borderColor: 'var(--border-secondary)' }}></div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      default:
+        return (
+          <div className="h-full flex flex-col justify-center items-center text-gray-500">
+            <p>Select a layout to preview this section.</p>
+          </div>
+        );
+    }
+  };
 
   if (!hasStoryline) {
     return (
@@ -196,29 +682,119 @@ export default function DeliverableLayoutView({
     console.log(`✅ Applied layout ${selectedLayout} to section: ${sectionId}`);
   };
 
-  const handleResetLayoutForSection = (sectionId) => {
-    console.log(`Resetting layout for section: ${sectionId}`);
-    
+  const updateStorylineSection = (sectionId, updater) => {
     if (!storyline || !onStorylineChange) {
-      console.warn('Cannot reset layout: storyline or onStorylineChange not available');
+      console.warn('Cannot update section: storyline or onStorylineChange not available');
       return;
     }
-    
-    // Remove the custom layout from this specific section
+
     const updatedStoryline = {
       ...storyline,
       sections: storyline.sections?.map(section => {
         if (section.id === sectionId || section.title === sectionId) {
-          const { layout, layoutAppliedAt, ...sectionWithoutLayout } = section;
-          return sectionWithoutLayout;
+          return updater(section);
         }
         return section;
       }) || []
     };
-    
-    // Propagate the change up to parent
+
     onStorylineChange(updatedStoryline);
-    console.log(`✅ Reset layout for section: ${sectionId}`);
+  };
+
+  const handleGenerateSlidesForSection = async (sectionId) => {
+    if (!storyline) {
+      alert('No storyline available to generate slides.');
+      return;
+    }
+
+    const targetSection = storyline.sections?.find(
+      section => section.id === sectionId || section.title === sectionId
+    );
+
+    if (!targetSection) {
+      alert('Unable to locate section details for slide generation.');
+      return;
+    }
+
+    setSlideGenerationState(prev => ({
+      ...prev,
+      [sectionId]: { status: 'loading' }
+    }));
+
+    try {
+      const response = await fetch('/api/ai/generate-slides', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sectionId,
+          section: targetSection,
+          storyline: {
+            id: storyline._id || storyline.id,
+            title: storyline.title,
+            description: storyline.description,
+            sectionsCount: storyline.sections?.length || 0
+          },
+          layout: selectedLayout
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || 'Failed to generate slides for this section.');
+      }
+
+      const slidesPayload = Array.isArray(result?.data?.slides)
+        ? result.data.slides
+        : Array.isArray(result?.slides)
+          ? result.slides
+          : [];
+
+      const normalizedSlides = slidesPayload.map((slide, index) => normalizeSlideData(slide, index));
+
+      if (!normalizedSlides.length) {
+        throw new Error('Slide generation completed without returning any slide content.');
+      }
+
+      const generatedAt = new Date().toISOString();
+
+      updateStorylineSection(sectionId, section => ({
+        ...section,
+        slides: normalizedSlides,
+        slidesGeneratedAt: generatedAt,
+        slidesGenerationContext: {
+          source: result?.source || 'custom-agent',
+          agentId: result?.agentId,
+          generatedAt,
+          ...result?.metadata
+        }
+      }));
+
+      setSlideGenerationState(prev => ({
+        ...prev,
+        [sectionId]: {
+          status: 'success',
+          count: normalizedSlides.length,
+          timestamp: generatedAt
+        }
+      }));
+
+      if (!previewSection) {
+        setPreviewSection(sectionId);
+      }
+    } catch (error) {
+      console.error('❌ Slide generation failed:', error);
+      setSlideGenerationState(prev => ({
+        ...prev,
+        [sectionId]: {
+          status: 'error',
+          message: error.message || 'Failed to generate slides.'
+        }
+      }));
+      alert(error.message || 'Failed to generate slides for this section.');
+    }
   };
 
   const toggleSectionCollapse = (sectionId) => {
@@ -255,6 +831,8 @@ export default function DeliverableLayoutView({
           <div className="max-w-4xl mx-auto">
             {/* Slide Preview */}
             <div className="aspect-[16/9] bg-white rounded-lg shadow-sm p-8" style={{ border: '1px solid var(--border-primary)' }}>
+              {renderPreviewContent()}
+              {/*
               {selectedLayout === 'title-2-columns' && (
                 <div className="h-full">
                   <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
@@ -268,34 +846,32 @@ export default function DeliverableLayoutView({
                   <div className="grid grid-cols-2 gap-8 h-4/5">
                     <div className="space-y-4">
                       <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {currentSection?.keyPoints?.[0]?.title || 'Key Points'}
+                        Key Messages
                       </h3>
                       <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {currentSection?.keyPoints?.slice(0, 3).map((point, index) => (
-                          <p key={index}>• {point.content || point}</p>
-                        )) || (
-                          <>
-                            <p>• {currentSection?.description?.substring(0, 50) || 'Content point 1'}</p>
-                            <p>• Content point 2</p>
-                            <p>• Content point 3</p>
-                          </>
-                        )}
+                        {leftColumnPoints.length
+                          ? leftColumnPoints.map(renderBullet)
+                          : (
+                            <>
+                              <p>• Add your first key message</p>
+                              <p>• Add supporting detail</p>
+                            </>
+                          )}
                       </div>
                     </div>
                     <div className="space-y-4">
                       <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {currentSection?.keyPoints?.[1]?.title || 'Additional Points'}
+                        Supporting Points
                       </h3>
                       <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {currentSection?.keyPoints?.slice(3, 6).map((point, index) => (
-                          <p key={index}>• {point.content || point}</p>
-                        )) || (
-                          <>
-                            <p>• Supporting detail 1</p>
-                            <p>• Supporting detail 2</p>
-                            <p>• Supporting detail 3</p>
-                          </>
-                        )}
+                        {rightColumnPoints.length
+                          ? rightColumnPoints.map(renderBullet)
+                          : (
+                            <>
+                              <p>• Add more detail here</p>
+                              <p>• Highlight data, quotes, or proof points</p>
+                            </>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -509,6 +1085,7 @@ export default function DeliverableLayoutView({
                   </div>
                 </div>
               )}
+              */}
             </div>
             
             {/* Apply to Specific Sections - Thinner */}
@@ -523,15 +1100,20 @@ export default function DeliverableLayoutView({
                     { id: '4', title: 'Technical Architecture', status: 'draft', slides: 1 },
                     { id: '5', title: 'Risk Assessment & Compliance', status: 'draft', slides: 1 },
                     { id: '6', title: 'Implementation Roadmap', status: 'draft', slides: 1 }
-                  ]).slice(0, 6).map((section, index) => (
-                    <div key={section.id || index} className="relative">
+                  ]).slice(0, 6).map((section, index) => {
+                    const sectionId = section.id || section.title || `section-${index}`;
+                    const slideState = slideGenerationState[sectionId] || {};
+                    const hasSlides = Array.isArray(section.slides) && section.slides.length > 0;
+
+                    return (
+                    <div key={sectionId} className="relative">
                       {/* Section with Collapse Arrow and Index */}
                       <div className="flex items-start gap-1">
                         {/* Collapse Arrow - Consistent with RightSection pattern */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleSectionCollapse(section.id || index);
+                            toggleSectionCollapse(sectionId);
                           }}
                           className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-200 transition-colors mt-0.5"
                           title={collapsedSections.has(section.id || index) ? 'Expand section' : 'Collapse section'}
@@ -553,12 +1135,12 @@ export default function DeliverableLayoutView({
                         <div className="flex-1 relative">
                           <div 
                             className={`rounded transition-colors cursor-pointer ${
-                              previewSection === section.id ? 'ring-1' : ''
+                              previewSection === sectionId ? 'ring-1' : ''
                             }`}
                             style={{ 
                               border: '1px solid var(--border-primary)',
-                              backgroundColor: previewSection === section.id ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                              ringColor: previewSection === section.id ? 'var(--text-primary)' : 'transparent'
+                              backgroundColor: previewSection === sectionId ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                              ringColor: previewSection === sectionId ? 'var(--text-primary)' : 'transparent'
                             }}
                             onMouseEnter={(e) => {
                               e.target.style.borderColor = 'var(--border-secondary)';
@@ -566,14 +1148,14 @@ export default function DeliverableLayoutView({
                             onMouseLeave={(e) => {
                               e.target.style.borderColor = 'var(--border-primary)';
                             }}
-                            onClick={() => setPreviewSection(section.id)}
+                            onClick={() => setPreviewSection(sectionId)}
                           >
                             {/* Section Header */}
                             <div className="p-1.5 pr-8">
                               <div className="text-xs font-medium truncate leading-tight" style={{ color: 'var(--text-primary)' }}>
                                 {section.title || `Section ${index + 1}`}
                               </div>
-                              {!collapsedSections.has(section.id || index) && (
+                              {!collapsedSections.has(sectionId) && (
                                 <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: 'var(--text-secondary)' }}>
                                   <span>{section.status || 'draft'}</span>
                                   {section.layout && (
@@ -581,12 +1163,17 @@ export default function DeliverableLayoutView({
                                       {LAYOUT_OPTIONS.find(l => l.id === section.layout)?.name.split(' ')[0] || 'Custom'}
                                     </span>
                                   )}
+                                  {hasSlides && (
+                                    <span className="px-1 py-0.5 text-xs rounded bg-purple-100 text-purple-700">
+                                      {section.slides.length} slide{section.slides.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>
                             
                             {/* Expanded Content */}
-                            {!collapsedSections.has(section.id || index) && (
+                            {!collapsedSections.has(sectionId) && (
                               <div className="px-1.5 pb-1.5">
                                 {section.description && (
                                   <div className="text-xs mt-1 px-2" style={{ color: 'var(--text-secondary)' }}>
@@ -611,7 +1198,7 @@ export default function DeliverableLayoutView({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleApplyLayoutToSection(section.id || section.title);
+                                handleApplyLayoutToSection(sectionId);
                               }}
                               className="p-0.5 rounded transition-colors hover:bg-green-100"
                               style={{ 
@@ -623,26 +1210,34 @@ export default function DeliverableLayoutView({
                               <Check size={8} className="text-green-600" />
                             </button>
                             
-                            {/* Reset Layout Icon */}
+                            {/* Generate Slides Icon */}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleResetLayoutForSection(section.id || section.title);
+                                if (slideState.status !== 'loading') {
+                                  handleGenerateSlidesForSection(sectionId);
+                                }
                               }}
-                              className="p-0.5 rounded transition-colors hover:bg-red-100"
+                              className={`p-0.5 rounded transition-colors ${slideState.status === 'loading' ? 'cursor-not-allowed opacity-70' : 'hover:bg-purple-100'}`}
                               style={{ 
                                 backgroundColor: 'white',
                                 border: '1px solid var(--border-primary)'
                               }}
-                              title="Reset Layout"
+                              title={slideState.status === 'loading' ? 'Generating slides…' : 'Generate Slides'}
+                              disabled={slideState.status === 'loading'}
                             >
-                              <X size={8} className="text-red-600" />
+                              {slideState.status === 'loading' ? (
+                                <Loader2 size={10} className="text-purple-600 animate-spin" />
+                              ) : (
+                                <Sparkles size={10} className="text-purple-600" />
+                              )}
                             </button>
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
             )}

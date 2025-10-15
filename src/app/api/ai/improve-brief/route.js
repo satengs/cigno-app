@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { scoreBriefWithAgent } from '../../../../lib/ai/scoreBriefAgent';
 
 function convertToHTML(text) {
   if (!text || typeof text !== 'string') {
@@ -41,7 +42,14 @@ function convertToHTML(text) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { deliverableId, currentBrief, deliverableData, projectData } = body;
+    const {
+      deliverableId,
+      currentBrief,
+      workingDraft,
+      instructions,
+      deliverableData,
+      projectData
+    } = body;
 
     if (!deliverableId) {
       return NextResponse.json(
@@ -50,9 +58,21 @@ export async function POST(request) {
       );
     }
 
-    if (!currentBrief) {
+    if (!currentBrief && !workingDraft) {
       return NextResponse.json(
         { error: 'Current brief content is required' },
+        { status: 400 }
+      );
+    }
+
+    const originalBrief = typeof currentBrief === 'string' ? currentBrief : '';
+    const draftBrief = typeof workingDraft === 'string' && workingDraft.trim()
+      ? workingDraft
+      : originalBrief;
+
+    if (!draftBrief) {
+      return NextResponse.json(
+        { error: 'No brief content provided to improve' },
         { status: 400 }
       );
     }
@@ -66,6 +86,10 @@ export async function POST(request) {
 
     console.log(`📝 Improving brief for deliverable: ${deliverableId}`);
     console.log(`🤖 Using agent: ${AI_CONFIG.briefAgentId}`);
+    
+    // Log the received data for verification
+    console.log('📊 Deliverable Data:', deliverableData);
+    console.log('🏢 Project Data:', projectData);
 
     // Prepare context for brief improvement
     const context = {
@@ -76,47 +100,15 @@ export async function POST(request) {
       projectName: projectData?.name || 'Unknown Project',
       clientName: projectData?.client_name || 'Unknown Client',
       industry: projectData?.industry || 'General',
-      currentBrief: currentBrief,
+      currentBrief: originalBrief,
+      workingDraft: draftBrief,
+      instructions: instructions || '',
       requestType: 'brief_improvement'
     };
 
-    const message = `Improve the following deliverable brief to make it more comprehensive, clear, and actionable.
+    const message = draftBrief;
 
-Deliverable Details:
-- Name: ${deliverableData?.title || 'Unknown Deliverable'}
-- Type: ${deliverableData?.type || 'presentation'}
-- Audience: ${deliverableData?.audience?.join(', ') || 'Not specified'}
-- Project: ${projectData?.name || 'Unknown Project'}
-- Client: ${projectData?.client_name || 'Unknown Client'}
-- Industry: ${projectData?.industry || 'General'}
-
-Current Brief:
-"${currentBrief}"
-
-Please improve this brief by:
-1. Adding more specific objectives and success criteria
-2. Clarifying the target audience and their needs
-3. Including relevant market context and industry considerations
-4. Suggesting key messaging and strategic positioning
-5. Recommending supporting data and evidence needed
-6. Outlining potential challenges and how to address them
-
-Provide the improved brief as a well-structured, comprehensive document that gives clear direction for creating the deliverable. Also provide a brief quality score improvement explanation.
-
-Return the response as JSON with:
-- improvedBrief: The enhanced brief content formatted as HTML with proper structure (headings, paragraphs, lists, etc.)
-- qualityScore: Estimated quality score (0-10)
-- improvements: Array of specific improvements made
-- suggestions: Additional recommendations
-
-Format the improvedBrief as clean HTML with:
-- <h1> for main title
-- <h2> for major sections 
-- <h3> for subsections
-- <p> for paragraphs
-- <ul>/<li> for bullet points
-- <strong> for emphasis
-- <em> for italics where appropriate`;
+    console.log('📤 Context sent to agent:', JSON.stringify(context, null, 2));
 
     const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.briefAgentId}/execute`, {
       method: 'POST',
@@ -154,13 +146,24 @@ Format the improvedBrief as clean HTML with:
         }
       };
     }
-    
+
+    const improvedBriefHtml =
+      (typeof processedResult === 'object' && processedResult !== null && processedResult.improvedBrief)
+        ? processedResult.improvedBrief
+        : (typeof processedResult === 'string'
+            ? convertToHTML(processedResult)
+            : (processedResult?.response?.improvedBrief ? convertToHTML(processedResult.response.improvedBrief) : ''));
+
+    const payloadForClient = (typeof processedResult === 'object' && processedResult !== null)
+      ? { ...processedResult, improvedBrief: processedResult.improvedBrief || improvedBriefHtml }
+      : { improvedBrief: improvedBriefHtml };
+
     return NextResponse.json({
       success: true,
       source: 'custom-agent',
       agentId: AI_CONFIG.briefAgentId,
       deliverableId: deliverableId,
-      data: processedResult
+      data: payloadForClient
     });
 
   } catch (error) {

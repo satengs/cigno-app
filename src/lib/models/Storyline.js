@@ -14,6 +14,37 @@ const sectionSchema = new mongoose.Schema({
     type: String,
     maxlength: 1000
   },
+  markdown: {
+    type: String
+  },
+  html: {
+    type: String
+  },
+  charts: [{
+    id: {
+      type: String
+    },
+    title: {
+      type: String
+    },
+    caption: {
+      type: String
+    },
+    source: {
+      type: String
+    },
+    config: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({})
+    },
+    attributes: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({})
+    },
+    raw: {
+      type: String
+    }
+  }],
   status: {
     type: String,
     enum: ['not_started', 'draft', 'in_review', 'final', 'locked'],

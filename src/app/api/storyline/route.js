@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '../../../lib/db/mongoose.js';
 import Storyline from '../../../lib/models/Storyline.js';
 import Deliverable from '../../../lib/models/Deliverable.js';
-import User from '../../../lib/models/User.js';
+import { createSectionRecord, ensureSectionHasRenderedContent } from '../../../lib/storyline/sectionUtils.js';
 
 export async function POST(request) {
   try {
@@ -142,128 +142,168 @@ Make sure the storyline is:
         // Convert storylineResponse to database format
         let sections = [];
         
+        const timestamp = new Date();
+
         if (isRegeneration && existingStoryline) {
-          // For regeneration: merge locked sections with new AI-generated sections
           console.log('🔄 Merging locked sections with regenerated content');
-          
-          // Create a map of new sections from AI response
-          const newSections = [
-            // Executive Summary section (only if not locked)
-            ...(lockedSections.some(s => s.order === 0) ? [] : [{
-              id: 'exec_summary',
-              title: storylineResponse.executiveSummary?.title || 'Executive Summary',
-              description: storylineResponse.executiveSummary?.keyMessages?.join('. ') || '',
-              status: 'draft',
-              order: 0,
-              keyPoints: storylineResponse.executiveSummary?.keyMessages || [],
-              contentBlocks: [{
-                type: 'Key Insights',
-                items: storylineResponse.executiveSummary?.keyMessages || []
-              }],
-              locked: false,
-              created_at: new Date(),
-              updated_at: new Date()
-            }]),
-            // Main sections (only for non-locked orders)
-            ...((storylineResponse.mainSections || []).map((section, index) => {
-              const order = index + 1;
-              return lockedSections.some(s => s.order === order) ? null : {
-                id: `section_${order}`,
-                title: section.title,
-                description: section.keyMessages?.join('. ') || '',
+
+          const normalizedLockedSections = lockedSections.map(section => {
+            const orderValue = Number.isFinite(section.order) ? section.order : 0;
+            return {
+              ...ensureSectionHasRenderedContent(section, {
+                order: orderValue,
+                fallbackTitle: section.title,
+                defaultContentType: section.contentBlocks?.[0]?.type
+              }),
+              order: orderValue,
+              locked: true
+            };
+          });
+
+          const lockedByOrder = new Map(
+            normalizedLockedSections.map(section => [section.order, section])
+          );
+
+          const lockedOrders = new Set(lockedByOrder.keys());
+          const newSectionCandidates = [];
+
+          if (!lockedOrders.has(0)) {
+            newSectionCandidates.push(
+              createSectionRecord(storylineResponse.executiveSummary, {
+                id: 'exec_summary',
+                order: 0,
                 status: 'draft',
-                order: order,
-                keyPoints: section.keyMessages || [],
-                contentBlocks: [{
-                  type: getContentBlockType(section.contentType),
-                  items: section.keyMessages || []
-                }],
                 locked: false,
-                created_at: new Date(),
-                updated_at: new Date()
-              };
-            }).filter(Boolean))
-          ];
-          
-          // Merge locked and new sections, maintaining order
-          const maxOrder = Math.max(...existingStoryline.sections.map(s => s.order || 0), 0);
-          for (let i = 0; i <= maxOrder; i++) {
-            const lockedSection = lockedSections.find(s => s.order === i);
-            const newSection = newSections.find(s => s.order === i);
-            
-            if (lockedSection) {
-              sections.push(lockedSection); // Keep locked section unchanged
-            } else if (newSection) {
-              sections.push(newSection); // Use new AI-generated section
-            }
+                fallbackTitle: storylineResponse.executiveSummary?.title || 'Executive Summary',
+                defaultContentType: 'Key Insights',
+                createdAt: timestamp,
+                updatedAt: timestamp
+              })
+            );
           }
-          
+
+          const mainSections = Array.isArray(storylineResponse.mainSections)
+            ? storylineResponse.mainSections
+            : [];
+
+          mainSections.forEach((section, index) => {
+            const order = index + 1;
+            if (lockedOrders.has(order)) return;
+            newSectionCandidates.push(
+              createSectionRecord(section, {
+                id: section.id || `section_${order}`,
+                order,
+                status: 'draft',
+                locked: false,
+                fallbackTitle: section.title || `Section ${order}`,
+                defaultContentType: section.contentType || 'Content Block',
+                createdAt: timestamp,
+                updatedAt: timestamp
+              })
+            );
+          });
+
+          const callToActionOrder = mainSections.length + 1;
+          if (!lockedOrders.has(callToActionOrder)) {
+            newSectionCandidates.push(
+              createSectionRecord(storylineResponse.callToAction, {
+                id: 'call_to_action',
+                order: callToActionOrder,
+                status: 'draft',
+                locked: false,
+                fallbackTitle: storylineResponse.callToAction?.title || 'Next Steps',
+                defaultContentType: storylineResponse.callToAction?.contentType || 'Process Flow',
+                createdAt: timestamp,
+                updatedAt: timestamp
+              })
+            );
+          }
+
+          const newSectionsByOrder = new Map(
+            newSectionCandidates.map(section => [section.order, section])
+          );
+
+          const allOrders = new Set([
+            ...lockedByOrder.keys(),
+            ...newSectionsByOrder.keys()
+          ]);
+
+          sections = Array.from(allOrders)
+            .sort((a, b) => a - b)
+            .map(order => lockedByOrder.get(order) || newSectionsByOrder.get(order))
+            .filter(Boolean);
+
           console.log('✅ Merged sections:', {
             totalSections: sections.length,
-            preservedLocked: lockedSections.length,
-            regeneratedNew: sections.length - lockedSections.length
+            preservedLocked: normalizedLockedSections.length,
+            regeneratedNew: newSectionCandidates.length
           });
-          
         } else {
-          // For new generation: create sections normally
-          sections = [
-            // Executive Summary section
-            {
+          const builtSections = [];
+
+          builtSections.push(
+            createSectionRecord(storylineResponse.executiveSummary, {
               id: 'exec_summary',
-              title: storylineResponse.executiveSummary?.title || 'Executive Summary',
-              description: storylineResponse.executiveSummary?.keyMessages?.join('. ') || '',
-              status: 'draft',
               order: 0,
-              keyPoints: storylineResponse.executiveSummary?.keyMessages || [],
-              contentBlocks: [{
-                type: 'Key Insights',
-                items: storylineResponse.executiveSummary?.keyMessages || []
-              }],
+              status: 'draft',
               locked: false,
-              created_at: new Date(),
-              updated_at: new Date()
-            },
-            // Main sections
-            ...((storylineResponse.mainSections || []).map((section, index) => ({
-              id: `section_${index + 1}`,
-              title: section.title,
-              description: section.keyMessages?.join('. ') || '',
-              status: 'not_started',
-              order: index + 1,
-              keyPoints: section.keyMessages || [],
-              contentBlocks: [{
-                type: getContentBlockType(section.contentType),
-                items: section.keyMessages || []
-              }],
-              locked: false,
-              created_at: new Date(),
-              updated_at: new Date()
-            }))),
-            // Call to Action section
-            {
+              fallbackTitle: storylineResponse.executiveSummary?.title || 'Executive Summary',
+              defaultContentType: 'Key Insights',
+              createdAt: timestamp,
+              updatedAt: timestamp
+            })
+          );
+
+          const mainSections = Array.isArray(storylineResponse.mainSections)
+            ? storylineResponse.mainSections
+            : [];
+
+          mainSections.forEach((section, index) => {
+            builtSections.push(
+              createSectionRecord(section, {
+                id: section.id || `section_${index + 1}`,
+                order: index + 1,
+                status: 'not_started',
+                locked: false,
+                fallbackTitle: section.title || `Section ${index + 1}`,
+                defaultContentType: section.contentType || 'Content Block',
+                createdAt: timestamp,
+                updatedAt: timestamp
+              })
+            );
+          });
+
+          builtSections.push(
+            createSectionRecord(storylineResponse.callToAction, {
               id: 'call_to_action',
-              title: storylineResponse.callToAction?.title || 'Next Steps',
-              description: storylineResponse.callToAction?.keyMessages?.join('. ') || '',
+              order: mainSections.length + 1,
               status: 'not_started',
-              order: (storylineResponse.mainSections?.length || 0) + 1,
-              keyPoints: storylineResponse.callToAction?.keyMessages || [],
-              contentBlocks: [{
-                type: 'Process Flow',
-                items: storylineResponse.callToAction?.keyMessages || []
-              }],
               locked: false,
-              created_at: new Date(),
-              updated_at: new Date()
-            }
-          ];
+              fallbackTitle: storylineResponse.callToAction?.title || 'Next Steps',
+              defaultContentType: storylineResponse.callToAction?.contentType || 'Process Flow',
+              createdAt: timestamp,
+              updatedAt: timestamp
+            })
+          );
+
+          sections = builtSections.filter(Boolean);
         }
         
+        const executiveSummarySection = sections.find(section => section.id === 'exec_summary');
+        const callToActionSection = sections.find(section => section.id === 'call_to_action');
+
         const storylineDoc = {
           deliverable: deliverableId,
           title: `${name} Storyline`,
-          executiveSummary: storylineResponse.executiveSummary?.keyMessages?.join('. ') || 'AI-generated executive summary.',
+          executiveSummary: executiveSummarySection?.description
+            || executiveSummarySection?.keyPoints?.join('. ')
+            || executiveSummarySection?.markdown
+            || 'AI-generated executive summary.',
           presentationFlow: 'Structured narrative flow connecting all sections logically.',
-          callToAction: storylineResponse.callToAction?.keyMessages?.join('. ') || 'Recommended next steps based on analysis.',
+          callToAction: callToActionSection?.description
+            || callToActionSection?.keyPoints?.join('. ')
+            || callToActionSection?.markdown
+            || 'Recommended next steps based on analysis.',
           sections: sections,
           topic: name,
           industry: 'Financial Services', // Default based on CBDC context
@@ -491,26 +531,3 @@ function incrementVersion(currentVersion) {
 }
 
 // Helper function to map content type to content block type
-function getContentBlockType(contentType) {
-  if (!contentType) return 'Content Block';
-  
-  const typeMap = {
-    'charts': 'Data Visualization',
-    'diagrams': 'Process Flow',
-    'timeline': 'Timeline Layout',
-    'framework': 'MECE Framework',
-    'analysis': 'Key Insights',
-    'checklist': 'Process Flow',
-    'models': 'BCG Matrix',
-    'projections': 'Data Visualization'
-  };
-  
-  const lowerType = contentType.toLowerCase();
-  for (const [key, value] of Object.entries(typeMap)) {
-    if (lowerType.includes(key)) {
-      return value;
-    }
-  }
-  
-  return 'Content Block';
-}

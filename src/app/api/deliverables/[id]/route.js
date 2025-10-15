@@ -5,6 +5,22 @@ import Project from '../../../../lib/models/Project';
 import User from '../../../../lib/models/User';
 import mongoose from 'mongoose';
 
+const normalizeList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n;,•\-]+/)
+      .map(item => item.replace(/^[-•\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  return [String(value)];
+};
+
 export async function GET(request, { params }) {
   try {
     await connectDB();
@@ -49,7 +65,7 @@ export async function PATCH(request, { params }) {
     
     const { id } = params;
     const updates = await request.json();
-    
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { error: 'Invalid deliverable ID' },
@@ -57,9 +73,34 @@ export async function PATCH(request, { params }) {
       );
     }
 
+    const sanitizedUpdates = { ...updates };
+
+    if ('brief_quality' in sanitizedUpdates) {
+      const numericQuality = Number(sanitizedUpdates.brief_quality);
+      sanitizedUpdates.brief_quality = Number.isFinite(numericQuality)
+        ? Number(numericQuality.toFixed(1))
+        : null;
+    }
+
+    if ('brief_strengths' in sanitizedUpdates) {
+      sanitizedUpdates.brief_strengths = normalizeList(sanitizedUpdates.brief_strengths);
+    }
+
+    if ('brief_improvements' in sanitizedUpdates) {
+      sanitizedUpdates.brief_improvements = normalizeList(sanitizedUpdates.brief_improvements);
+    }
+
+    if (
+      'brief_quality' in sanitizedUpdates ||
+      'brief_strengths' in sanitizedUpdates ||
+      'brief_improvements' in sanitizedUpdates
+    ) {
+      sanitizedUpdates.brief_last_evaluated_at = new Date();
+    }
+
     const deliverable = await Deliverable.findByIdAndUpdate(
       id,
-      { ...updates, updated_at: new Date() },
+      { ...sanitizedUpdates, updated_at: new Date() },
       { new: true, runValidators: true }
     ).lean();
 

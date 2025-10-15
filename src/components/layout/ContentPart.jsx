@@ -15,19 +15,123 @@ import { normalizeStatus } from '../../lib/constants/enums';
 import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
 import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
 import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
+import {
+  filterSectionsForRegeneration,
+  createRegenerationPayload,
+  createStorylineBackup
+} from '../../lib/storyline/regenerationUtils';
+import { parseMarkdownWithCharts, deriveSectionMetadata } from '../../lib/markdown/markdownParser';
+
+const normalizeInsightList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .flatMap(item => normalizeInsightList(item))
+      .map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n\r•\-;]+/)
+      .map(item => item.replace(/^[-•\d.\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'object') {
+    return Object.values(value)
+      .flatMap(item => normalizeInsightList(item))
+      .filter(Boolean);
+  }
+  return [String(value).trim()].filter(Boolean);
+};
+
+const collectCandidateNodes = (payload) => {
+  const nodes = [];
+  const visited = new Set();
+
+  const addNode = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (visited.has(node)) return;
+    visited.add(node);
+    nodes.push(node);
+  };
+
+  addNode(payload);
+  addNode(payload?.data);
+  addNode(payload?.response);
+  addNode(payload?.result);
+  addNode(payload?.results);
+  addNode(payload?.analysis);
+  addNode(payload?.analytics);
+  addNode(payload?.metrics);
+  addNode(payload?.scoring);
+  addNode(payload?.scoring?.data);
+  addNode(payload?.quality);
+  addNode(payload?.briefQuality);
+  addNode(payload?.evaluation);
+  addNode(payload?.summary);
+
+  if (Array.isArray(payload?.sections)) {
+    payload.sections.forEach(addNode);
+  }
+
+  if (Array.isArray(payload?.insights)) {
+    payload.insights.forEach(addNode);
+  }
+
+  return nodes;
+};
+
+const extractListFromNodes = (nodes, keys) => {
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue;
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(node, key)) {
+        const normalized = normalizeInsightList(node[key]);
+        if (normalized.length) {
+          return normalized;
+        }
+      }
+    }
+  }
+  return [];
+};
+
+const extractNumberFromNodes = (nodes, keys) => {
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+      const rawValue = node[key];
+      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        return rawValue;
+      }
+      const numericValue = Number(rawValue);
+      if (Number.isFinite(numericValue)) {
+        return numericValue;
+      }
+      if (rawValue && typeof rawValue === 'object') {
+        if (Number.isFinite(Number(rawValue.value))) {
+          return Number(rawValue.value);
+        }
+        if (Number.isFinite(Number(rawValue.score))) {
+          return Number(rawValue.score);
+        }
+      }
+    }
+  }
+  return null;
+};
 
 export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase, onViewChange, selectedLayout, onStorylineChange }) {
   const [formData, setFormData] = useState({
     name: '',
     audience: [],
     type: 'Strategy Presentation',
-    format: 'PPT',
     due_date: '',
-    document_length: 25,
     brief: '',
     brief_quality: 7.5,
-    strengths: 'Technical requirements well defined',
-    improvements: 'Add geographical scope and timeline constraints'
+    brief_strengths: ['Technical requirements well defined'],
+    brief_improvements: ['Add geographical scope and timeline constraints']
   });
 
   const [newAudience, setNewAudience] = useState('');
@@ -38,6 +142,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
   const [isSavingStoryline, setIsSavingStoryline] = useState(false);
   const [storylineDirty, setStorylineDirty] = useState(false);
+  const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
+  const [slideGenerationProgress, setSlideGenerationProgress] = useState({ completed: 0, total: 0 });
   const [projectForm, setProjectForm] = useState({
     name: '',
     description: '',
@@ -57,6 +163,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [addItemType, setAddItemType] = useState(null);
   const [parentId, setParentId] = useState(null);
   const [isDeliverablesOpen, setIsDeliverablesOpen] = useState(true);
+  const [sectionToRemove, setSectionToRemove] = useState(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isTestingBrief, setIsTestingBrief] = useState(false);
 
   const formatDateForInput = useCallback((value) => {
     if (!value) return '';
@@ -137,7 +246,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       id: deliverable._id || deliverable.id || metadata.deliverableId || metadata.id || `deliverable_${index + 1}`,
       _id: deliverable._id || deliverable.id || metadata.deliverableId || metadata.id || `deliverable_${index + 1}`,
       name: deliverable.name || deliverable.title || metadata.title || `Deliverable ${index + 1}`,
-      type: deliverable.type || deliverable.format || metadata.type || 'Deliverable',
+      type: deliverable.type || metadata.type || 'Deliverable',
       status: deliverable.status || metadata.status || 'draft',
       dueDate: deliverable.due_date || deliverable.dueDate || metadata.due_date || metadata.dueDate || null,
       description: deliverable.description || metadata.description || '',
@@ -151,6 +260,157 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     if (!Array.isArray(list)) return [];
     return list.map((item, index) => normalizeDeliverable(item, index));
   }, [normalizeDeliverable]);
+
+  const normalizeSlideForState = useCallback((slide, index = 0, fallbackLayout = 'title-2-columns') => {
+    const toArray = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        const text = value.trim();
+        if (!text) return [];
+        try {
+          const parsed = JSON.parse(text);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch (error) {
+          return text
+            .split(/\n|•|-/)
+            .map(item => item.trim())
+            .filter(Boolean);
+        }
+      }
+      return [value];
+    };
+
+    if (!slide) {
+      return {
+        title: `Slide ${index + 1}`,
+        summary: '',
+        bullets: [],
+        layout: fallbackLayout
+      };
+    }
+
+    if (typeof slide === 'string') {
+      const text = slide.trim();
+      const bullets = text
+        .split(/\n|•|-/)
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      return {
+        title: `Slide ${index + 1}`,
+        summary: text,
+        bullets,
+        layout: fallbackLayout
+      };
+    }
+
+    const bullets = toArray(slide.bullets || slide.points || slide.keyPoints)
+      .map(item => (typeof item === 'string' ? item.trim() : item?.content || item?.text || item?.description || ''))
+      .filter(Boolean);
+
+    let summary = '';
+    if (typeof slide.summary === 'string') summary = slide.summary.trim();
+    else if (typeof slide.description === 'string') summary = slide.description.trim();
+    else if (typeof slide.content === 'string') summary = slide.content.trim();
+    else if (Array.isArray(slide.paragraphs)) summary = slide.paragraphs.filter(Boolean).join(' ');
+
+    return {
+      title: slide.title || slide.heading || slide.name || `Slide ${index + 1}`,
+      subtitle: slide.subtitle || slide.subheading || '',
+      summary,
+      bullets,
+      notes: slide.notes || slide.speakerNotes || '',
+      layout: slide.layout || slide.format || fallbackLayout
+    };
+  }, []);
+
+  const normalizeSectionForState = useCallback((section, index = 0) => ({
+    id: section.id || section._id || `section_${index + 1}`,
+    title: section.title,
+    description: section.description,
+    markdown: typeof section.markdown === 'string' ? section.markdown : '',
+    html: typeof section.html === 'string' ? section.html : '',
+    charts: Array.isArray(section.charts)
+      ? section.charts.map((chart, chartIndex) => ({
+          id: chart.id || `chart-${chartIndex + 1}`,
+          title: chart.title || '',
+          caption: chart.caption || '',
+          source: chart.source || '',
+          config: chart.config || {},
+          attributes: chart.attributes || {},
+          raw: chart.raw || ''
+        }))
+      : [],
+    status: section.status || 'draft',
+    order: section.order ?? index,
+    keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+    contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+    estimatedSlides: section.estimatedSlides || section.estimated_pages || section.estimatedPages,
+    slides: Array.isArray(section.slides)
+      ? section.slides.map((slide, slideIndex) => normalizeSlideForState(slide, slideIndex, section.layout || 'title-2-columns'))
+      : [],
+    slidesGeneratedAt: section.slidesGeneratedAt || section.slides_generated_at || null,
+    slidesGenerationContext: section.slidesGenerationContext || section.slides_generation_context || null,
+    locked: !!section.locked,
+    lockedBy: section.lockedBy,
+    lockedAt: section.lockedAt,
+    created_at: section.created_at || section.createdAt,
+    updated_at: section.updated_at || section.updatedAt
+  }), [normalizeSlideForState]);
+
+  const sanitizeStorylineForApi = useCallback((storyline) => {
+    if (!storyline) return null;
+
+    return {
+      _id: storyline._id,
+      id: storyline.id,
+      title: storyline.title,
+      status: storyline.status,
+      version: storyline.version,
+      executiveSummary: storyline.executiveSummary,
+      presentationFlow: storyline.presentationFlow,
+      callToAction: storyline.callToAction,
+      sections: (storyline.sections || []).map((section, index) => ({
+        id: section.id || `section_${index + 1}`,
+        title: section.title,
+        description: section.description,
+        markdown: section.markdown,
+        html: section.html,
+        charts: (section.charts || []).map((chart, chartIndex) => ({
+          id: chart.id || `chart-${chartIndex + 1}`,
+          title: chart.title || '',
+          caption: chart.caption || '',
+          source: chart.source || '',
+          config: chart.config || {},
+          attributes: chart.attributes || {},
+          raw: chart.raw || ''
+        })),
+        slides: Array.isArray(section.slides)
+          ? section.slides.map((slide, slideIndex) => ({
+              title: slide.title || `Slide ${slideIndex + 1}`,
+              subtitle: slide.subtitle || '',
+              summary: slide.summary || '',
+              bullets: Array.isArray(slide.bullets) ? slide.bullets : [],
+              notes: slide.notes || '',
+              layout: slide.layout || section.layout || 'title-2-columns'
+            }))
+          : [],
+        slidesGeneratedAt: section.slidesGeneratedAt,
+        slidesGenerationContext: section.slidesGenerationContext,
+        status: section.status || 'draft',
+        order: section.order ?? index,
+        keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+        contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+        estimatedSlides: section.estimatedSlides,
+        locked: !!section.locked,
+        lockedBy: section.lockedBy,
+        lockedAt: section.lockedAt,
+        created_at: section.created_at,
+        updated_at: section.updated_at
+      }))
+    };
+  }, []);
 
   const fetchProjectDeliverables = useCallback(async (projectId) => {
     if (!projectId) return;
@@ -195,19 +455,32 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             const deliverableData = data.data?.deliverable || data.data || data;
             
             console.log('✅ Fetched deliverable data:', deliverableData);
+            const strengthsFromData = normalizeInsightList(
+              deliverableData.brief_strengths ??
+              deliverableData.strengths ??
+              deliverableData.recognized_strengths ??
+              deliverableData.recognizedStrengths ??
+              selectedItem.strengths
+            );
+
+            const improvementsFromData = normalizeInsightList(
+              deliverableData.brief_improvements ??
+              deliverableData.improvements ??
+              deliverableData.suggested_improvements ??
+              deliverableData.suggestedImprovements ??
+              selectedItem.improvements
+            );
             
             setFormData({
               name: deliverableData.name || selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: deliverableData.audience || selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: deliverableData.type || selectedItem.type || 'Strategy Presentation',
-              format: mapFormatFromSchema(deliverableData.format || selectedItem.format || 'PPT'),
               due_date: deliverableData.due_date ? new Date(deliverableData.due_date).toISOString().split('T')[0] : 
                        selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
-              document_length: deliverableData.document_length || selectedItem.document_length || 25,
               brief: deliverableData.brief || selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
               brief_quality: deliverableData.brief_quality || selectedItem.brief_quality || 7.5,
-              strengths: deliverableData.strengths || selectedItem.strengths || 'Technical requirements well defined',
-              improvements: deliverableData.improvements || selectedItem.improvements || 'Add geographical scope and timeline constraints'
+              brief_strengths: strengthsFromData.length ? strengthsFromData : ['Technical requirements well defined'],
+              brief_improvements: improvementsFromData.length ? improvementsFromData : ['Add geographical scope and timeline constraints']
             });
           } else {
             console.log('⚠️ Failed to fetch deliverable data, using selectedItem data');
@@ -216,13 +489,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: selectedItem.type || 'Strategy Presentation',
-              format: mapFormatFromSchema(selectedItem.format || 'PPT'),
               due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
-              document_length: selectedItem.document_length || 25,
               brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
               brief_quality: selectedItem.brief_quality || 7.5,
-              strengths: selectedItem.strengths || 'Technical requirements well defined',
-              improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
+              brief_strengths: normalizeInsightList(selectedItem.strengths).length
+                ? normalizeInsightList(selectedItem.strengths)
+                : ['Technical requirements well defined'],
+              brief_improvements: normalizeInsightList(selectedItem.improvements).length
+                ? normalizeInsightList(selectedItem.improvements)
+                : ['Add geographical scope and timeline constraints']
             });
           }
         } catch (error) {
@@ -232,13 +507,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
             audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
             type: selectedItem.type || 'Strategy Presentation',
-            format: selectedItem.format || 'PPT',
             due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
-            document_length: selectedItem.document_length || 25,
             brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
             brief_quality: selectedItem.brief_quality || 7.5,
-            strengths: selectedItem.strengths || 'Technical requirements well defined',
-            improvements: selectedItem.improvements || 'Add geographical scope and timeline constraints'
+            brief_strengths: normalizeInsightList(selectedItem.strengths).length
+              ? normalizeInsightList(selectedItem.strengths)
+              : ['Technical requirements well defined'],
+            brief_improvements: normalizeInsightList(selectedItem.improvements).length
+              ? normalizeInsightList(selectedItem.improvements)
+              : ['Add geographical scope and timeline constraints']
           });
         }
       };
@@ -293,18 +570,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         
         setGeneratedStoryline({
           ...existingStoryline,
-          sections: (existingStoryline.sections || []).map((section, index) => ({
-            id: section.id || section._id || `section_${index + 1}`,
-            title: section.title,
-            description: section.description,
-            status: section.status || 'draft',
-            order: section.order ?? index,
-            keyPoints: section.keyPoints || [],
-            contentBlocks: section.contentBlocks || [],
-            locked: !!section.locked,
-            lockedBy: section.lockedBy,
-            lockedAt: section.lockedAt
-          }))
+          sections: (existingStoryline.sections || []).map((section, index) =>
+            normalizeSectionForState(section, index)
+          )
         });
         // Don't automatically switch to storyline view - let user choose
         setCurrentSectionIndex(0);
@@ -352,18 +620,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         
         const storylineData = {
           ...existingStoryline,
-          sections: (existingStoryline.sections || []).map((section, index) => ({
-            id: section.id || section._id || `section_${index + 1}`,
-            title: section.title,
-            description: section.description,
-            status: section.status || 'draft',
-            order: section.order ?? index,
-            keyPoints: section.keyPoints || [],
-            contentBlocks: section.contentBlocks || [],
-            locked: !!section.locked,
-            lockedBy: section.lockedBy,
-            lockedAt: section.lockedAt
-          }))
+          sections: (existingStoryline.sections || []).map((section, index) =>
+            normalizeSectionForState(section, index)
+          )
         };
         
         setGeneratedStoryline(storylineData);
@@ -412,6 +671,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     handleSectionUpdate(sectionId, { keyPoints });
   };
 
+  const handleRemoveSection = (sectionId) => {
+    if (!generatedStoryline) return;
+    setSectionToRemove(sectionId);
+  };
+
   const handleSaveStoryline = async () => {
     console.log('🔍 Save storyline called, generatedStoryline:', generatedStoryline);
     console.log('🔍 Storyline _id:', generatedStoryline?._id);
@@ -439,6 +703,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           id: section.id || `section_${index + 1}`,
           title: section.title,
           description: section.description,
+          markdown: typeof section.markdown === 'string' ? section.markdown : '',
+          html: typeof section.html === 'string' ? section.html : '',
+          charts: Array.isArray(section.charts) ? section.charts : [],
           status: normalizeStatus(section.status, 'draft'),
           order: section.order ?? index,
           keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
@@ -491,19 +758,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       const updatedStoryline = result.data || result.storyline || result;
       setGeneratedStoryline({
         ...updatedStoryline,
-        sections: (updatedStoryline.sections || []).map((section, index) => ({
-          id: section.id || section._id || `section_${index + 1}`,
-          title: section.title,
-          description: section.description,
-          status: section.status,
-          order: section.order ?? index,
-          keyPoints: section.keyPoints || [],
-          contentBlocks: section.contentBlocks || [],
-          estimatedSlides: section.estimatedSlides || 3,
-          locked: !!section.locked,
-          lockedBy: section.lockedBy,
-          lockedAt: section.lockedAt
-        }))
+        sections: (updatedStoryline.sections || []).map((section, index) =>
+          normalizeSectionForState(section, index)
+        )
       });
       setStorylineDirty(false);
     } catch (error) {
@@ -778,18 +1035,159 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   };
 
+  const handleTestBrief = async () => {
+    if (isTestingBrief) {
+      return;
+    }
+
+    const briefToEvaluate = (formData.brief || '').trim();
+    if (!briefToEvaluate) {
+      alert('Add brief content before testing.');
+      return;
+    }
+
+    const deliverableId = selectedItem?.type === 'deliverable'
+      ? (selectedItem.metadata?.deliverableId || selectedItem.metadata?.deliverable_id || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id)
+      : (selectedItem?._id || selectedItem?.id);
+
+    if (!deliverableId) {
+      alert('Unable to resolve the deliverable identifier.');
+      return;
+    }
+
+    setIsTestingBrief(true);
+
+    try {
+      const response = await fetch('/api/ai/score-brief', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          deliverableId,
+          currentBrief: briefToEvaluate,
+          deliverableData: {
+            title: formData.name,
+            type: formData.type,
+            audience: formData.audience,
+            priority: selectedItem?.priority || selectedItem?.metadata?.priority,
+            dueDate: formData.due_date,
+            summary: selectedItem?.description || selectedItem?.summary || ''
+          },
+          projectData: {
+            ...projectForm,
+            name: projectForm?.name || selectedItem?.metadata?.project_name || projectForm?.project_name,
+            client_name: projectForm?.client_name || selectedItem?.metadata?.client_name,
+            industry: projectForm?.industry || selectedItem?.metadata?.industry
+          }
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || result?.details || 'Failed to evaluate brief.');
+      }
+
+      const payload = result?.data || result;
+      const candidateNodes = collectCandidateNodes(payload);
+
+      const scoreValue = extractNumberFromNodes(candidateNodes, [
+        'qualityScore',
+        'score',
+        'rating',
+        'overallScore',
+        'briefQuality',
+        'quality'
+      ]);
+
+      let strengthsList = extractListFromNodes(candidateNodes, [
+        'recognizedStrengths',
+        'recognized_strengths',
+        'strengths',
+        'highlights',
+        'positives',
+        'whatWentWell'
+      ]);
+
+      let improvementsList = extractListFromNodes(candidateNodes, [
+        'suggestedImprovements',
+        'suggested_improvements',
+        'improvements',
+        'improvementAreas',
+        'improvement_areas',
+        'areasForImprovement',
+        'areas_for_improvement',
+        'gaps',
+        'opportunities',
+        'nextSteps',
+        'recommendedImprovements'
+      ]);
+
+      if (!strengthsList.length && payload?.strengths) {
+        strengthsList = normalizeInsightList(payload.strengths);
+      }
+      if (!improvementsList.length && payload?.improvements) {
+        improvementsList = normalizeInsightList(payload.improvements);
+      }
+
+      const normalizedScore = Number.isFinite(scoreValue)
+        ? Number(scoreValue.toFixed(1))
+        : formData.brief_quality;
+
+      setFormData((prev) => ({
+        ...prev,
+        brief_quality: normalizedScore ?? prev.brief_quality,
+        brief_strengths: strengthsList.length ? strengthsList : prev.brief_strengths,
+        brief_improvements: improvementsList.length ? improvementsList : prev.brief_improvements
+      }));
+
+      console.log('✅ Brief evaluated', {
+        source: result?.source || 'custom-agent',
+        deliverableId,
+        score: normalizedScore ?? formData.brief_quality
+      });
+    } catch (error) {
+      console.error('❌ Error testing brief:', error);
+      alert(error.message || 'Failed to evaluate brief.');
+    } finally {
+      setIsTestingBrief(false);
+    }
+  };
+
   const handleImproveBrief = () => {
     setShowImproveBrief(true);
   };
 
-  const handleBriefSave = (improvedBrief, qualityScore, strengths, improvements) => {
-    setFormData(prev => ({
-      ...prev,
-      brief: improvedBrief,
-      brief_quality: qualityScore,
-      strengths: strengths,
-      improvements: improvements
-    }));
+  const handleBriefSave = (payloadOrBrief, legacyQuality, legacyStrengths, legacyImprovements) => {
+    let improvedBriefValue = payloadOrBrief;
+    let qualityValue = legacyQuality;
+    let strengthsArray = normalizeInsightList(legacyStrengths);
+    let improvementsArray = normalizeInsightList(legacyImprovements);
+
+    if (payloadOrBrief && typeof payloadOrBrief === 'object' && !Array.isArray(payloadOrBrief)) {
+      improvedBriefValue = payloadOrBrief.brief ?? payloadOrBrief.improvedBrief ?? '';
+      qualityValue = payloadOrBrief.qualityScore ?? payloadOrBrief.score ?? legacyQuality;
+      strengthsArray = normalizeInsightList(payloadOrBrief.strengths ?? payloadOrBrief.strengthsText);
+      improvementsArray = normalizeInsightList(payloadOrBrief.improvements ?? payloadOrBrief.improvementsText);
+    }
+
+    setFormData(prev => {
+      const normalizedQuality = Number.isFinite(Number(qualityValue))
+        ? Number(Number(qualityValue).toFixed(1))
+        : prev.brief_quality;
+
+      const normalizedStrengths = strengthsArray.length ? strengthsArray : prev.brief_strengths;
+      const normalizedImprovements = improvementsArray.length ? improvementsArray : prev.brief_improvements;
+
+      return {
+        ...prev,
+        brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : prev.brief,
+        brief_quality: normalizedQuality,
+        brief_strengths: normalizedStrengths,
+        brief_improvements: normalizedImprovements
+      };
+    });
     setShowImproveBrief(false);
   };
 
@@ -819,25 +1217,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     } catch (error) {
       console.error('Error saving item:', error);
     }
-  };
-
-  // Map UI format values to database schema format values
-  const mapFormatToSchema = (uiFormat) => {
-    const formatMap = {
-      'PPT': 'PPTX',
-      'DOC': 'DOCX', 
-      'XLS': 'XLSX'
-    };
-    return formatMap[uiFormat] || uiFormat;
-  };
-
-  const mapFormatFromSchema = (schemaFormat) => {
-    const formatMap = {
-      'PPTX': 'PPT',
-      'DOCX': 'DOC',
-      'XLSX': 'XLS'
-    };
-    return formatMap[schemaFormat] || schemaFormat;
   };
 
   const handleSaveDeliverable = async () => {
@@ -880,20 +1259,32 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       // Prepare the payload with proper field mapping
       const payload = {
         name: formData.name,
-        format: mapFormatToSchema(formData.format),
         brief: formData.brief,
         // Map UI fields to schema fields
-        length: parseInt(formData.document_length) || 0,
         due_date: formData.due_date ? new Date(formData.due_date) : null,
         // Only include project if it exists
         ...(projectId && { project: projectId }),
         // Only include type if it's valid according to schema enum
         ...(formData.type && { type: formData.type }),
+        // Include audience array
+        ...(Array.isArray(formData.audience) && { audience: formData.audience }),
         // Add any additional fields that exist in formData and schema
         ...(formData.priority && { priority: formData.priority }),
         ...(formData.estimated_hours && { estimated_hours: parseInt(formData.estimated_hours) || 0 }),
         ...(formData.notes && { notes: formData.notes }),
         ...(formData.tags && { tags: formData.tags }),
+        ...(() => {
+          const numericQuality = Number(formData.brief_quality);
+          return Number.isFinite(numericQuality)
+            ? { brief_quality: Number(numericQuality.toFixed(1)) }
+            : {};
+        })(),
+        ...(Array.isArray(formData.brief_strengths) && {
+          brief_strengths: formData.brief_strengths
+        }),
+        ...(Array.isArray(formData.brief_improvements) && {
+          brief_improvements: formData.brief_improvements
+        }),
         // Set updated_by field - use existing user ID if available
         ...(selectedItem.created_by && { updated_by: selectedItem.created_by }),
         ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
@@ -904,17 +1295,68 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
 
       if (response.ok) {
+        const updatedDeliverable = await response.json();
         console.log('✅ Deliverable saved successfully');
-        // Refresh the data to reflect the changes
+
+        setFormData(prev => {
+          const updatedStrengths = normalizeInsightList(
+            updatedDeliverable.brief_strengths ??
+            updatedDeliverable.strengths ??
+            prev.brief_strengths
+          );
+
+          const updatedImprovements = normalizeInsightList(
+            updatedDeliverable.brief_improvements ??
+            updatedDeliverable.improvements ??
+            prev.brief_improvements
+          );
+
+          return {
+            ...prev,
+            name: updatedDeliverable.name || prev.name,
+            brief: updatedDeliverable.brief,
+            due_date: updatedDeliverable.due_date
+              ? new Date(updatedDeliverable.due_date).toISOString().split('T')[0]
+              : prev.due_date,
+            type: updatedDeliverable.type || prev.type,
+            priority: updatedDeliverable.priority || prev.priority,
+            audience: Array.isArray(updatedDeliverable.audience) ? updatedDeliverable.audience : prev.audience,
+            brief_quality: updatedDeliverable.brief_quality ?? prev.brief_quality,
+            brief_strengths: updatedStrengths.length ? updatedStrengths : prev.brief_strengths,
+            brief_improvements: updatedImprovements.length ? updatedImprovements : prev.brief_improvements
+          };
+        });
+
+        if (onItemSelect) {
+          onItemSelect({
+            ...selectedItem,
+            ...updatedDeliverable,
+            type: 'deliverable',
+            metadata: {
+              ...(selectedItem.metadata || {}),
+              deliverableId: updatedDeliverable._id || updatedDeliverable.id,
+              brief: updatedDeliverable.brief,
+              due_date: updatedDeliverable.due_date,
+              project_id:
+                selectedItem.metadata?.project_id ||
+                selectedItem.metadata?.projectId ||
+                updatedDeliverable.project,
+              project_name: selectedItem.metadata?.project_name,
+              client_name: selectedItem.metadata?.client_name
+            }
+          });
+        }
+
         if (refreshFromDatabase) {
           await refreshFromDatabase();
         }
+
         alert('Deliverable saved successfully!');
       } else {
         let errorMessage = 'Failed to save deliverable changes';
@@ -1023,11 +1465,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         constraints: deliverableData.constraints || metadata.constraints || [],
         deliverables: deliverableData.deliverables || metadata.deliverables || [],
         key_messages: deliverableData.key_messages || metadata.key_messages || [],
-        document_length: deliverableData.document_length || metadata.document_length || formData.document_length || selectedItem.document_length || 20,
+            document_length: deliverableData.document_length || metadata.document_length || selectedItem.document_length,
         page_count: deliverableData.page_count || metadata.page_count || null,
         estimated_hours: deliverableData.estimated_hours || metadata.estimated_hours || selectedItem.estimated_hours || 0,
         type: deliverableData.type || metadata.type || selectedItem.type || 'deliverable',
-        format: deliverableData.format || metadata.format || selectedItem.format || 'PPT',
+        // format intentionally omitted
         status: deliverableData.status || metadata.status || selectedItem.status || 'draft',
         priority: deliverableData.priority || metadata.priority || selectedItem.priority || 'medium',
         due_date: deliverableData.due_date || metadata.due_date || selectedItem.due_date || null,
@@ -1091,13 +1533,75 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           const normaliseResponse = (payload) => {
             let parsed = payload;
 
+            // Helper function to parse markdown into sections
+            const parseMarkdownIntoSections = (markdownContent) => {
+              const sections = [];
+              
+              // Split content by headings (## or # as section separators)
+              const headingRegex = /^(#{1,2})\s+(.+)$/gm;
+              const parts = markdownContent.split(headingRegex);
+              
+              if (parts.length <= 1) {
+                // No headings found, treat entire content as one section
+                const { html, charts } = parseMarkdownWithCharts(markdownContent);
+                const metadata = deriveSectionMetadata(markdownContent);
+                
+                sections.push({
+                  id: 'section_1',
+                  title: metadata.title || 'Storyline Content',
+                  description: metadata.description || '',
+                  markdown: markdownContent,
+                  html: html,
+                  charts: charts,
+                  keyPoints: metadata.keyPoints,
+                  status: 'draft',
+                  order: 1,
+                  contentBlocks: [],
+                  locked: false
+                });
+              } else {
+                // Process each section
+                let sectionIndex = 1;
+                for (let i = 1; i < parts.length; i += 3) {
+                  const level = parts[i];
+                  const title = parts[i + 1];
+                  const content = parts[i + 2] || '';
+                  
+                  if (title && title.trim()) {
+                    const sectionMarkdown = `${level} ${title}\n${content}`.trim();
+                    const { html, charts } = parseMarkdownWithCharts(sectionMarkdown);
+                    const metadata = deriveSectionMetadata(content);
+                    
+                    sections.push({
+                      id: `section_${sectionIndex}`,
+                      title: title.trim(),
+                      description: metadata.description || '',
+                      markdown: sectionMarkdown,
+                      html: html,
+                      charts: charts,
+                      keyPoints: metadata.keyPoints,
+                      status: 'draft',
+                      order: sectionIndex,
+                      contentBlocks: [],
+                      locked: false
+                    });
+                    sectionIndex++;
+                  }
+                }
+              }
+              
+              return sections;
+            };
+
             if (typeof parsed === 'string') {
               try {
                 parsed = JSON.parse(parsed);
               } catch (stringParseError) {
-                console.warn('⚠️ Unable to parse storyline string as JSON, returning empty sections.', stringParseError);
+                console.log('📝 Treating response as markdown content');
+                // If it's not JSON, treat it as markdown
+                const sections = parseMarkdownIntoSections(parsed);
                 return {
-                  sections: [],
+                  sections,
                   projectName: fallbackProject?.name,
                   client: fallbackProject?.client_name,
                   industry: fallbackProject?.industry,
@@ -1146,6 +1650,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                 id: section.id || `section_${index + 1}`,
                 title: section.title || `Section ${index + 1}`,
                 description: section.description || '',
+                markdown: typeof section.markdown === 'string' ? section.markdown : '',
+                html: typeof section.html === 'string' ? section.html : '',
+                charts: Array.isArray(section.charts) ? section.charts : [],
                 status: section.status || 'draft',
                 order: index + 1,
                 keyPoints: section.keyPoints || [],
@@ -1181,34 +1688,18 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
               setGeneratedStoryline({
                 ...payload,
-                sections: (sectionsToUse || []).map((section, index) => ({
-                  id: section.id || section._id || `section_${index + 1}`,
-                  title: section.title,
-                  description: section.description,
-                  status: section.status || 'draft',
-                  order: section.order ?? index,
-                  keyPoints: section.keyPoints || [],
-                  contentBlocks: section.contentBlocks || [],
-                  locked: !!section.locked,
-                  lockedBy: section.lockedBy,
-                  lockedAt: section.lockedAt
-                }))
+                sections: (sectionsToUse || []).map((section, index) =>
+                  normalizeSectionForState(section, index)
+                )
               });
               setStorylineDirty(false);
             } else {
               console.error('❌ Failed to save storyline to database');
               setGeneratedStoryline({
                 ...storylineData,
-                sections: (storylineData.sections || []).map((section, index) => ({
-                  id: section.id || `section_${index + 1}`,
-                  title: section.title || `Section ${index + 1}`,
-                  description: section.description || '',
-                  status: section.status || 'draft',
-                  order: index + 1,
-                  keyPoints: section.keyPoints || [],
-                  contentBlocks: section.contentBlocks || [],
-                  locked: !!section.locked
-                }))
+                sections: (storylineData.sections || []).map((section, index) =>
+                  normalizeSectionForState(section, index)
+                )
               });
               setStorylineDirty(true);
             }
@@ -1216,16 +1707,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             console.error('❌ Error saving storyline:', saveError);
             setGeneratedStoryline({
               ...storylineData,
-              sections: (storylineData.sections || []).map((section, index) => ({
-                id: section.id || `section_${index + 1}`,
-                title: section.title || `Section ${index + 1}`,
-                description: section.description || '',
-                status: section.status || 'draft',
-                order: index + 1,
-                keyPoints: section.keyPoints || [],
-                contentBlocks: section.contentBlocks || [],
-                locked: !!section.locked
-              }))
+              sections: (storylineData.sections || []).map((section, index) =>
+                normalizeSectionForState(section, index)
+              )
             });
             setStorylineDirty(true);
           }
@@ -1249,6 +1733,135 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   };
 
+  const handleGenerateSlidesForStoryline = async () => {
+    if (!selectedItem || selectedItem.type !== 'deliverable') {
+      alert('Slide generation is only available for deliverables.');
+      return;
+    }
+
+    if (!generatedStoryline || !Array.isArray(generatedStoryline.sections) || generatedStoryline.sections.length === 0) {
+      alert('No storyline sections found. Generate a storyline before creating slides.');
+      return;
+    }
+
+    const sections = generatedStoryline.sections || [];
+    const sectionsToProcess = sections.filter(section => !Array.isArray(section.slides) || section.slides.length === 0);
+
+    if (!sectionsToProcess.length) {
+      alert('Slides already exist for all sections. Use the Layout tab to regenerate specific sections.');
+      return;
+    }
+
+    setIsGeneratingSlides(true);
+    setSlideGenerationProgress({ completed: 0, total: sectionsToProcess.length });
+
+    const sectionUpdates = new Map();
+    const failures = [];
+    let completed = 0;
+
+    try {
+      for (const section of sectionsToProcess) {
+        const sectionId = section.id || section._id || section.title || `section_${completed + 1}`;
+        const layoutForSection = section.layout || selectedLayout || 'title-2-columns';
+        const sectionKey = section.id || section._id || section.title || sectionId;
+
+        try {
+          const response = await fetch('/api/ai/generate-slides', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sectionId,
+              section,
+              storyline: {
+                id: generatedStoryline._id || generatedStoryline.id,
+                title: generatedStoryline.title,
+                description: generatedStoryline.description,
+                sectionsCount: sections.length
+              },
+              layout: layoutForSection
+            })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || result?.error) {
+            throw new Error(result?.error || 'Failed to generate slides for this section.');
+          }
+
+          const slidesPayload = Array.isArray(result?.data?.slides)
+            ? result.data.slides
+            : Array.isArray(result?.slides)
+              ? result.slides
+              : [];
+
+          const normalizedSlides = slidesPayload.map((slide, index) => normalizeSlideForState(slide, index, layoutForSection));
+
+          if (!normalizedSlides.length) {
+            throw new Error('Slide generation completed without returning any slide content.');
+          }
+
+          const generatedAt = new Date().toISOString();
+
+          sectionUpdates.set(sectionKey, {
+            slides: normalizedSlides,
+            slidesGeneratedAt: generatedAt,
+            slidesGenerationContext: {
+              source: result?.source || 'custom-agent',
+              agentId: result?.agentId,
+              generatedAt,
+              ...result?.metadata
+            }
+          });
+        } catch (error) {
+          console.error(`❌ Slide generation failed for section ${section.title || sectionId}:`, error);
+          failures.push({ sectionId, message: error.message || 'Unknown error' });
+        } finally {
+          completed += 1;
+          setSlideGenerationProgress({ completed, total: sectionsToProcess.length });
+        }
+      }
+
+      setGeneratedStoryline(prev => {
+        if (!prev) return prev;
+
+        const mergedSections = (prev.sections || []).map(prevSection => {
+          const prevKey = prevSection.id || prevSection._id || prevSection.title || '';
+          const update = sectionUpdates.get(prevKey);
+          if (update) {
+            return {
+              ...prevSection,
+              ...update
+            };
+          }
+          return prevSection;
+        });
+
+        return {
+          ...prev,
+          sections: mergedSections
+        };
+      });
+
+      if (sectionUpdates.size > 0) {
+        setStorylineDirty(true);
+      }
+
+      if (failures.length) {
+        alert(`Slides generated with ${failures.length} issue${failures.length === 1 ? '' : 's'}. Check console for details.`);
+      } else {
+        console.log('✅ Slides generated for all sections without slides.');
+      }
+    } catch (error) {
+      console.error('❌ Error generating slides for storyline:', error);
+      alert(error.message || 'Failed to generate slides for the storyline.');
+    } finally {
+      setIsGeneratingSlides(false);
+      setSlideGenerationProgress({ completed: 0, total: 0 });
+    }
+  };
+
   const handleRegenerateStoryline = async (options = {}) => {
     if (!selectedItem || selectedItem.type !== 'deliverable') {
       alert('Storyline regeneration is only available for deliverables');
@@ -1261,73 +1874,78 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
 
     setIsGeneratingStoryline(true);
-    
+
     try {
       console.log('🔄 Starting storyline regeneration...', {
         storylineId: generatedStoryline._id,
         options
       });
 
-      // Use the existing storyline generation API for regeneration
-      // Get deliverable ID from selectedItem
-      const metadata = selectedItem.metadata || {};
-      const rawDeliverableId = metadata.deliverableId || selectedItem._id || selectedItem.id;
-      const deliverableId = getIdString(rawDeliverableId);
+      const storylineId = getIdString(generatedStoryline._id || generatedStoryline.id);
+      if (!storylineId || !isValidObjectId(storylineId)) {
+        throw new Error('Please save the storyline before regenerating so it has a valid ID.');
+      }
 
-      const response = await fetch('/api/storyline', {
+      const sanitizedStoryline = sanitizeStorylineForApi(generatedStoryline);
+      const { lockedSections, draftSections } = filterSectionsForRegeneration(sanitizedStoryline);
+
+      if (draftSections.length === 0) {
+        alert('All sections are locked or final. Unlock sections before regenerating.');
+        setIsGeneratingStoryline(false);
+        return;
+      }
+
+      const regenerationPayload = createRegenerationPayload(
+        sanitizedStoryline,
+        draftSections,
+        lockedSections
+      );
+
+      const backup = createStorylineBackup(sanitizedStoryline);
+
+      const response = await fetch('/api/storyline/regenerate', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          deliverableData: {
-            name: selectedItem.name || selectedItem.title || formData.name,
-            type: selectedItem.type || formData.type,
-            audience: selectedItem.audience || formData.audience || [],
-            brief: selectedItem.brief || formData.brief,
-            format: selectedItem.format || formData.format,
-            documentLength: selectedItem.document_length || formData.document_length,
-            dueDate: selectedItem.due_date || formData.due_date
-          },
-          deliverableId: deliverableId,
-          userId: selectedItem.created_by || selectedItem.updated_by,
-          isRegeneration: true,
-          existingStoryline: generatedStoryline
+          storylineId,
+          regenerationPayload,
+          backup
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Regeneration failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        const detail = errorData.details ? ` Details: ${errorData.details}` : '';
+        throw new Error((errorData.error || `Regeneration failed: ${response.statusText}`) + detail);
       }
 
       const result = await response.json();
-      
-      if (result.success) {
-        console.log('✅ Storyline regenerated successfully:', result);
-        
-        // Update the storyline state with the regenerated storyline
-        const regeneratedStoryline = result.storyline;
-        setGeneratedStoryline(regeneratedStoryline);
-        setStorylineDirty(true); // Mark as dirty so user can save
-        
-        // Calculate preservation stats
-        const totalSections = regeneratedStoryline.sections?.length || 0;
-        const lockedSections = regeneratedStoryline.sections?.filter(s => s.locked).length || 0;
-        const regeneratedSections = totalSections - lockedSections;
-        
-        // Show success message with details
-        alert(
-          `Storyline regenerated successfully!\n\n` +
-          `• ${lockedSections} section${lockedSections === 1 ? '' : 's'} preserved (locked)\n` +
-          `• ${regeneratedSections} section${regeneratedSections === 1 ? '' : 's'} regenerated\n\n` +
-          `Remember to save your changes.`
-        );
-        
-      } else {
-        throw new Error(result.error || 'Regeneration failed');
+      if (!result.success) {
+        const detail = result.details ? ` Details: ${result.details}` : '';
+        throw new Error((result.error || 'Regeneration failed') + detail);
       }
-      
+
+      const regeneratedStoryline = result.storyline || {};
+      setGeneratedStoryline({
+        ...regeneratedStoryline,
+        sections: (regeneratedStoryline.sections || []).map((section, index) =>
+          normalizeSectionForState(section, index)
+        )
+      });
+      setStorylineDirty(true);
+
+      const totalSections = regeneratedStoryline.sections?.length || 0;
+      const lockedCount = regeneratedStoryline.sections?.filter((s) => s.locked).length || 0;
+      const regeneratedCount = totalSections - lockedCount;
+
+      alert(
+        `Storyline regenerated successfully!\n\n` +
+        `• ${lockedCount} section${lockedCount === 1 ? '' : 's'} preserved (locked)\n` +
+        `• ${regeneratedCount} section${regeneratedCount === 1 ? '' : 's'} regenerated\n\n` +
+        `Remember to save your changes.`
+      );
     } catch (error) {
       console.error('❌ Error regenerating storyline:', error);
       const errorMessage = error.message || error.toString() || 'Unknown error occurred';
@@ -1335,6 +1953,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     } finally {
       setIsGeneratingStoryline(false);
     }
+  };
+
+  const handleResetStoryline = async () => {
+    if (!selectedItem || selectedItem.type !== 'deliverable') {
+      return;
+    }
+
+    const deliverableId = selectedItem._id || selectedItem.id;
+    if (!deliverableId) return;
+
+    setShowResetConfirm(true);
   };
 
   // Handle different content types
@@ -1630,6 +2259,65 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   if (selectedItem.type === 'deliverable') {
     const storylineTitle = selectedItem?.title || formData.name;
 
+    const confirmRemoveSection = () => {
+      if (!generatedStoryline || !sectionToRemove) return;
+
+      let removed = false;
+      let newLength = generatedStoryline.sections?.length || 0;
+
+      setGeneratedStoryline(prev => {
+        if (!prev) return prev;
+        const filtered = (prev.sections || []).filter(section => section.id !== sectionToRemove);
+        if (filtered.length === (prev.sections || []).length) {
+          return prev;
+        }
+        removed = true;
+        newLength = filtered.length;
+        const reindexed = filtered.map((section, index) => ({
+          ...section,
+          order: index
+        }));
+        return { ...prev, sections: reindexed };
+      });
+
+      if (removed) {
+        setStorylineDirty(true);
+        setCurrentSectionIndex(prevIndex => {
+          if (newLength === 0) return 0;
+          return Math.min(prevIndex, newLength - 1);
+        });
+      }
+
+      setSectionToRemove(null);
+    };
+
+    const cancelRemoveSection = () => {
+      setSectionToRemove(null);
+    };
+
+    const confirmResetStoryline = () => {
+      if (!generatedStoryline) {
+        setShowResetConfirm(false);
+        return;
+      }
+
+      setGeneratedStoryline(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: [],
+          updated_at: new Date().toISOString()
+        };
+      });
+      setStorylineDirty(true);
+      setCurrentSectionIndex(0);
+      setShowResetConfirm(false);
+    };
+
+    const cancelResetStoryline = () => {
+      setShowResetConfirm(false);
+    };
+
     const handleStorylineTabClick = async () => {
       if (generatedStoryline) {
         setCurrentView('storyline');
@@ -1683,15 +2371,20 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             storylineDirty={storylineDirty}
             isSavingStoryline={isSavingStoryline}
             isGeneratingStoryline={isGeneratingStoryline}
+            isGeneratingSlides={isGeneratingSlides}
             onSaveStoryline={handleSaveStoryline}
             onGenerateStoryline={handleGenerateStoryline}
+            onGenerateSlides={handleGenerateSlidesForStoryline}
             onRegenerateStoryline={handleRegenerateStoryline}
+            onResetStoryline={() => setShowResetConfirm(true)}
             currentSectionIndex={currentSectionIndex}
             onSectionChange={setCurrentSectionIndex}
             onUpdateSection={handleSectionUpdate}
             onStatusChange={handleSectionStatusChange}
             onToggleLock={handleToggleLock}
             onKeyPointsChange={handleKeyPointsChange}
+            onRemoveSection={handleRemoveSection}
+            slideGenerationProgress={slideGenerationProgress}
             title={storylineTitle}
           />
         );
@@ -1734,6 +2427,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           onInputChange={handleInputChange}
           onRemoveAudience={handleRemoveAudience}
           onAddAudience={handleAddAudience}
+          onTestBrief={handleTestBrief}
+          isTestingBrief={isTestingBrief}
           onImproveBrief={handleImproveBrief}
           onGenerateStoryline={handleGenerateStoryline}
           isGeneratingStoryline={isGeneratingStoryline}
@@ -1808,6 +2503,64 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         <div className="flex-1 overflow-y-auto min-h-0">
           {deliverableView}
         </div>
+
+        {/* Remove Section Confirmation */}
+        {sectionToRemove && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-900">Remove Section</h3>
+                <p className="mt-1 text-sm text-gray-500">Are you sure you want to remove this section from the storyline?</p>
+              </div>
+              <div className="px-6 py-4 space-y-3">
+                <p className="text-sm text-gray-700">This action cannot be undone. The section will be removed immediately from the current storyline draft.</p>
+              </div>
+              <div className="flex justify-end space-x-3 border-t border-gray-200 px-6 py-3 bg-gray-50">
+                <button
+                  onClick={cancelRemoveSection}
+                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmRemoveSection}
+                  className="rounded-sm bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  Remove Section
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reset Storyline Confirmation */}
+        {showResetConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-900">Reset Storyline</h3>
+                <p className="mt-1 text-sm text-gray-500">Remove all sections from the current storyline draft?</p>
+              </div>
+              <div className="px-6 py-4 space-y-3">
+                <p className="text-sm text-gray-700">This action cannot be undone. All generated sections will be cleared until you save or regenerate new ones.</p>
+              </div>
+              <div className="flex justify-end space-x-3 border-t border-gray-200 px-6 py-3 bg-gray-50">
+                <button
+                  onClick={cancelResetStoryline}
+                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmResetStoryline}
+                  className="rounded-sm bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Remove Sections
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Improve Brief Modal */}
         {showImproveBrief && (

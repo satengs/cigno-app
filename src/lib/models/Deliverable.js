@@ -30,6 +30,23 @@ const deliverableSchema = new mongoose.Schema({
     required: true,
     maxlength: 2000
   },
+  brief_quality: {
+    type: Number,
+    min: 0,
+    max: 10,
+    default: null
+  },
+  brief_strengths: {
+    type: [String],
+    default: []
+  },
+  brief_improvements: {
+    type: [String],
+    default: []
+  },
+  brief_last_evaluated_at: {
+    type: Date
+  },
   version: {
     type: String,
     default: '1.0'

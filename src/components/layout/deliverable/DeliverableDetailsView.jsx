@@ -8,6 +8,8 @@ export default function DeliverableDetailsView({
   onInputChange,
   onRemoveAudience,
   onAddAudience,
+  onTestBrief,
+  isTestingBrief = false,
   onImproveBrief,
   onGenerateStoryline,
   isGeneratingStoryline,
@@ -15,6 +17,19 @@ export default function DeliverableDetailsView({
   onNewAudienceKeyDown,
   onSave
 }) {
+  const recognizedStrengths = Array.isArray(formData.brief_strengths)
+    ? formData.brief_strengths
+    : (formData.strengths ? [formData.strengths] : []);
+
+  const suggestedImprovements = Array.isArray(formData.brief_improvements)
+    ? formData.brief_improvements
+    : (formData.improvements ? [formData.improvements] : []);
+
+  const qualityScore = Number.isFinite(Number(formData.brief_quality))
+    ? Number(Number(formData.brief_quality).toFixed(1))
+    : null;
+  const qualityPercent = qualityScore !== null ? Math.min(100, Math.max(0, (qualityScore / 10) * 100)) : 0;
+
   return (
     <div className="p-6 space-y-8">
       <div>
@@ -81,25 +96,6 @@ export default function DeliverableDetailsView({
               <option value="Analysis">Analysis</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Format</label>
-            <div className="flex gap-2">
-              {['PPT', 'DOC', 'XLS'].map((format) => (
-                <button
-                  key={format}
-                  onClick={() => onInputChange('format', format)}
-                  className={`flex-1 rounded-sm border px-3 py-2 text-sm transition-colors ${
-                    formData.format === format
-                      ? 'border-gray-900 bg-gray-900 text-white'
-                      : 'border-gray-300 bg-gray-50 text-gray-700 hover:border-gray-900'
-                  }`}
-                  type="button"
-                >
-                  {format}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -116,31 +112,22 @@ export default function DeliverableDetailsView({
       </div>
 
       <div className="space-y-3">
-        <label className="block text-sm font-medium text-gray-700">Document Length</label>
-        <input
-          type="range"
-          min="2"
-          max="200"
-          value={formData.document_length}
-          onChange={(e) => onInputChange('document_length', parseInt(e.target.value, 10) || 0)}
-          className="w-full h-1 rounded-sm appearance-none cursor-pointer"
-          style={{
-            background: `linear-gradient(to right, #374151 0%, #374151 ${((formData.document_length - 2) / 198) * 100}%, #e5e7eb ${((formData.document_length - 2) / 198) * 100}%, #e5e7eb 100%)`
-          }}
-        />
-        <div className="flex items-center justify-between text-xs text-gray-400">
-          <span>2 pages</span>
-          <span className="text-gray-600 font-medium">{formData.document_length} pages</span>
-          <span>200 pages</span>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-gray-700">Brief</label>
+        <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={onImproveBrief}
+            onClick={onTestBrief}
+            disabled={isTestingBrief}
+            className={`rounded-sm border border-gray-300 px-3 py-1.5 text-sm font-medium ${
+              isTestingBrief
+                ? 'text-gray-400 cursor-not-allowed bg-gray-100'
+                : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {isTestingBrief ? 'Testing...' : 'Test Brief'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onImproveBrief?.()}
             className="rounded-sm bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
           >
             Improve Brief
@@ -174,27 +161,44 @@ export default function DeliverableDetailsView({
       <div className="space-y-4 rounded-sm border border-gray-200 bg-gray-50 p-6">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium text-gray-700">Brief Quality Score</span>
-          <span className="font-semibold text-gray-900">{formData.brief_quality} / 10</span>
+          <span className="font-semibold text-gray-900">{qualityScore !== null ? `${qualityScore} / 10` : 'Not evaluated'}</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
           <div
-            className="h-full rounded-sm bg-gray-900"
-            style={{ width: `${(formData.brief_quality / 10) * 100}%` }}
+            className="h-full rounded-sm bg-gray-900 transition-all"
+            style={{ width: `${qualityPercent}%` }}
           />
         </div>
-        <div className="space-y-1 text-sm">
-          <p className="text-gray-600">
-            <span className="font-medium text-gray-900">Strengths:</span> {formData.strengths}
-          </p>
-          <p className="text-gray-600">
-            <span className="font-medium text-gray-900">Improve:</span> {formData.improvements}
-          </p>
-        </div>
+
+        {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
+          <div className="grid gap-3 md:grid-cols-2">
+            {recognizedStrengths.length > 0 && (
+              <div className="border border-emerald-200 bg-white rounded-md p-3">
+                <p className="text-sm font-medium text-emerald-800">Recognized Strengths</p>
+                <ul className="mt-2 space-y-1 text-xs text-emerald-700">
+                  {recognizedStrengths.map((item, index) => (
+                    <li key={`${item}-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {suggestedImprovements.length > 0 && (
+              <div className="border border-blue-200 bg-white rounded-md p-3">
+                <p className="text-sm font-medium text-blue-800">Suggested Improvements</p>
+                <ul className="mt-2 space-y-1 text-xs text-blue-700">
+                  {suggestedImprovements.map((item, index) => (
+                    <li key={`${item}-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Generate Storyline Button */}
-      {onGenerateStoryline && (
-        <div className="flex justify-end pt-4 border-t border-gray-200">
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
+        {onGenerateStoryline && (
           <button
             type="button"
             onClick={onGenerateStoryline}
@@ -207,14 +211,10 @@ export default function DeliverableDetailsView({
           >
             {isGeneratingStoryline ? 'Generating Storyline...' : 'Generate Storyline'}
           </button>
-        </div>
-      )}
-
-      {/* Save Button */}
-      <div className="flex justify-end pt-6 border-t border-gray-200">
+        )}
         <button
           onClick={onSave}
-          className="px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded-sm hover:bg-gray-800 transition-colors"
+          className="px-6 py-3 bg-gray-900 text-white text-sm font-medium rounded-sm hover:bg-gray-800 transition-colors"
         >
           Save Changes
         </button>

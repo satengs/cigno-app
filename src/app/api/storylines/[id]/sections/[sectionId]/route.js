@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '../../../../../../lib/db/mongoose.js';
 import Storyline from '../../../../../../lib/models/Storyline.js';
+import { ensureSectionHasRenderedContent } from '../../../../../../lib/storyline/sectionUtils.js';
 import { 
   createSuccessResponse, 
   createErrorResponse, 
@@ -22,6 +23,10 @@ export async function PUT(request, { params }) {
       contentBlocks,
       estimatedSlides,
       order,
+      markdown,
+      html,
+      charts,
+      contentType,
       userId
     } = body;
 
@@ -43,7 +48,6 @@ export async function PUT(request, { params }) {
       return NextResponse.json(errorResponse, { status: 423 });
     }
 
-    // Update section fields
     if (title !== undefined) section.title = title;
     if (description !== undefined) section.description = description;
     if (status !== undefined) section.status = status;
@@ -51,6 +55,26 @@ export async function PUT(request, { params }) {
     if (contentBlocks !== undefined) section.contentBlocks = contentBlocks;
     if (estimatedSlides !== undefined) section.estimatedSlides = estimatedSlides;
     if (order !== undefined) section.order = order;
+    if (markdown !== undefined) section.markdown = markdown;
+    if (html !== undefined) section.html = html;
+    if (charts !== undefined) section.charts = charts;
+
+    const enriched = ensureSectionHasRenderedContent(section, {
+      order: section.order ?? 0,
+      fallbackTitle: section.title,
+      defaultContentType: contentType || section.contentBlocks?.[0]?.type
+    });
+
+    section.title = enriched.title;
+    section.description = enriched.description;
+    section.keyPoints = enriched.keyPoints;
+    section.contentBlocks = enriched.contentBlocks;
+    section.markdown = enriched.markdown;
+    section.html = enriched.html;
+    section.charts = enriched.charts;
+    if (enriched.estimatedSlides !== undefined) {
+      section.estimatedSlides = enriched.estimatedSlides;
+    }
     section.updated_at = new Date();
 
     if (userId) storyline.updated_by = userId;

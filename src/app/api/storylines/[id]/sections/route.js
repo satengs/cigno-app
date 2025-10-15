@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '../../../../../lib/db/mongoose.js';
 import Storyline from '../../../../../lib/models/Storyline.js';
+import { createSectionRecord } from '../../../../../lib/storyline/sectionUtils.js';
 import { 
   createSuccessResponse, 
   createErrorResponse, 
@@ -21,6 +22,10 @@ export async function POST(request, { params }) {
       contentBlocks,
       estimatedSlides,
       order,
+      markdown,
+      html,
+      charts,
+      contentType,
       userId
     } = body;
 
@@ -35,23 +40,27 @@ export async function POST(request, { params }) {
       return NextResponse.json(errorResponse, { status: 404 });
     }
 
-    // Create new section
-    const newSection = {
-      id: `section_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    const newSection = createSectionRecord({
       title,
-      description: description || '',
-      status: 'not_started',
+      description,
+      keyPoints,
+      contentBlocks,
+      markdown,
+      html,
+      charts,
+      estimatedSlides,
+      contentType
+    }, {
+      id: `section_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       order: order !== undefined ? order : storyline.sections.length,
-      keyPoints: keyPoints || [],
-      contentBlocks: contentBlocks || [{
-        type: 'Content Block',
-        items: []
-      }],
-      estimatedSlides: estimatedSlides || 3,
+      status: 'not_started',
       locked: false,
-      created_at: new Date(),
-      updated_at: new Date()
-    };
+      fallbackTitle: title,
+      defaultContentType: contentType || contentBlocks?.[0]?.type || 'Content Block',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      estimatedSlides: estimatedSlides || 3
+    });
 
     // Add section to storyline
     storyline.sections.push(newSection);

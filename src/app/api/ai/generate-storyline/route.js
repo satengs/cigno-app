@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { projectId, projectData, deliverableData } = body;
+    const { projectId, projectData = {}, deliverableData = {}, clientData = {} } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -21,47 +21,26 @@ export async function POST(request) {
 
     console.log(`📖 Generating storyline for project: ${projectId}`);
     console.log(`🤖 Using agent: ${AI_CONFIG.storylineAgentId}`);
+    
+    // Log the received data for verification
+    console.log('📊 Project Data:', projectData);
+    console.log('📋 Deliverable Data:', deliverableData);
+    console.log('🏢 Client Data:', clientData);
 
     const structuredPayload = {
       projectId,
       project: projectData,
-      deliverable: deliverableData
+      deliverable: deliverableData,
+      client: clientData
     };
 
-    const message = `Generate a comprehensive storyline structure for the project "${projectData?.name || 'project'}" for client "${projectData?.client_name || 'client'}".
+    const sanitisedContext = sanitiseAgentContext(structuredPayload);
 
-Deliverable focus:
-- Title: ${deliverableData?.name || 'Unnamed Deliverable'}
-- Type: ${deliverableData?.type || 'recommendation'}
-- Format: ${deliverableData?.format || 'unspecified'}
-- Priority: ${deliverableData?.priority || 'medium'}
-- Due date: ${deliverableData?.due_date || deliverableData?.dueDate || 'not provided'}
-- Audience: ${(deliverableData?.audience || []).join(', ') || 'General stakeholders'}
-- Brief: ${deliverableData?.brief || 'No brief provided'}
+    const message = `Generate a storyline for the project "${projectData?.name || 'project'}" for client "${projectData?.client_name || clientData?.name || 'client'}".
 
-Project Details:
-- Industry: ${projectData?.industry || 'Not specified'}
-- Description: ${projectData?.description || 'Not provided'}
+Please create a comprehensive storyline structure based on the project requirements and deliverable objectives. Return any format you think is most appropriate - markdown, JSON, or plain text.`;
 
-Structured data JSON (use this for precise fields):
-${JSON.stringify(structuredPayload, null, 2)}
-
-Please create a structured storyline with sections including:
-1. Executive Summary
-2. Market Context & Analysis  
-3. Strategic Implications
-4. Technical Architecture (if applicable)
-5. Risk Assessment & Compliance
-6. Implementation Roadmap
-
-For each section, provide:
-- Title and section number
-- Brief description
-- Key content points
-- Sources/references
-- Status (Final/Draft/Not Started)
-
-Return the response as a JSON structure with sections array. Include deliverable-specific recommendations where relevant.`;
+    console.log('📤 Context sent to storyline agent:', JSON.stringify(sanitisedContext, null, 2));
 
     try {
       // Try custom agent first
@@ -73,12 +52,26 @@ Return the response as a JSON structure with sections array. Include deliverable
         },
         body: JSON.stringify({
           message,
+          context: sanitisedContext
         })
       });
 
       if (!customAgentResponse.ok) {
         const errorText = await customAgentResponse.text();
-        throw new Error(`Custom agent failed (${customAgentResponse.status}): ${errorText}`);
+        const sanitized = sanitiseAgentError(errorText);
+
+        const agentError = new Error('CUSTOM_AGENT_ERROR');
+        agentError.status = customAgentResponse.status;
+        agentError.agentMessage = sanitized.message;
+        agentError.agentDetails = sanitized.details;
+
+        console.error('❌ Storyline agent call failed:', {
+          status: customAgentResponse.status,
+          message: agentError.agentMessage,
+          preview: typeof errorText === 'string' ? errorText.slice(0, 200) : null
+        });
+
+        throw agentError;
       }
 
       const agentResult = await customAgentResponse.json();
@@ -92,18 +85,194 @@ Return the response as a JSON structure with sections array. Include deliverable
         data: agentResult
       });
     } catch (agentError) {
-      throw agentError;
+      const diagnostic = summariseAgentFailure(agentError);
+
+      console.warn('❌ Storyline agent call failed. No fallback available.', diagnostic);
+
+      const wrappedError = new Error('CUSTOM_AGENT_ERROR');
+      wrappedError.status = diagnostic.status || agentError.status || 502;
+      wrappedError.agentMessage = diagnostic.message;
+      wrappedError.agentDetails = diagnostic.details;
+
+      throw wrappedError;
     }
 
   } catch (error) {
     console.error('❌ Storyline generation error:', error);
-    
+
+    // Extract more specific error messages
+    let errorMessage = 'Failed to generate storyline';
+    let statusCode = 500;
+    let errorDetails = error.message;
+
+    if (error.message?.includes?.('rate limit')) {
+      errorMessage = 'OpenAI rate limit exceeded. Please try again in a few minutes.';
+      statusCode = 429;
+    } else if (error.message === 'CUSTOM_AGENT_ERROR') {
+      statusCode = error.status || 502;
+      errorMessage = error.agentMessage || errorMessage;
+      errorDetails = error.agentDetails || errorDetails;
+    } else if (error.message?.includes?.('Custom agent failed')) {
+      // Backwards compatibility for any remaining string-based errors
+      const match = error.message.match(/Custom agent failed \((\d+)\): (.+)/);
+      if (match) {
+        const [, status, rawBody] = match;
+        statusCode = Number(status) || statusCode;
+        const sanitised = sanitiseAgentError(rawBody);
+        errorMessage = sanitised.message || errorMessage;
+        errorDetails = sanitised.details || errorDetails;
+      }
+    }
+
     return NextResponse.json(
-      { 
-        error: 'Failed to generate storyline',
-        details: error.message 
+      {
+        error: errorMessage,
+        details: errorDetails
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
+}
+
+function sanitiseAgentError(rawText) {
+  if (!rawText) {
+    return {
+      message: 'Storyline agent returned an empty error response.',
+      details: null
+    };
+  }
+
+  if (typeof rawText !== 'string') {
+    return {
+      message: 'Storyline agent returned an unexpected error payload.',
+      details: rawText
+    };
+  }
+
+  const trimmed = rawText.trim();
+
+  if (!trimmed) {
+    return {
+      message: 'Storyline agent returned an empty error response.',
+      details: null
+    };
+  }
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        message: parsed.error || parsed.message || 'Storyline agent reported an error.',
+        details: parsed
+      };
+    } catch {
+      // Fall through to additional checks if JSON parsing fails
+    }
+  }
+
+  if (/<!DOCTYPE\s+html>/i.test(trimmed) || /<html/i.test(trimmed)) {
+    return {
+      message: 'Storyline agent returned an HTML error page. Verify the agent endpoint configuration.',
+      details: 'HTML response received from agent'
+    };
+  }
+
+  return {
+    message: trimmed.slice(0, 200),
+    details: trimmed.slice(0, 500)
+  };
+}
+
+function summariseAgentFailure(error) {
+  if (!error) {
+    return {
+      type: 'agent_error',
+      message: 'Unknown agent failure occurred.',
+      details: null,
+      status: 502
+    };
+  }
+
+  if (error.message === 'CUSTOM_AGENT_ERROR') {
+    return {
+      type: 'agent_error',
+      status: error.status,
+      message: error.agentMessage || 'Storyline agent reported an error.',
+      details: error.agentDetails || null
+    };
+  }
+
+  if (typeof error === 'string') {
+    const sanitised = sanitiseAgentError(error);
+    return {
+      type: 'agent_error',
+      message: sanitised.message,
+      details: sanitised.details,
+      status: 502
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      type: 'agent_error',
+      message: error.message || 'Storyline agent failed with an unexpected error.',
+      details: null,
+      status: error.status || 502
+    };
+  }
+
+  return {
+    type: 'agent_error',
+    message: 'Storyline agent encountered an unexpected error payload.',
+    details: error,
+    status: 502
+  };
+}
+
+function sanitiseAgentContext(value, depth = 0) {
+  if (value == null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const items = value
+      .map(item => sanitiseAgentContext(item, depth + 1))
+      .filter(item => item !== undefined);
+    return items.length ? items : undefined;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value).reduce((acc, [key, val]) => {
+      const sanitised = sanitiseAgentContext(val, depth + 1);
+
+      if (sanitised === undefined) {
+        return acc;
+      }
+
+      if (key === 'data' || key === 'raw' || key === 'buffer' || key === 'file' || key === 'files' || key === 'attachments') {
+        return acc;
+      }
+
+      acc[key] = sanitised;
+      return acc;
+    }, {});
+
+    const keys = Object.keys(entries);
+    if (!keys.length) {
+      return depth === 0 ? {} : undefined;
+    }
+
+    return entries;
+  }
+
+  return undefined;
 }

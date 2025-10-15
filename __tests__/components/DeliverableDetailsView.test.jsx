@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import DeliverableDetailsView from '../../src/components/layout/deliverable/DeliverableDetailsView';
 
@@ -14,7 +14,9 @@ const mockFormData = {
   audience: ['Board of Directors', 'Technical Teams'],
   brief_quality: 8.5,
   strengths: 'Well defined requirements',
-  improvements: 'Add more details'
+  improvements: 'Add more details',
+  brief_strengths: ['Well defined requirements'],
+  brief_improvements: ['Add more details']
 };
 
 const mockProps = {
@@ -37,37 +39,13 @@ describe('DeliverableDetailsView', () => {
     jest.clearAllMocks();
   });
 
-  test('renders all form fields correctly', () => {
+  test('renders key sections correctly', () => {
     render(<DeliverableDetailsView {...mockProps} />);
     
-    // Check name field
     expect(screen.getByDisplayValue('Test Deliverable')).toBeInTheDocument();
-    
-    // Check format buttons
-    expect(screen.getByText('PPT')).toBeInTheDocument();
-    expect(screen.getByText('DOC')).toBeInTheDocument();
-    expect(screen.getByText('XLS')).toBeInTheDocument();
-    
-    // Check save button
-    expect(screen.getByText('Save Changes')).toBeInTheDocument();
-  });
-
-  test('format selection calls onInputChange with correct parameters', () => {
-    render(<DeliverableDetailsView {...mockProps} />);
-    
-    const docButton = screen.getByText('DOC');
-    fireEvent.click(docButton);
-    
-    expect(mockProps.onInputChange).toHaveBeenCalledWith('format', 'DOC');
-  });
-
-  test('shows selected format with correct styling', () => {
-    render(<DeliverableDetailsView {...mockProps} />);
-    
-    const pptButton = screen.getByText('PPT');
-    
-    // PPT should be selected (active styling)
-    expect(pptButton).toHaveClass('border-gray-900', 'bg-gray-900', 'text-white');
+    expect(screen.getByText('Audience')).toBeInTheDocument();
+    expect(screen.getByText('Recognized Strengths')).toBeInTheDocument();
+    expect(screen.getByText('Suggested Improvements')).toBeInTheDocument();
   });
 
   test('name input calls onInputChange when changed', () => {
@@ -88,13 +66,20 @@ describe('DeliverableDetailsView', () => {
     expect(mockProps.onSave).toHaveBeenCalledTimes(1);
   });
 
-  test('document length slider updates correctly', () => {
+  test('displays recognized strengths and improvements', () => {
     render(<DeliverableDetailsView {...mockProps} />);
-    
-    const slider = screen.getByDisplayValue('25');
-    fireEvent.change(slider, { target: { value: '50' } });
-    
-    expect(mockProps.onInputChange).toHaveBeenCalledWith('document_length', 50);
+
+    expect(screen.getByText('Recognized Strengths')).toBeInTheDocument();
+    expect(screen.getByText('• Well defined requirements')).toBeInTheDocument();
+    expect(screen.getByText('Suggested Improvements')).toBeInTheDocument();
+    expect(screen.getByText('• Add more details')).toBeInTheDocument();
+  });
+
+  test('shows quality score indicator', () => {
+    render(<DeliverableDetailsView {...mockProps} />);
+
+    expect(screen.getByText('8.5 / 10')).toBeInTheDocument();
+    expect(screen.getByText('Brief Quality Score')).toBeInTheDocument();
   });
 
   test('audience management works correctly', () => {
@@ -136,32 +121,5 @@ describe('DeliverableDetailsView', () => {
     render(<DeliverableDetailsView {...propsWithLoading} />);
     
     expect(screen.getByText('Generating Storyline...')).toBeInTheDocument();
-  });
-});
-
-describe('Format Selection Integration', () => {
-  test('format persistence workflow', async () => {
-    const onSave = jest.fn();
-    const onInputChange = jest.fn();
-    
-    const props = {
-      ...mockProps,
-      onSave,
-      onInputChange
-    };
-    
-    render(<DeliverableDetailsView {...props} />);
-    
-    // 1. Change format
-    const docButton = screen.getByText('DOC');
-    fireEvent.click(docButton);
-    
-    expect(onInputChange).toHaveBeenCalledWith('format', 'DOC');
-    
-    // 2. Save changes
-    const saveButton = screen.getByText('Save Changes');
-    fireEvent.click(saveButton);
-    
-    expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
