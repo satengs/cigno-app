@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import SectionNavigator from '../../storyline/SectionNavigator';
 import RegenerationConfirmModal from '../../ui/RegenerationConfirmModal';
+import { normalizeScoreValue } from '../../../utils/scoreUtils';
+
 
 export default function DeliverableStorylineView({
   generatedStoryline,
@@ -19,28 +21,36 @@ export default function DeliverableStorylineView({
   onUpdateSection,
   onStatusChange,
   onToggleLock,
-  onKeyPointsChange,
   onRemoveSection,
   title,
-  slideGenerationProgress = { completed: 0, total: 0 }
+  slideGenerationProgress = { completed: 0, total: 0 },
+  briefQuality = null
 }) {
+  const normalizedBriefQuality = normalizeScoreValue(briefQuality);
+  const canGenerateStoryline = normalizedBriefQuality === null || normalizedBriefQuality >= 7.5;
   const [showRegenerationModal, setShowRegenerationModal] = useState(false);
   if (!generatedStoryline) {
+    const disabled = isGeneratingStoryline || !canGenerateStoryline;
     return (
       <div className="p-12 text-center text-gray-500">
         <p className="text-lg font-medium mb-3">No storyline yet</p>
         <p className="text-sm mb-6">Generate a storyline to populate this view.</p>
         <button
           onClick={onGenerateStoryline}
-          disabled={isGeneratingStoryline}
+          disabled={disabled}
           className={`px-4 py-2 rounded-sm text-sm font-medium ${
-            isGeneratingStoryline
+            disabled
               ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
               : 'bg-gray-900 text-white hover:bg-gray-800'
           }`}
         >
           {isGeneratingStoryline ? 'Generating...' : 'Generate Storyline'}
         </button>
+        {!canGenerateStoryline && (
+          <p className="text-xs text-red-600 mt-3">
+            Storyline generation is disabled until the brief reaches 7.5 / 10.
+          </p>
+        )}
       </div>
     );
   }
@@ -119,10 +129,9 @@ export default function DeliverableStorylineView({
           onSectionChange={onSectionChange}
           onUpdateSection={onUpdateSection}
           onStatusChange={onStatusChange}
-            onToggleLock={onToggleLock}
-            onKeyPointsChange={onKeyPointsChange}
-            onRemoveSection={onRemoveSection}
-          />
+          onToggleLock={onToggleLock}
+          onRemoveSection={onRemoveSection}
+        />
       </div>
 
       {/* Regeneration Confirmation Modal */}

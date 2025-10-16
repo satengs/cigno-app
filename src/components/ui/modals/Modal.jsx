@@ -13,6 +13,7 @@ const Modal = ({
   showCloseButton = true,
   customCloseIcon = null,
   className = '',
+  fullHeight = false,
   ...props
 }) => {
   useEffect(() => {
@@ -55,7 +56,8 @@ const Modal = ({
       <div className="flex min-h-full items-center justify-center p-4">
         <div 
           className={clsx(
-            'relative w-full rounded-xl shadow-2xl transform transition-all flex flex-col max-h-[90vh]',
+            'relative w-full rounded-xl shadow-2xl transform transition-all flex flex-col',
+            fullHeight ? 'max-h-[calc(100vh-2rem)]' : 'max-h-[90vh]',
             sizes[size],
             className
           )}

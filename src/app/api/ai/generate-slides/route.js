@@ -160,6 +160,19 @@ export async function POST(request) {
 
     const prompt = buildPrompt({ section, storyline, layout });
 
+    const agentPayload = {
+      message: prompt,
+      context: {
+        sectionId,
+        section,
+        storyline,
+        layout
+      }
+    };
+
+    console.log('📤 Slide generation prompt:', prompt);
+    console.log('🚀 Slide agent payload:', JSON.stringify(agentPayload, null, 2));
+
     try {
       const response = await fetch(`${DEFAULT_BASE_URL}/api/custom-agents/${DEFAULT_AGENT_ID}/execute`, {
         method: 'POST',
@@ -167,15 +180,7 @@ export async function POST(request) {
           'Content-Type': 'application/json',
           'X-API-Key': DEFAULT_API_KEY
         },
-        body: JSON.stringify({
-          message: prompt,
-          context: {
-            sectionId,
-            section,
-            storyline,
-            layout
-          }
-        })
+        body: JSON.stringify(agentPayload)
       });
 
       if (!response.ok) {

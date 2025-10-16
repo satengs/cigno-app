@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Settings,
   Trash2,
@@ -12,6 +12,7 @@ import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { UnifiedAddModal } from '../ui';
 import { getIdString, isValidObjectId } from '../../lib/utils/idUtils';
 import { normalizeStatus } from '../../lib/constants/enums';
+import { normalizeScoreValue } from '../../utils/scoreUtils';
 import DeliverableStorylineView from './deliverable/DeliverableStorylineView';
 import DeliverableLayoutView from './deliverable/DeliverableLayoutView';
 import DeliverableDetailsView from './deliverable/DeliverableDetailsView';
@@ -122,6 +123,7 @@ const extractNumberFromNodes = (nodes, keys) => {
   return null;
 };
 
+
 export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase, onViewChange, selectedLayout, onStorylineChange }) {
   const [formData, setFormData] = useState({
     name: '',
@@ -134,8 +136,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     brief_improvements: ['Add geographical scope and timeline constraints']
   });
 
+  // Ref to track when we've just saved to prevent useEffect from overwriting formData
+  const justSavedRef = useRef(false);
+
   const [newAudience, setNewAudience] = useState('');
   const [showImproveBrief, setShowImproveBrief] = useState(false);
+  const [isSavingDeliverable, setIsSavingDeliverable] = useState(false);
   const [currentView, setCurrentView] = useState('detailed'); // 'detailed' | 'storyline' | 'layout'
   const [generatedStoryline, setGeneratedStoryline] = useState(null);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
@@ -440,8 +446,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
   // Update form data when selectedItem changes
   useEffect(() => {
-    if (selectedItem && selectedItem.type === 'deliverable') {
-      console.log('🎯 Deliverable selected:', selectedItem._id || selectedItem.id);
+    if (selectedItem && selectedItem.type === 'deliverable' && !isSavingDeliverable) {
+      console.log('🎯 [USEEFFECT] Deliverable selected:', selectedItem._id || selectedItem.id);
+      console.log('🎯 [USEEFFECT] isSavingDeliverable:', isSavingDeliverable);
+      console.log('🎯 [USEEFFECT] selectedItem.brief:', selectedItem.brief);
+      console.log('🎯 [USEEFFECT] Current formData.brief:', formData.brief);
+      console.log('🎯 [USEEFFECT] justSavedRef.current:', justSavedRef.current);
+      
+      // If we just saved, don't overwrite formData - it's already been updated by the save operation
+      if (justSavedRef.current) {
+        console.log('🎯 [USEEFFECT] Skipping formData update - just saved, formData already updated');
+        justSavedRef.current = false; // Reset the flag
+        return;
+      }
       
       const fetchDeliverableData = async () => {
         const deliverableId = selectedItem._id || selectedItem.id;
@@ -471,27 +488,40 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               selectedItem.improvements
             );
             
+            const qualityFromData = normalizeScoreValue(
+              deliverableData.brief_quality ??
+              selectedItem.brief_quality ??
+              7.5
+            ) ?? 7.5;
+
+            const briefToSet = deliverableData.brief || selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.';
+            console.log('🎯 [USEEFFECT] Setting form brief to:', briefToSet);
+            console.log('🎯 [USEEFFECT] deliverableData.brief:', deliverableData.brief);
+            console.log('🎯 [USEEFFECT] selectedItem.brief:', selectedItem.brief);
+            
             setFormData({
               name: deliverableData.name || selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: deliverableData.audience || selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: deliverableData.type || selectedItem.type || 'Strategy Presentation',
               due_date: deliverableData.due_date ? new Date(deliverableData.due_date).toISOString().split('T')[0] : 
                        selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
-              brief: deliverableData.brief || selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
-              brief_quality: deliverableData.brief_quality || selectedItem.brief_quality || 7.5,
+              brief: briefToSet,
+              brief_quality: qualityFromData,
               brief_strengths: strengthsFromData.length ? strengthsFromData : ['Technical requirements well defined'],
               brief_improvements: improvementsFromData.length ? improvementsFromData : ['Add geographical scope and timeline constraints']
             });
           } else {
             console.log('⚠️ Failed to fetch deliverable data, using selectedItem data');
             // Fallback to selectedItem data if API call fails
+            const qualityFromSelected = normalizeScoreValue(selectedItem.brief_quality ?? 7.5) ?? 7.5;
+
             setFormData({
               name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: selectedItem.type || 'Strategy Presentation',
               due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
               brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
-              brief_quality: selectedItem.brief_quality || 7.5,
+              brief_quality: qualityFromSelected,
               brief_strengths: normalizeInsightList(selectedItem.strengths).length
                 ? normalizeInsightList(selectedItem.strengths)
                 : ['Technical requirements well defined'],
@@ -503,13 +533,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         } catch (error) {
           console.error('❌ Error fetching deliverable data:', error);
           // Fallback to selectedItem data if error occurs
+          const qualityFallback = normalizeScoreValue(selectedItem.brief_quality ?? 7.5) ?? 7.5;
+
           setFormData({
             name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
             audience: selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
             type: selectedItem.type || 'Strategy Presentation',
             due_date: selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
             brief: selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
-            brief_quality: selectedItem.brief_quality || 7.5,
+            brief_quality: qualityFallback,
             brief_strengths: normalizeInsightList(selectedItem.strengths).length
               ? normalizeInsightList(selectedItem.strengths)
               : ['Technical requirements well defined'],
@@ -535,7 +567,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       console.log('🔍 Selected item metadata:', selectedItem.metadata);
       loadExistingStoryline(deliverableId);
     }
-  }, [selectedItem]);
+  }, [selectedItem, isSavingDeliverable]);
 
   // Load existing storyline for the deliverable
   const loadExistingStoryline = async (deliverableId) => {
@@ -665,10 +697,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       status: shouldLock ? 'final' : 'draft',
       lockedAt: shouldLock ? new Date().toISOString() : null
     });
-  };
-
-  const handleKeyPointsChange = (sectionId, keyPoints) => {
-    handleSectionUpdate(sectionId, { keyPoints });
   };
 
   const handleRemoveSection = (sectionId) => {
@@ -1098,7 +1126,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         'rating',
         'overallScore',
         'briefQuality',
-        'quality'
+        'quality',
+        'total_score'
       ]);
 
       let strengthsList = extractListFromNodes(candidateNodes, [
@@ -1132,12 +1161,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const normalizedScore = Number.isFinite(scoreValue)
-        ? Number(scoreValue.toFixed(1))
-        : formData.brief_quality;
+        ? normalizeScoreValue(scoreValue)
+        : (Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : formData.brief_quality);
 
       setFormData((prev) => ({
         ...prev,
-        brief_quality: normalizedScore ?? prev.brief_quality,
+        brief_quality: normalizedScore !== null ? normalizedScore : prev.brief_quality,
         brief_strengths: strengthsList.length ? strengthsList : prev.brief_strengths,
         brief_improvements: improvementsList.length ? improvementsList : prev.brief_improvements
       }));
@@ -1159,7 +1188,26 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     setShowImproveBrief(true);
   };
 
+  const handleResetBrief = () => {
+    setFormData(prev => ({
+      ...prev,
+      brief: '',
+      brief_quality: null,
+      brief_strengths: [],
+      brief_improvements: [],
+      recognizedStrengths: [],
+      suggestedImprovements: []
+    }));
+  };
+
   const handleBriefSave = (payloadOrBrief, legacyQuality, legacyStrengths, legacyImprovements) => {
+    justSavedRef.current = true; // Mark that we're updating formData from brief save
+    
+    // Safety timeout to reset the flag in case something goes wrong
+    setTimeout(() => {
+      justSavedRef.current = false;
+    }, 2000);
+    
     let improvedBriefValue = payloadOrBrief;
     let qualityValue = legacyQuality;
     let strengthsArray = normalizeInsightList(legacyStrengths);
@@ -1172,22 +1220,33 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       improvementsArray = normalizeInsightList(payloadOrBrief.improvements ?? payloadOrBrief.improvementsText);
     }
 
-    setFormData(prev => {
-      const normalizedQuality = Number.isFinite(Number(qualityValue))
-        ? Number(Number(qualityValue).toFixed(1))
-        : prev.brief_quality;
+    const normalizedQuality = normalizeScoreValue(qualityValue);
+    const normalizedStrengths = strengthsArray.length ? strengthsArray : formData.brief_strengths;
+    const normalizedImprovements = improvementsArray.length ? improvementsArray : formData.brief_improvements;
 
-      const normalizedStrengths = strengthsArray.length ? strengthsArray : prev.brief_strengths;
-      const normalizedImprovements = improvementsArray.length ? improvementsArray : prev.brief_improvements;
+    setFormData(prev => ({
+      ...prev,
+      brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : prev.brief,
+      brief_quality: normalizedQuality !== null ? normalizedQuality : prev.brief_quality,
+      brief_strengths: normalizedStrengths,
+      brief_improvements: normalizedImprovements
+    }));
 
-      return {
-        ...prev,
-        brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : prev.brief,
-        brief_quality: normalizedQuality,
+    if (onItemSelect) {
+      onItemSelect({
+        ...selectedItem,
+        brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : selectedItem.brief,
+        brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.brief_quality,
         brief_strengths: normalizedStrengths,
-        brief_improvements: normalizedImprovements
-      };
-    });
+        brief_improvements: normalizedImprovements,
+        metadata: {
+          ...(selectedItem.metadata || {}),
+          brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : selectedItem.metadata?.brief,
+          brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.metadata?.brief_quality
+        }
+      });
+    }
+
     setShowImproveBrief(false);
   };
 
@@ -1225,9 +1284,18 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       return;
     }
 
+    setIsSavingDeliverable(true);
+    justSavedRef.current = true; // Mark that we're about to save
+    
+    // Safety timeout to reset the flag in case something goes wrong
+    setTimeout(() => {
+      justSavedRef.current = false;
+    }, 5000);
+    
     try {
-      console.log('💾 Saving deliverable changes:', formData);
-      console.log('💾 SelectedItem project info:', {
+      console.log('💾 [SAVE START] Saving deliverable changes:', formData);
+      console.log('💾 [SAVE START] Current brief being saved:', formData.brief);
+      console.log('💾 [SAVE START] SelectedItem project info:', {
         project: selectedItem.project,
         project_id: selectedItem.project_id,
         metadata: selectedItem.metadata
@@ -1274,9 +1342,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         ...(formData.notes && { notes: formData.notes }),
         ...(formData.tags && { tags: formData.tags }),
         ...(() => {
-          const numericQuality = Number(formData.brief_quality);
-          return Number.isFinite(numericQuality)
-            ? { brief_quality: Number(numericQuality.toFixed(1)) }
+          const normalizedQuality = normalizeScoreValue(formData.brief_quality);
+          return normalizedQuality !== null
+            ? { brief_quality: normalizedQuality }
             : {};
         })(),
         ...(Array.isArray(formData.brief_strengths) && {
@@ -1290,7 +1358,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
       };
 
-      console.log('💾 Payload being sent:', payload);
+      console.log('💾 [SAVE API] Payload being sent:', payload);
+      console.log('💾 [SAVE API] Brief in payload:', payload.brief);
 
       const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
         method: 'PATCH',
@@ -1302,7 +1371,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
       if (response.ok) {
         const updatedDeliverable = await response.json();
-        console.log('✅ Deliverable saved successfully');
+        console.log('✅ [SAVE SUCCESS] Deliverable saved successfully');
+        console.log('✅ [SAVE SUCCESS] Updated deliverable:', updatedDeliverable);
+        console.log('✅ [SAVE SUCCESS] Updated deliverable brief:', updatedDeliverable.brief);
 
         setFormData(prev => {
           const updatedStrengths = normalizeInsightList(
@@ -1353,10 +1424,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           });
         }
 
-        if (refreshFromDatabase) {
-          await refreshFromDatabase();
-        }
-
         alert('Deliverable saved successfully!');
       } else {
         let errorMessage = 'Failed to save deliverable changes';
@@ -1372,12 +1439,26 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     } catch (error) {
       console.error('❌ Error saving deliverable:', error);
       alert('Error saving deliverable changes');
+    } finally {
+      setIsSavingDeliverable(false);
     }
   };
 
   const handleGenerateStoryline = async () => {
     if (!selectedItem || selectedItem.type !== 'deliverable') {
       alert('Storyline generation is only available for deliverables');
+      return;
+    }
+
+    // Prevent multiple simultaneous calls
+    if (isGeneratingStoryline) {
+      console.log('⚠️ Storyline generation already in progress, ignoring duplicate call');
+      return;
+    }
+
+    const numericQuality = Number(formData.brief_quality);
+    if (Number.isFinite(numericQuality) && numericQuality < 7.5) {
+      alert('Brief quality must reach at least 7.5 / 10 before generating a storyline. Improve the brief first.');
       return;
     }
 
@@ -1501,26 +1582,99 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
       console.log('🎭 Generating storyline with data:', requestData);
 
-      const response = await fetch('/api/ai/generate-storyline', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
+      // Retry logic with exponential backoff for rate limits
+      let lastError;
+      const maxRetries = 3;
+      const baseDelay = 1000; // 1 second base delay
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch('/api/ai/generate-storyline', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+          });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.error === 'string' 
-          ? errorData.error 
-          : errorData.details 
-          ? errorData.details 
-          : JSON.stringify(errorData.error) || 'Failed to generate storyline';
-        throw new Error(errorMessage);
+          if (!response.ok) {
+            const errorData = await response.json();
+            const errorMessage = typeof errorData.error === 'string' 
+              ? errorData.error 
+              : errorData.details 
+              ? errorData.details 
+              : JSON.stringify(errorData.error) || 'Failed to generate storyline';
+            
+            // Check if it's a rate limit error and we have retries left
+            if (response.status === 429 && attempt < maxRetries) {
+              const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+              console.log(`⏳ Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              lastError = new Error(errorMessage);
+              continue;
+            }
+            
+            throw new Error(errorMessage);
+          }
+
+          // Success - break out of retry loop
+          const result = await response.json();
+          console.log('✅ Storyline generated successfully:', result);
+          
+          if (result.success && result.data) {
+            console.log('ℹ️ Storyline generated via AI endpoint');
+            
+            // Parse the AI response - handle string payloads or wrapped responses
+            let storylineData;
+            try {
+              storylineData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+            } catch (parseError) {
+              console.warn('⚠️ Failed to parse storyline data as JSON, using raw data:', parseError);
+              storylineData = result.data;
+            }
+
+            // Normalize the storyline data
+            const normalizedStoryline = {
+              _id: storylineData._id || storylineData.id,
+              title: storylineData.title || 'Generated Storyline',
+              sections: (storylineData.sections || []).map((section, index) => 
+                normalizeSectionForState(section, index)
+              ),
+              executiveSummary: storylineData.executiveSummary || storylineData.summary || '',
+              presentationFlow: storylineData.presentationFlow || storylineData.flow || '',
+              callToAction: storylineData.callToAction || storylineData.cta || '',
+              totalSections: storylineData.sections?.length || 0,
+              estimatedDuration: storylineData.estimatedDuration || storylineData.duration || 0,
+              generatedAt: new Date().toISOString(),
+              source: result.source || 'ai-generated'
+            };
+
+            setGeneratedStoryline(normalizedStoryline);
+            setStorylineDirty(true);
+            setCurrentView('storyline');
+            
+            console.log('✅ Storyline normalized and set:', normalizedStoryline);
+            return; // Success - exit the function
+          } else {
+            throw new Error('Invalid response format from storyline generation API');
+          }
+        } catch (error) {
+          lastError = error;
+          
+          // If it's not a rate limit error, don't retry
+          if (!error.message?.includes?.('rate limit') && !error.message?.includes?.('Rate limit')) {
+            throw error;
+          }
+          
+          // If we've exhausted retries, throw the last error
+          if (attempt === maxRetries) {
+            throw lastError;
+          }
+        }
       }
-
-      const result = await response.json();
-      console.log('✅ Storyline generated successfully:', result);
+      
+      // This should never be reached, but just in case
+      throw lastError || new Error('Failed to generate storyline after all retries');
       
       if (result.success && result.data) {
         console.log('ℹ️ Storyline generated via AI endpoint');
@@ -1865,6 +2019,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const handleRegenerateStoryline = async (options = {}) => {
     if (!selectedItem || selectedItem.type !== 'deliverable') {
       alert('Storyline regeneration is only available for deliverables');
+      return;
+    }
+
+    // Prevent multiple simultaneous calls
+    if (isGeneratingStoryline) {
+      console.log('⚠️ Storyline generation already in progress, ignoring duplicate regeneration call');
       return;
     }
 
@@ -2365,46 +2525,47 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
     const deliverableView = (() => {
       if (currentView === 'storyline') {
-        return (
-          <DeliverableStorylineView
-            generatedStoryline={generatedStoryline}
-            storylineDirty={storylineDirty}
-            isSavingStoryline={isSavingStoryline}
-            isGeneratingStoryline={isGeneratingStoryline}
-            isGeneratingSlides={isGeneratingSlides}
-            onSaveStoryline={handleSaveStoryline}
-            onGenerateStoryline={handleGenerateStoryline}
-            onGenerateSlides={handleGenerateSlidesForStoryline}
-            onRegenerateStoryline={handleRegenerateStoryline}
-            onResetStoryline={() => setShowResetConfirm(true)}
-            currentSectionIndex={currentSectionIndex}
-            onSectionChange={setCurrentSectionIndex}
-            onUpdateSection={handleSectionUpdate}
-            onStatusChange={handleSectionStatusChange}
-            onToggleLock={handleToggleLock}
-            onKeyPointsChange={handleKeyPointsChange}
-            onRemoveSection={handleRemoveSection}
-            slideGenerationProgress={slideGenerationProgress}
-            title={storylineTitle}
-          />
-        );
-      }
+      return (
+        <DeliverableStorylineView
+          generatedStoryline={generatedStoryline}
+          storylineDirty={storylineDirty}
+          isSavingStoryline={isSavingStoryline}
+          isGeneratingStoryline={isGeneratingStoryline}
+          isGeneratingSlides={isGeneratingSlides}
+          onSaveStoryline={handleSaveStoryline}
+          onGenerateStoryline={handleGenerateStoryline}
+          onGenerateSlides={handleGenerateSlidesForStoryline}
+          onRegenerateStoryline={handleRegenerateStoryline}
+          onResetStoryline={() => setShowResetConfirm(true)}
+          currentSectionIndex={currentSectionIndex}
+          onSectionChange={setCurrentSectionIndex}
+          onUpdateSection={handleSectionUpdate}
+          onStatusChange={handleSectionStatusChange}
+          onToggleLock={handleToggleLock}
+          onRemoveSection={handleRemoveSection}
+          slideGenerationProgress={slideGenerationProgress}
+          title={storylineTitle}
+          briefQuality={Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : null}
+        />
+      );
+    }
 
-      if (currentView === 'layout') {
-        return (
-          <DeliverableLayoutView
-            hasStoryline={!!generatedStoryline}
-            storyline={generatedStoryline}
-            onGenerateStoryline={handleGenerateStoryline}
-            isGeneratingStoryline={isGeneratingStoryline}
-            selectedLayoutType={selectedItem?._layoutType}
-            selectedLayout={selectedLayout}
-            onStorylineChange={setGeneratedStoryline}
-            onApplyLayoutToAll={(layoutId) => {
-              // Apply the layout to all sections in the storyline
-              if (generatedStoryline) {
-                const updatedStoryline = {
-                  ...generatedStoryline,
+    if (currentView === 'layout') {
+      return (
+        <DeliverableLayoutView
+          hasStoryline={!!generatedStoryline}
+          storyline={generatedStoryline}
+          onGenerateStoryline={handleGenerateStoryline}
+          isGeneratingStoryline={isGeneratingStoryline}
+          selectedLayoutType={selectedItem?._layoutType}
+          selectedLayout={selectedLayout}
+          onStorylineChange={setGeneratedStoryline}
+          briefQuality={Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : null}
+          onApplyLayoutToAll={(layoutId) => {
+            // Apply the layout to all sections in the storyline
+            if (generatedStoryline) {
+              const updatedStoryline = {
+                ...generatedStoryline,
                   sections: generatedStoryline.sections?.map(section => ({
                     ...section,
                     layout: layoutId,
@@ -2430,6 +2591,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           onTestBrief={handleTestBrief}
           isTestingBrief={isTestingBrief}
           onImproveBrief={handleImproveBrief}
+          onResetBrief={handleResetBrief}
           onGenerateStoryline={handleGenerateStoryline}
           isGeneratingStoryline={isGeneratingStoryline}
           onNewAudienceChange={setNewAudience}

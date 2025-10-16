@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
+import { normalizeScoreValue } from '../../../utils/scoreUtils';
+
 
 const LAYOUT_OPTIONS = [
   {
@@ -105,7 +107,8 @@ export default function DeliverableLayoutView({
   onApplyLayout,
   selectedLayout = 'title-2-columns',
   onStorylineChange,
-  onApplyLayoutToAll
+  onApplyLayoutToAll,
+  briefQuality = null
 }) {
   const [previewSection, setPreviewSection] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -603,22 +606,31 @@ export default function DeliverableLayoutView({
     }
   };
 
+  const normalizedBriefQuality = normalizeScoreValue(briefQuality);
+  const canGenerateStoryline = normalizedBriefQuality === null || normalizedBriefQuality >= 7.5;
+
   if (!hasStoryline) {
+    const disabled = isGeneratingStoryline || !canGenerateStoryline;
     return (
       <div className="p-12 text-center text-gray-500">
         <p className="text-lg font-medium mb-3">Layout unavailable</p>
         <p className="text-sm">Generate a storyline first to unlock the layout view.</p>
         <button
           onClick={onGenerateStoryline}
-          disabled={isGeneratingStoryline}
+          disabled={disabled}
           className={`mt-4 px-4 py-2 rounded-sm text-sm font-medium ${
-            isGeneratingStoryline
+            disabled
               ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
               : 'bg-gray-900 text-white hover:bg-gray-800'
           }`}
         >
           {isGeneratingStoryline ? 'Generating...' : 'Generate Storyline'}
         </button>
+        {!canGenerateStoryline && (
+          <p className="text-xs text-red-600 mt-3">
+            Storyline generation is disabled until the brief reaches 7.5 / 10.
+          </p>
+        )}
       </div>
     );
   }

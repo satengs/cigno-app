@@ -36,11 +36,18 @@ export async function POST(request) {
 
     const sanitisedContext = sanitiseAgentContext(structuredPayload);
 
-    const message = `Generate a storyline for the project "${projectData?.name || 'project'}" for client "${projectData?.client_name || clientData?.name || 'client'}".
+    const agentPayload = {
+      message: JSON.stringify(structuredPayload),
+      context: {
+        ...sanitisedContext,
+        requestType: 'generate_storyline',
+        projectId
+      },
+      data: structuredPayload
+    };
 
-Please create a comprehensive storyline structure based on the project requirements and deliverable objectives. Return any format you think is most appropriate - markdown, JSON, or plain text.`;
-
-    console.log('📤 Context sent to storyline agent:', JSON.stringify(sanitisedContext, null, 2));
+    console.log('📤 Context sent to storyline agent:', JSON.stringify(agentPayload.context, null, 2));
+    console.log('🚀 Storyline agent payload:', JSON.stringify(agentPayload, null, 2));
 
     try {
       // Try custom agent first
@@ -50,10 +57,7 @@ Please create a comprehensive storyline structure based on the project requireme
           'Content-Type': 'application/json',
           'X-API-Key': AI_CONFIG.apiKey
         },
-        body: JSON.stringify({
-          message,
-          context: sanitisedContext
-        })
+        body: JSON.stringify(agentPayload)
       });
 
       if (!customAgentResponse.ok) {

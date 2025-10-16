@@ -1,3 +1,50 @@
+const GEOGRAPHY_KEYWORDS = [
+  'switzerland',
+  'swiss',
+  'emea',
+  'europe',
+  'north america',
+  'latin america',
+  'latam',
+  'asia',
+  'middle east',
+  'africa',
+  'apac',
+  'global'
+];
+
+const STRATEGIC_CONTENT_CHECKS = [
+  {
+    name: 'Market sizing',
+    pattern: /market sizing|size of the market|total addressable market|tam|sam|som/i,
+    improvement: 'Quantify the market size, growth, and value pools to anchor the commercial opportunity.'
+  },
+  {
+    name: 'Competitive analysis',
+    pattern: /competitive|competitor|benchmark|landscape|peer set/i,
+    improvement: 'Benchmark incumbents and disruptors to pinpoint UBS’s differentiation gaps.'
+  },
+  {
+    name: 'Capability assessment',
+    pattern: /capabilit|operating model|internal strength|delivery model/i,
+    improvement: 'Assess UBS’s current capabilities and enablers to surface structural execution gaps.'
+  },
+  {
+    name: 'Gap analysis',
+    pattern: /gap analysis|capability gap|versus|delta vs|performance gap/i,
+    improvement: 'Highlight the critical gaps versus market leaders and what needs to change.'
+  },
+  {
+    name: 'Strategic options',
+    pattern: /strategic option|scenario|buy vs build|partner|acquisition|roadmap|transformation/i,
+    improvement: 'Lay out the strategic moves (build, partner, buy) and the roadmap or phasing required.'
+  }
+];
+
+const OUTCOME_KEYWORDS = /roadmap|next step|implementation|phasing|so what|recommendation|playbook|action plan|sequencing/i;
+const AUDIENCE_KEYWORDS = /audienc|stakeholder|client|board|executive|leadership/i;
+const OBJECTIVE_KEYWORDS = /objective|goal|aim|success metric|kpi|north star/i;
+
 function normalizeTextArray(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -14,49 +61,122 @@ function normalizeTextArray(value) {
   return [String(value)];
 }
 
-function buildFallbackEvaluation(brief) {
-  const text = brief || '';
-  const lengthScore = Math.min(text.length / 600, 1.2) * 2;
-  const hasObjectives = /objective|goal|aim/i.test(text) ? 1.5 : 0;
-  const hasAudience = /audienc|stakeholder|client/i.test(text) ? 1.0 : 0;
-  const hasStructure = /scope|deliverable|timeline|success|metric/i.test(text) ? 2.0 : 0;
+function mergeUnique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
 
-  const score = Math.max(3, Math.min(9.5, 3 + lengthScore + hasObjectives + hasAudience + hasStructure));
+const normalizeScore = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  let numeric = value;
+
+  if (typeof numeric === 'string') {
+    const match = numeric.match(/-?\d+(?:\.\d+)?/);
+    numeric = match ? Number(match[0]) : Number(numeric);
+  }
+
+  numeric = Number(numeric);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  const scaled = numeric > 10 ? numeric / 10 : numeric;
+  return Number(scaled.toFixed(1));
+};
+
+function deriveBriefInsights(rawBrief) {
+  const brief = (rawBrief || '').trim();
+  const lower = brief.toLowerCase();
+  const wordCount = brief ? brief.split(/\s+/).filter(Boolean).length : 0;
 
   const strengths = [];
   const improvements = [];
+  const suggestions = [];
+  let score = 5;
 
-  if (hasObjectives) {
-    strengths.push('Includes clear objectives.');
+  if (wordCount === 0) {
+    return {
+      strengths,
+      improvements: ['Draft the brief so it provides context, objectives, and required outputs.'],
+      suggestions,
+      summary: 'Brief is empty – add content before scoring.',
+      score: 0
+    };
+  }
+
+  if (wordCount < 180) {
+    improvements.push('Expand the brief beyond ~180 words so the team has adequate context.');
+    score -= 1.5;
+  } else if (wordCount > 900) {
+    suggestions.push('Tighten the draft to under ~900 words so executives can scan it quickly.');
+    score -= 1;
+  } else if (wordCount >= 300 && wordCount <= 600) {
+    strengths.push('Balanced length gives enough colour without overwhelming the reader.');
+    score += 1;
   } else {
-    improvements.push('Add SMART objectives that define measurable outcomes.');
+    score += 0.25;
   }
 
-  if (hasAudience) {
-    strengths.push('References target stakeholders.');
+  if (OBJECTIVE_KEYWORDS.test(lower)) {
+    strengths.push('References objectives or success metrics.');
+    score += 0.8;
   } else {
-    improvements.push('Describe the audience and their expectations.');
+    improvements.push('Define the concrete objectives and how success will be measured.');
+    score -= 0.8;
   }
 
-  if (hasStructure) {
-    strengths.push('Covers key scope or success elements.');
+  if (AUDIENCE_KEYWORDS.test(lower)) {
+    strengths.push('Identifies the audience or stakeholder focus.');
+    score += 0.6;
   } else {
-    improvements.push('Clarify scope, deliverables, timeline, and success criteria.');
+    improvements.push('Clarify the target stakeholders so the storyline and tone can be tailored.');
+    score -= 0.6;
   }
 
-  if (text.length < 220) {
-    improvements.push('Expand contextual background, dependencies, and supporting data needs.');
+  const hasGeography = GEOGRAPHY_KEYWORDS.some(keyword => lower.includes(keyword));
+  if (hasGeography) {
+    strengths.push('Specifies the geography or market focus.');
+    score += 0.6;
+  } else {
+    improvements.push('Anchor the strategy to a specific geography or market (e.g., Switzerland) and note regulatory context.');
+    score -= 0.6;
   }
+
+  STRATEGIC_CONTENT_CHECKS.forEach(check => {
+    if (check.pattern.test(lower)) {
+      strengths.push(`${check.name} is called out.`);
+      score += 0.7;
+    } else {
+      improvements.push(check.improvement);
+      score -= 0.7;
+    }
+  });
+
+  if (OUTCOME_KEYWORDS.test(lower)) {
+    strengths.push('Includes the “so what” — roadmap, sequencing, or tangible actions.');
+    score += 0.8;
+  } else {
+    improvements.push('Spell out the “so what”: a roadmap, sequencing, or the tactical/strategic moves expected.');
+    score -= 0.8;
+  }
+
+  const uniqueStrengths = mergeUnique(strengths);
+  const uniqueImprovements = mergeUnique(improvements);
+  const uniqueSuggestions = mergeUnique(suggestions);
+
+  const summary = uniqueImprovements.length
+    ? `Key gaps detected: ${uniqueImprovements.slice(0, 2).join(' ')}`
+    : 'Brief covers the core evaluation checks for length, structure, and strategic content.';
+
+  const normalizedScore = Math.max(0, Math.min(10, Number(score.toFixed(1))));
 
   return {
-    qualityScore: Number(score.toFixed(1)),
-    strengths,
-    improvements,
-    suggestions: [
-      'Collect quantitative evidence to back up the recommendations.',
-      'Align with compliance or regulatory considerations before delivery.'
-    ],
-    summary: 'Offline scoring estimate: strengthen objectives, audience focus, and measurable success criteria.'
+    strengths: uniqueStrengths,
+    improvements: uniqueImprovements,
+    suggestions: uniqueSuggestions,
+    summary,
+    score: normalizedScore
   };
 }
 
@@ -68,6 +188,7 @@ export async function scoreBriefWithAgent({
   improvementPayload = null
 }) {
   const textForEvaluation = typeof brief === 'string' ? brief : '';
+  const heuristicInsights = deriveBriefInsights(textForEvaluation);
 
   const AI_CONFIG = {
     baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
@@ -93,6 +214,20 @@ export async function scoreBriefWithAgent({
   };
 
   try {
+    try {
+      console.log('🧾 Brief scoring request:', JSON.stringify({
+        deliverableId,
+        wordCount: textForEvaluation.split(/\s+/).filter(Boolean).length,
+        hasImprovementPayload: Boolean(improvementPayload)
+      }, null, 2));
+      console.log('📤 Scoring context payload:', JSON.stringify(context, null, 2));
+    } catch (logError) {
+      console.log('🧾 Brief scoring request (non-serializable):', {
+        deliverableId,
+        hasImprovementPayload: Boolean(improvementPayload)
+      });
+    }
+
     const response = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.scoreAgentId}/execute`, {
       method: 'POST',
       headers: {
@@ -111,30 +246,49 @@ export async function scoreBriefWithAgent({
     }
 
     const agentResult = await response.json();
-    const payload = agentResult?.data || agentResult?.response || agentResult;
+    try {
+      console.log('🧠 Raw scoring agent result:', JSON.stringify(agentResult, null, 2));
+    } catch (logError) {
+      console.log('🧠 Raw scoring agent result (non-serializable):', agentResult);
+    }
+    let payload = agentResult?.data || agentResult?.response || agentResult;
+    
+    // If payload is a JSON string, parse it
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch (parseError) {
+        console.warn('⚠️ Failed to parse response as JSON:', parseError);
+        payload = {};
+      }
+    }
 
-    const qualityScoreRaw = payload?.qualityScore ?? payload?.score;
+    const qualityScoreRaw = payload?.qualityScore ?? payload?.score ?? payload?.total_score;
+    const normalizedScore = normalizeScore(qualityScoreRaw);
     const strengths = normalizeTextArray(payload?.strengths ?? payload?.highlights);
     const improvements = normalizeTextArray(payload?.improvements ?? payload?.gaps);
     const suggestions = normalizeTextArray(payload?.suggestions ?? payload?.nextSteps);
 
     const normalizedResult = {
-      qualityScore: Number.isFinite(Number(qualityScoreRaw))
-        ? Number(Number(qualityScoreRaw).toFixed(1))
-        : null,
-      strengths,
-      improvements,
-      suggestions,
-      summary: payload?.summary || payload?.notes || ''
+      qualityScore: normalizedScore ?? heuristicInsights.score,
+      strengths: mergeUnique([...strengths, ...heuristicInsights.strengths]),
+      improvements: mergeUnique([...improvements, ...heuristicInsights.improvements]),
+      suggestions: mergeUnique([...suggestions, ...heuristicInsights.suggestions]),
+      summary: payload?.summary || payload?.notes || heuristicInsights.summary
     };
 
-    if (normalizedResult.qualityScore === null) {
-      const fallback = buildFallbackEvaluation(textForEvaluation);
-      normalizedResult.qualityScore = fallback.qualityScore;
-      normalizedResult.strengths = fallback.strengths;
-      normalizedResult.improvements = fallback.improvements;
-      normalizedResult.suggestions = fallback.suggestions;
-      normalizedResult.summary = fallback.summary;
+    if ((normalizedResult.qualityScore === null || normalizedResult.qualityScore === undefined) && heuristicInsights.score !== null) {
+      normalizedResult.qualityScore = heuristicInsights.score;
+    }
+
+    if (!normalizedResult.summary) {
+      normalizedResult.summary = heuristicInsights.summary;
+    }
+
+    try {
+      console.log('📦 Normalized scoring result:', JSON.stringify(normalizedResult, null, 2));
+    } catch (logError) {
+      console.log('📦 Normalized scoring result (non-serializable):', normalizedResult);
     }
 
     return {
@@ -144,16 +298,21 @@ export async function scoreBriefWithAgent({
       data: normalizedResult
     };
   } catch (error) {
-    const fallback = buildFallbackEvaluation(textForEvaluation);
-
+    console.error('❌ Brief scoring error:', error);
     return {
-      success: true,
-      source: 'fallback',
+      success: false,
+      source: 'error',
       agentId: null,
-      data: fallback,
+      data: {
+        qualityScore: heuristicInsights.score,
+        strengths: heuristicInsights.strengths,
+        improvements: heuristicInsights.improvements,
+        suggestions: heuristicInsights.suggestions,
+        summary: `Automated scoring unavailable: ${error.message || 'please retry.'}`
+      },
       fallbackReason: error.message
     };
   }
 }
 
-export { normalizeTextArray, buildFallbackEvaluation };
+export { normalizeTextArray };

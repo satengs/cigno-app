@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Button from '../ui/buttons/Button';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { FileText, Wand2, Save, ArrowLeft, X, Sparkles, BookOpen } from 'lucide-react';
+import { normalizeScoreValue } from '../../utils/scoreUtils';
 
 const normalizeInsightList = (value) => {
   if (!value) return [];
@@ -27,6 +28,8 @@ const normalizeInsightList = (value) => {
   return [String(value).trim()].filter(Boolean);
 };
 
+
+
 export default function DeliverableSettingsPage({ 
   deliverable,
   onSave,
@@ -47,9 +50,7 @@ export default function DeliverableSettingsPage({
   const [errors, setErrors] = useState({});
   const [showImproveBriefModal, setShowImproveBriefModal] = useState(false);
 
-  const qualityScore = Number.isFinite(Number(formData.briefQuality))
-    ? Number(Number(formData.briefQuality).toFixed(1))
-    : null;
+  const qualityScore = normalizeScoreValue(formData.briefQuality);
 
   const recognizedStrengths = Array.isArray(formData.recognizedStrengths)
     ? formData.recognizedStrengths
@@ -62,6 +63,7 @@ export default function DeliverableSettingsPage({
   const qualityPercent = qualityScore !== null
     ? Math.min(100, Math.max(0, (qualityScore / 10) * 100))
     : 0;
+  const canGenerateStoryline = qualityScore === null || qualityScore >= 7.5;
 
   useEffect(() => {
     if (deliverable) {
@@ -95,7 +97,7 @@ export default function DeliverableSettingsPage({
       );
 
       const qualityValue = Number(deliverable.brief_quality ?? deliverable.briefQuality);
-      const normalizedQuality = Number.isFinite(qualityValue) ? Number(qualityValue.toFixed(1)) : null;
+      const normalizedQuality = normalizeScoreValue(qualityValue);
       
       setFormData({
         brief: deliverable.brief || intelligentBrief,
@@ -243,9 +245,8 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         ? normalizeInsightList(result.improvements ?? result.improvementsText)
         : [];
 
-      const normalizedQuality = Number.isFinite(Number(qualityScoreValue))
-        ? Number(Number(qualityScoreValue).toFixed(1))
-        : formData.briefQuality;
+      const normalizedQuality = normalizeScoreValue(qualityScoreValue);
+      const fallbackQuality = normalizeScoreValue(formData.briefQuality);
 
       const recognizedStrengths = strengthsArray.length
         ? strengthsArray
@@ -259,7 +260,7 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
       setFormData(prev => ({ 
         ...prev, 
         brief: improvedBrief,
-        briefQuality: normalizedQuality,
+        briefQuality: normalizedQuality !== null ? normalizedQuality : fallbackQuality,
         recognizedStrengths,
         suggestedImprovements
       }));
@@ -274,7 +275,7 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         body: JSON.stringify({
           id: deliverableId,
           brief: improvedBrief,
-          brief_quality: normalizedQuality,
+          brief_quality: normalizedQuality !== null ? normalizedQuality : fallbackQuality,
           brief_strengths: recognizedStrengths,
           brief_improvements: suggestedImprovements
         })
@@ -313,8 +314,9 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
 
       if (formData.briefQuality !== undefined && formData.briefQuality !== null) {
         const numericQuality = Number(formData.briefQuality);
-        if (Number.isFinite(numericQuality)) {
-          updateData.brief_quality = Number(numericQuality.toFixed(1));
+        const normalizedQuality = normalizeScoreValue(numericQuality);
+        if (normalizedQuality !== null) {
+          updateData.brief_quality = normalizedQuality;
         }
       }
 
@@ -490,6 +492,12 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
                   )}
                 </div>
               )}
+
+              {qualityScore !== null && qualityScore < 7.5 && (
+                <p className="text-xs text-red-600">
+                  Storyline generation is disabled until the brief reaches 7.5 / 10.
+                </p>
+              )}
             </div>
           )}
           
@@ -514,10 +522,10 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
               <Button
                 type="button"
                 onClick={onGenerateStoryline}
-                disabled={isGeneratingStoryline || !formData.brief.trim()}
+                disabled={isGeneratingStoryline || !formData.brief.trim() || !canGenerateStoryline}
                 size="sm"
                 className={`flex items-center space-x-2 ${
-                  isGeneratingStoryline
+                  isGeneratingStoryline || !formData.brief.trim() || !canGenerateStoryline
                     ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     : 'bg-purple-600 text-white hover:bg-purple-700'
                 }`}

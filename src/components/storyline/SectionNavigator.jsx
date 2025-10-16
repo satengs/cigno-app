@@ -36,11 +36,9 @@ export default function SectionNavigator({
   onUpdateSection,
   onStatusChange,
   onToggleLock,
-  onKeyPointsChange,
   onRemoveSection
 }) {
   const [expandedSectionId, setExpandedSectionId] = useState(null);
-  const [draftKeyPoints, setDraftKeyPoints] = useState({});
   const [chartDrafts, setChartDrafts] = useState({});
   const [chartErrors, setChartErrors] = useState({});
 
@@ -50,7 +48,6 @@ export default function SectionNavigator({
   // }, [currentSectionIndex, sections]);
 
   useEffect(() => {
-    setDraftKeyPoints({});
     setChartDrafts({});
     setChartErrors({});
   }, [sections]);
@@ -173,32 +170,12 @@ export default function SectionNavigator({
   };
 
 
-  const handleAddKeyPoint = (sectionId) => {
-    const draft = (draftKeyPoints[sectionId] || '').trim();
-    if (!draft) return;
-    const section = sections.find(item => item.id === sectionId);
-    const updated = [...(section?.keyPoints || []), draft];
-    onKeyPointsChange?.(sectionId, updated);
-    setDraftKeyPoints(prev => ({ ...prev, [sectionId]: '' }));
-  };
-
-  const handleRemoveKeyPoint = (sectionId, indexToRemove) => {
-    const section = sections.find(item => item.id === sectionId);
-    const updated = (section?.keyPoints || []).filter((_, index) => index !== indexToRemove);
-    onKeyPointsChange?.(sectionId, updated);
-  };
-
-  const setDraftForSection = (sectionId, value) => {
-    setDraftKeyPoints(prev => ({ ...prev, [sectionId]: value }));
-  };
-
   return (
     <div className="space-y-4">
       {sections.map((section, index) => {
         const isExpanded = expandedSectionId === section.id;
         const isLocked = !!section.locked;
         const statusClass = statusBadgeClasses[section.status] || statusBadgeClasses.not_started;
-        const draftValue = draftKeyPoints[section.id] || '';
         const isCurrentSection = index === currentSectionIndex;
 
         return (
@@ -445,48 +422,15 @@ export default function SectionNavigator({
                             {pointIndex + 1}
                           </div>
                           <span className="flex-1 text-sm text-gray-700">{point}</span>
-                          {!isLocked && (
-                            <button
-                              onClick={() => handleRemoveKeyPoint(section.id, pointIndex)}
-                              className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1 rounded hover:bg-red-50"
-                            >
-                              Remove
-                            </button>
-                          )}
                         </div>
                       ))}
-                      
+
                       {(section.keyPoints || []).length === 0 && (
                         <div className="text-center py-6 text-sm text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                          No key points added yet
+                          No key points available for this section
                         </div>
                       )}
                     </div>
-                    
-                    {!isLocked && (
-                      <div className="mt-3 flex gap-2">
-                        <input
-                          type="text"
-                          value={draftValue}
-                          onChange={(e) => setDraftForSection(section.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddKeyPoint(section.id);
-                            }
-                          }}
-                          placeholder="Add a key point..."
-                          className="flex-1 rounded-lg border border-gray-300 px-3 py-2.5 text-sm bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors"
-                        />
-                        <button
-                          onClick={() => handleAddKeyPoint(section.id)}
-                          disabled={!draftValue.trim()}
-                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    )}
                   </div>
                   </div>
 

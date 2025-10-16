@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import Modal from './modals/Modal';
 import Button from './buttons/Button';
+import { normalizeScoreValue } from '../../utils/scoreUtils';
 
 const normalizeInsightList = (value, visited = new Set()) => {
   if (!value) return [];
@@ -37,7 +38,12 @@ const collectCandidateNodes = (payload) => {
   const visited = new Set();
 
   const addNode = (node) => {
-    if (!node || typeof node !== 'object') return;
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach(addNode);
+      return;
+    }
+    if (typeof node !== 'object') return;
     if (visited.has(node)) return;
     visited.add(node);
     nodes.push(node);
@@ -57,6 +63,11 @@ const collectCandidateNodes = (payload) => {
   addNode(payload?.briefQuality);
   addNode(payload?.evaluation);
   addNode(payload?.summary);
+  addNode(payload?.suggested_briefs);
+  addNode(payload?.data?.suggested_briefs);
+  addNode(payload?.primarySuggestion);
+  addNode(payload?.primary_suggestion);
+  addNode(payload?.data?.primarySuggestion);
 
   if (Array.isArray(payload?.sections)) {
     payload.sections.forEach(addNode);
@@ -64,6 +75,14 @@ const collectCandidateNodes = (payload) => {
 
   if (Array.isArray(payload?.insights)) {
     payload.insights.forEach(addNode);
+  }
+
+  if (Array.isArray(payload?.suggested_briefs)) {
+    payload.suggested_briefs.forEach(addNode);
+  }
+
+  if (Array.isArray(payload?.data?.suggested_briefs)) {
+    payload.data.suggested_briefs.forEach(addNode);
   }
 
   return nodes;
@@ -120,7 +139,8 @@ const extractBriefContent = (nodes, fallbackValue) => {
     'draftBrief',
     'optimizedBrief',
     'html',
-    'content'
+    'content',
+    'improved_brief_text'
   ];
 
   for (const node of nodes) {
@@ -151,6 +171,55 @@ const extractBriefContent = (nodes, fallbackValue) => {
   return fallbackValue;
 };
 
+
+const getScoreStyles = (score) => {
+  if (!Number.isFinite(score)) {
+    return {
+      card: 'border-gray-200 bg-gray-50',
+      title: 'text-gray-700',
+      value: 'text-gray-800',
+      note: 'text-gray-600',
+      badge: 'bg-gray-300',
+      statusLabel: 'Not evaluated yet',
+      caption: 'Run "Test Brief" to evaluate quality before generating a storyline.'
+    };
+  }
+
+  if (score < 7.5) {
+    return {
+      card: 'border-red-200 bg-red-50',
+      title: 'text-red-800',
+      value: 'text-red-900',
+      note: 'text-red-700',
+      badge: 'bg-red-500',
+      statusLabel: 'Below minimum (7.5)',
+      caption: 'Improve the brief before generating a storyline.'
+    };
+  }
+
+  if (score < 8) {
+    return {
+      card: 'border-amber-200 bg-amber-50',
+      title: 'text-amber-800',
+      value: 'text-amber-900',
+      note: 'text-amber-700',
+      badge: 'bg-amber-500',
+      statusLabel: 'Acceptable (≥ 7.5)',
+      caption: 'Solid draft, but consider tightening before storytelling.'
+    };
+  }
+
+  return {
+    card: 'border-green-200 bg-green-50',
+    title: 'text-green-800',
+    value: 'text-green-900',
+    note: 'text-green-700',
+    badge: 'bg-green-500',
+    statusLabel: 'Storyline-ready',
+    caption: 'High-clarity brief suitable for storyline generation.'
+  };
+};
+
 export default function ImproveBriefModal({
   isOpen,
   onClose,
@@ -160,6 +229,7 @@ export default function ImproveBriefModal({
   projectData = {}
 }) {
   const [editableBrief, setEditableBrief] = useState('');
+  const [currentBriefDraft, setCurrentBriefDraft] = useState('');
   const [isImproving, setIsImproving] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -169,6 +239,9 @@ export default function ImproveBriefModal({
   const [strengths, setStrengths] = useState([]);
   const [isTesting, setIsTesting] = useState(false);
   const [customInstructions, setCustomInstructions] = useState('');
+  const [changeSummary, setChangeSummary] = useState([]);
+  const [aiRationale, setAiRationale] = useState('');
+  const [aiExpectedScore, setAiExpectedScore] = useState(null);
 
   const htmlToText = (html) => {
     if (!html) return '';
@@ -218,18 +291,27 @@ export default function ImproveBriefModal({
   useEffect(() => {
     if (isOpen) {
       setEditableBrief(currentBriefText);
-      setQualityScore(null);
+      setCurrentBriefDraft(currentBriefText);
+      const initialQuality = normalizeScoreValue(
+        deliverable?.brief_quality ??
+        deliverable?.briefQuality ??
+        (typeof currentBrief === 'object' ? currentBrief?.qualityScore : null)
+      );
+      setQualityScore(initialQuality);
       setImprovements([]);
       setStrengths([]);
       setIsTesting(false);
       setHasImproved(false);
       setError('');
       setCustomInstructions('');
+      setChangeSummary([]);
+      setAiRationale('');
+      setAiExpectedScore(null);
     }
   }, [isOpen, currentBriefText, currentBrief]);
 
   const improveBrief = async () => {
-    const originalBrief = currentBriefText.trim();
+    const originalBrief = currentBriefDraft.trim();
     const workingDraft = editableBrief.trim();
     const briefToImprove = workingDraft || originalBrief;
 
@@ -277,7 +359,26 @@ export default function ImproveBriefModal({
       const payload = result.data || result;
       const candidateNodes = collectCandidateNodes(payload);
 
+      const suggestedBriefs = [
+        ...(Array.isArray(payload?.suggested_briefs) ? payload.suggested_briefs : []),
+        ...(Array.isArray(payload?.data?.suggested_briefs) ? payload.data.suggested_briefs : [])
+      ];
+
+      const primarySuggestion = suggestedBriefs.find((item) => {
+        if (!item) return false;
+        return Boolean(
+          item.improved_brief_text ||
+            item.improvedBrief ||
+            item.improved_brief ||
+            item.updatedBrief ||
+            item.generatedBrief
+        );
+      }) || suggestedBriefs[0];
+
       let improvedHtml = extractBriefContent(candidateNodes, '');
+      if (!improvedHtml && primarySuggestion?.improved_brief_text) {
+        improvedHtml = primarySuggestion.improved_brief_text;
+      }
       let newQuality = extractNumberFromNodes(candidateNodes, [
         'qualityScore',
         'score',
@@ -368,17 +469,37 @@ export default function ImproveBriefModal({
         newStrengths = normalizeInsightList(payload.scoring.data.strengths);
       }
 
-      const normalizedQuality = Number.isFinite(newQuality)
-        ? Number(newQuality.toFixed(1))
-        : null;
+      const normalizedQuality = normalizeScoreValue(newQuality);
 
       const normalizedImprovements = Array.isArray(newImprovements) ? newImprovements : normalizeInsightList(newImprovements);
       const normalizedStrengths = Array.isArray(newStrengths) ? newStrengths : normalizeInsightList(newStrengths);
+      const normalizedChanges = normalizeInsightList(
+        primarySuggestion?.changes_made ||
+          primarySuggestion?.changesMade ||
+          payload?.changes_made ||
+          payload?.changes ||
+          []
+      );
+      const rationaleText =
+        primarySuggestion?.rationale ||
+        primarySuggestion?.insight ||
+        payload?.rationale ||
+        payload?.insight ||
+        '';
+      const expectedScoreValue =
+        primarySuggestion?.expected_score ??
+        primarySuggestion?.expectedScore ??
+        payload?.expected_score ??
+        payload?.expectedScore;
+      const normalizedExpectedScore = normalizeScoreValue(expectedScoreValue);
 
       setEditableBrief(htmlToText(improvedHtml));
       setQualityScore(normalizedQuality);
       setImprovements(normalizedImprovements);
       setStrengths(normalizedStrengths);
+      setChangeSummary(normalizedChanges);
+      setAiRationale(rationaleText);
+      setAiExpectedScore(normalizedExpectedScore);
       setHasImproved(true);
     } catch (error) {
       console.error('Error improving brief:', error);
@@ -424,7 +545,7 @@ export default function ImproveBriefModal({
   };
 
   const handleTestBrief = async () => {
-    const briefToScore = editableBrief.trim() || currentBriefText.trim();
+    const briefToScore = editableBrief.trim() || currentBriefDraft.trim();
     if (!briefToScore) {
       setError('Add brief content before testing.');
       return;
@@ -478,7 +599,8 @@ export default function ImproveBriefModal({
         'rating',
         'overallScore',
         'briefQuality',
-        'quality'
+        'quality',
+        'total_score'
       ]);
 
       let scoredImprovements = extractListFromNodes(candidateNodes, [
@@ -511,9 +633,7 @@ export default function ImproveBriefModal({
         scoredStrengths = normalizeInsightList(payload.strengths);
       }
 
-      const normalizedQuality = Number.isFinite(scoredQuality)
-        ? Number(scoredQuality.toFixed(1))
-        : null;
+      const normalizedQuality = normalizeScoreValue(scoredQuality);
 
       setQualityScore(normalizedQuality);
       setImprovements(Array.isArray(scoredImprovements) ? scoredImprovements : []);
@@ -532,6 +652,22 @@ export default function ImproveBriefModal({
     }
   };
 
+  const hasInsights =
+    qualityScore !== null ||
+    improvements.length > 0 ||
+    strengths.length > 0 ||
+    changeSummary.length > 0 ||
+    Boolean(aiRationale) ||
+    aiExpectedScore !== null;
+
+  const formattedExpectedScore = Number.isFinite(aiExpectedScore)
+    ? aiExpectedScore.toFixed(1)
+    : null;
+
+  const qualityStyles = getScoreStyles(qualityScore);
+  const expectedStyles = getScoreStyles(aiExpectedScore);
+  const isBelowThreshold = Number.isFinite(qualityScore) && qualityScore < 7.5;
+
   return (
     <Modal
       isOpen={isOpen}
@@ -539,16 +675,34 @@ export default function ImproveBriefModal({
       title="Improve Brief"
       subtitle="Review the current brief, generate an AI suggestion, and refine before saving."
       size="xl"
-      className="max-h-[95vh] overflow-hidden flex flex-col"
+      fullHeight
+      className="h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] my-6 overflow-hidden flex flex-col"
     >
-      <div className="flex flex-col gap-4 flex-1 overflow-hidden">
-        {(qualityScore !== null || improvements.length > 0 || strengths.length > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="flex flex-col gap-4 flex-1 overflow-hidden min-h-0">
+        {hasInsights && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {qualityScore !== null && (
-              <div className="border border-green-200 bg-green-50 rounded-lg p-3">
-                <p className="text-sm font-medium text-green-800">Quality Score</p>
-                <p className="text-2xl font-semibold text-green-900">{qualityScore.toFixed(1)} / 10</p>
-                <p className="text-xs text-green-700 mt-1">Higher scores indicate clearer, more actionable briefs.</p>
+              <div className={`rounded-lg p-3 border ${qualityStyles.card}`}>
+                <div className="flex items-center justify-between">
+                  <p className={`text-sm font-medium ${qualityStyles.title}`}>Quality Score</p>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${qualityStyles.badge}`}>
+                    {qualityStyles.statusLabel}
+                  </span>
+                </div>
+                <p className={`text-2xl font-semibold ${qualityStyles.value}`}>{qualityScore.toFixed(1)} / 10</p>
+                <p className={`text-xs mt-1 ${qualityStyles.note}`}>{qualityStyles.caption}</p>
+              </div>
+            )}
+            {formattedExpectedScore !== null && (
+              <div className={`rounded-lg p-3 border ${expectedStyles.card}`}>
+                <div className="flex items-center justify-between">
+                  <p className={`text-sm font-medium ${expectedStyles.title}`}>Projected Brief Score</p>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${expectedStyles.badge}`}>
+                    {expectedStyles.statusLabel}
+                  </span>
+                </div>
+                <p className={`text-2xl font-semibold ${expectedStyles.value}`}>{formattedExpectedScore} / 10</p>
+                <p className={`text-xs mt-1 ${expectedStyles.note}`}>AI estimate after applying the suggested changes.</p>
               </div>
             )}
             {strengths.length > 0 && (
@@ -577,6 +731,32 @@ export default function ImproveBriefModal({
                 </ul>
               </div>
             )}
+            {changeSummary.length > 0 && (
+              <div className="border border-purple-200 bg-purple-50 rounded-lg p-3">
+                <p className="text-sm font-medium text-purple-800">Key Updates Applied</p>
+                <ul className="mt-2 space-y-1 text-xs text-purple-700">
+                  {changeSummary.slice(0, 5).map((item, index) => (
+                    <li key={index}>• {item}</li>
+                  ))}
+                  {changeSummary.length > 5 && (
+                    <li>• +{changeSummary.length - 5} additional updates</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isBelowThreshold && (
+          <div className="border border-red-200 bg-red-50 text-xs text-red-700 rounded-lg p-3">
+            Brief quality is below the 7.5 minimum required for storyline generation. Address the suggested improvements and retest the brief.
+          </div>
+        )}
+
+        {aiRationale && (
+          <div className="border border-slate-200 bg-slate-50 rounded-lg p-3">
+            <p className="text-sm font-medium text-slate-800">AI Rationale</p>
+            <p className="mt-2 text-sm text-slate-700 whitespace-pre-line">{aiRationale}</p>
           </div>
         )}
 
@@ -649,18 +829,21 @@ export default function ImproveBriefModal({
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 overflow-hidden">
-              <section className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 overflow-hidden min-h-0">
+              <section className="border border-gray-200 rounded-lg overflow-hidden flex flex-col min-h-0">
                 <header className="border-b border-gray-200 bg-gray-50 px-4 py-3">
                   <h4 className="text-sm font-medium text-gray-900">Current Brief</h4>
-                  <p className="text-xs text-gray-500">{currentBriefText.length} characters</p>
+                  <p className="text-xs text-gray-500">{currentBriefDraft.length} characters</p>
                 </header>
-                <pre className="flex-1 overflow-auto bg-white p-4 text-sm text-gray-700 whitespace-pre-wrap">
-                  {currentBriefText || 'No brief content provided.'}
-                </pre>
+                <textarea
+                  value={currentBriefDraft}
+                  onChange={(event) => setCurrentBriefDraft(event.target.value)}
+                  className="flex-1 w-full resize-none p-4 text-sm text-gray-800 focus:outline-none min-h-[300px]"
+                  placeholder="Paste or edit the current brief content here before requesting improvements."
+                />
               </section>
 
-              <section className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+              <section className="border border-gray-200 rounded-lg overflow-hidden flex flex-col min-h-0">
                 <header className="border-b border-gray-200 bg-gray-50 px-4 py-3">
                   <h4 className="text-sm font-medium text-gray-900">Working Draft</h4>
                   <p className="text-xs text-gray-500">{editableBrief.length} characters</p>
@@ -668,7 +851,7 @@ export default function ImproveBriefModal({
                 <textarea
                   value={editableBrief}
                   onChange={(event) => setEditableBrief(event.target.value)}
-                  className="flex-1 w-full resize-none p-4 text-sm text-gray-800 focus:outline-none"
+                  className="flex-1 w-full resize-none p-4 text-sm text-gray-800 focus:outline-none min-h-[300px]"
                   placeholder="The improved brief will appear here. You can edit it before saving."
                 />
               </section>
@@ -678,7 +861,7 @@ export default function ImproveBriefModal({
         )}
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+      <div className="mt-auto flex justify-end gap-3 pt-4 border-t border-gray-200">
         <Button variant="outline" onClick={handleClose} disabled={isSaving}>
           Cancel
         </Button>

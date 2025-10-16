@@ -103,6 +103,9 @@ export default function StorylineGenerationForm({
     }
   }, [formData.brief]);
 
+  const normalizedBriefScore = briefQuality.score / 10;
+  const canGenerateStoryline = formData.brief && normalizedBriefScore >= 7.5;
+
   const calculateBriefQuality = (brief) => {
     let score = 0;
     const strengths = [];
@@ -495,13 +498,13 @@ export default function StorylineGenerationForm({
                   <div className="flex items-center space-x-1">
                     <BarChart3 className="h-4 w-4 text-gray-500" />
                     <span className="text-sm font-medium text-gray-700">
-                      {briefQuality.score}/10
+                      {normalizedBriefScore.toFixed(1)}/10
                     </span>
                   </div>
                   <div className="w-24 bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${(briefQuality.score / 10) * 100}%` }}
+                      style={{ width: `${Math.min(100, Math.max(0, normalizedBriefScore * 10))}%` }}
                     />
                   </div>
                 </div>
@@ -572,7 +575,7 @@ export default function StorylineGenerationForm({
             </button>
             <button
               onClick={handleGenerate}
-              disabled={isGenerating || !formData.name || !formData.brief}
+              disabled={isGenerating || !formData.name || !formData.brief || !canGenerateStoryline}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
             >
               {isGenerating ? (
@@ -589,6 +592,11 @@ export default function StorylineGenerationForm({
             </button>
           </div>
         </div>
+        {!canGenerateStoryline && formData.brief && (
+          <div className="px-6 pb-6 text-xs text-red-600">
+            Improve the brief until it scores at least 7.5 / 10 to unlock storyline generation.
+          </div>
+        )}
       </div>
     </div>
   );

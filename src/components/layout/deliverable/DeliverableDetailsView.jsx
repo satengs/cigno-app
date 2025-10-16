@@ -1,5 +1,51 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
+import { normalizeScoreValue } from '../../../utils/scoreUtils';
+
+
+const getScoreStyles = (score) => {
+  if (!Number.isFinite(score)) {
+    return {
+      card: 'border-gray-200 bg-gray-50',
+      value: 'text-gray-900',
+      note: 'text-gray-600',
+      progress: 'bg-gray-300',
+      status: 'Not evaluated',
+      helper: 'Run "Test Brief" to evaluate quality before generating a storyline.'
+    };
+  }
+
+  if (score < 7.5) {
+    return {
+      card: 'border-red-200 bg-red-50',
+      value: 'text-red-900',
+      note: 'text-red-700',
+      progress: 'bg-red-500',
+      status: 'Below 7.5 (blocked)',
+      helper: 'Improve the brief before generating a storyline.'
+    };
+  }
+
+  if (score < 8) {
+    return {
+      card: 'border-amber-200 bg-amber-50',
+      value: 'text-amber-900',
+      note: 'text-amber-700',
+      progress: 'bg-amber-500',
+      status: 'Acceptable (≥ 7.5)',
+      helper: 'Consider refining the brief before storytelling.'
+    };
+  }
+
+  return {
+    card: 'border-green-200 bg-green-50',
+    value: 'text-green-900',
+    note: 'text-green-700',
+    progress: 'bg-green-500',
+    status: 'Storyline-ready',
+    helper: 'High-clarity brief suitable for storyline generation.'
+  };
+};
 
 export default function DeliverableDetailsView({
   formData,
@@ -11,6 +57,7 @@ export default function DeliverableDetailsView({
   onTestBrief,
   isTestingBrief = false,
   onImproveBrief,
+  onResetBrief,
   onGenerateStoryline,
   isGeneratingStoryline,
   onNewAudienceChange,
@@ -25,10 +72,16 @@ export default function DeliverableDetailsView({
     ? formData.brief_improvements
     : (formData.improvements ? [formData.improvements] : []);
 
-  const qualityScore = Number.isFinite(Number(formData.brief_quality))
-    ? Number(Number(formData.brief_quality).toFixed(1))
-    : null;
+  const qualityScore = normalizeScoreValue(formData.brief_quality);
   const qualityPercent = qualityScore !== null ? Math.min(100, Math.max(0, (qualityScore / 10) * 100)) : 0;
+  const qualityStyles = getScoreStyles(qualityScore);
+  const canGenerateStoryline = qualityScore === null || qualityScore >= 7.5;
+  const storylineDisabled = isGeneratingStoryline || !formData.brief?.trim() || !canGenerateStoryline;
+  const storylineDisabledMessage = !canGenerateStoryline
+    ? 'Storyline generation is locked until the brief scores at least 7.5 / 10.'
+    : (!formData.brief?.trim() ? 'Add a brief before generating a storyline.' : null);
+  const [isEditingBrief, setIsEditingBrief] = useState(false);
+  const hasRichTextBrief = typeof formData.brief === 'string' && /<[^>]+>/.test(formData.brief);
 
   return (
     <div className="p-6 space-y-8">
@@ -132,10 +185,30 @@ export default function DeliverableDetailsView({
           >
             Improve Brief
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              onResetBrief?.();
+              if (isEditingBrief) {
+                setIsEditingBrief(false);
+              }
+            }}
+            className="rounded-sm border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+          >
+            Reset Brief
+          </button>
+          {hasRichTextBrief && (
+            <button
+              type="button"
+              onClick={() => setIsEditingBrief(prev => !prev)}
+              className="rounded-sm border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {isEditingBrief ? 'Preview Brief' : 'Edit Brief'}
+            </button>
+          )}
         </div>
         
-        {/* Check if brief contains HTML tags */}
-        {formData.brief && formData.brief.includes('<') && formData.brief.includes('>') ? (
+        {hasRichTextBrief && !isEditingBrief ? (
           <div className="w-full rounded-sm border border-gray-300 p-3 min-h-[120px] bg-white">
             <div 
               className="prose prose-sm max-w-none text-sm"
@@ -151,21 +224,29 @@ export default function DeliverableDetailsView({
           />
         )}
         
-        {formData.brief && formData.brief.includes('<') && formData.brief.includes('>') && (
+        {hasRichTextBrief && !isEditingBrief && (
           <p className="text-xs text-gray-500">
-            This brief contains HTML formatting. Use "Improve Brief" to modify the content.
+            Switch to edit mode to update the brief content.
           </p>
         )}
       </div>
 
-      <div className="space-y-4 rounded-sm border border-gray-200 bg-gray-50 p-6">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-gray-700">Brief Quality Score</span>
-          <span className="font-semibold text-gray-900">{qualityScore !== null ? `${qualityScore} / 10` : 'Not evaluated'}</span>
+      <div className={`space-y-4 rounded-sm border p-6 ${qualityStyles.card}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="block text-sm font-medium text-gray-700">Brief Quality Score</span>
+            <span className={`block text-xs mt-1 ${qualityStyles.note}`}>{qualityStyles.helper}</span>
+          </div>
+          <div className="text-right">
+            <span className={`text-sm font-semibold ${qualityStyles.value}`}>
+              {qualityScore !== null ? `${qualityScore.toFixed(1)} / 10` : 'Not evaluated'}
+            </span>
+            <span className={`block text-xs ${qualityStyles.note}`}>{qualityStyles.status}</span>
+          </div>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
           <div
-            className="h-full rounded-sm bg-gray-900 transition-all"
+            className={`h-full rounded-sm transition-all ${qualityStyles.progress}`}
             style={{ width: `${qualityPercent}%` }}
           />
         </div>
@@ -194,6 +275,10 @@ export default function DeliverableDetailsView({
             )}
           </div>
         )}
+
+        {!canGenerateStoryline && (
+          <p className="text-xs text-red-600">Storyline generation is disabled until the brief reaches 7.5 / 10.</p>
+        )}
       </div>
 
       {/* Action Buttons */}
@@ -202,9 +287,9 @@ export default function DeliverableDetailsView({
           <button
             type="button"
             onClick={onGenerateStoryline}
-            disabled={isGeneratingStoryline || !formData.brief?.trim()}
-            className={`px-6 py-3 rounded-sm text-sm font-medium ${
-              isGeneratingStoryline || !formData.brief?.trim()
+            disabled={storylineDisabled}
+            className={`px-6 py-3 rounded-sm text-sm font-medium transition-colors ${
+              storylineDisabled
                 ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                 : 'bg-gray-900 text-white hover:bg-gray-800'
             }`}
