@@ -14,6 +14,7 @@ import {
 import { createSectionRecord } from '../../lib/storyline/sectionUtils';
 import { FRAMEWORK_SCHEMAS } from '../../lib/storyline/frameworkSchemas';
 import { FrameworkRenderer } from '../frameworks/FrameworkRenderer';
+import { renderFrameworkContent } from '../../lib/frameworkRenderer';
 import dynamic from 'next/dynamic';
 
 const ChartPreview = dynamic(() => import('./ChartPreview'), { 
@@ -132,12 +133,17 @@ export default function SectionNavigator({
       return (
         <div className="mt-3 space-y-3">
           <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-            Generating Charts...
+            {section.generationStatus === 'waiting' ? 'Waiting for Content...' : 'Generating Charts...'}
           </p>
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
             <p className="text-sm text-gray-500">
-              Chart data is being generated...
+              {section.generationStatus === 'waiting' ? 'Waiting to generate chart data...' : 'Chart data is being generated...'}
             </p>
+            {section.phaseName && (
+              <p className="text-xs text-blue-600 font-medium mt-2">
+                {section.phaseName}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -148,40 +154,7 @@ export default function SectionNavigator({
       const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
       
       if (!hasRealChartData) {
-        return (
-          <div className="mt-3 space-y-3">
-            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-              {getFrameworkSchema(section.framework).title}
-            </p>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">
-                    No Chart Data Available
-                  </h3>
-                  <div className="mt-2 text-sm text-red-700">
-                    <p>
-                      The AI agent for <strong>{section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> did not return chart data.
-                    </p>
-                    <p className="mt-1">
-                      This could be because:
-                    </p>
-                    <ul className="mt-1 list-disc list-inside space-y-1">
-                      <li>No AI agent is configured for this framework</li>
-                      <li>The agent failed to generate chart data</li>
-                      <li>The agent response format is not supported</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return null;
       }
       
       return (
@@ -278,6 +251,19 @@ export default function SectionNavigator({
     );
   }
 
+  // Debug: Log section data
+  console.log('🔍 SectionNavigator received sections:', sections.map(s => ({
+    id: s.id,
+    title: s.title,
+    framework: s.framework,
+    hasHtml: !!s.html,
+    hasMarkdown: !!s.markdown,
+    hasDescription: !!s.description,
+    status: s.status,
+    isLoading: s.isLoading,
+    generationStatus: s.generationStatus
+  })));
+
   const handleToggleExpand = (sectionId, index) => {
     setExpandedSectionId(prev => (prev === sectionId ? null : sectionId));
     // Don't change the current section index just for expanding/collapsing
@@ -369,13 +355,26 @@ export default function SectionNavigator({
                     )}
                   </div>
                   
-                  {section.description ? (
+                  {/* Only show description in collapsed view */}
+                  {section.description && (
                     <p className="text-sm text-gray-600 line-clamp-2 mb-1">
                       {section.description}
                     </p>
-                  ) : section.isLoading ? (
-                    <p className="text-sm text-gray-400 italic mb-1">Generating content...</p>
-                  ) : null}
+                  )}
+                  
+                  {/* Show loading status */}
+                  {section.isLoading && (
+                    <div className="mb-1">
+                      <p className="text-sm text-gray-400 italic">
+                        {section.generationStatus === 'waiting' ? 'Waiting to generate content...' : 'Generating content...'}
+                      </p>
+                      {section.phaseName && (
+                        <p className="text-xs text-blue-600 font-medium">
+                          {section.phaseName}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   
                   {section.sources?.length > 0 && (
                     <div className="flex items-center text-xs text-gray-500">
@@ -454,27 +453,57 @@ export default function SectionNavigator({
                     </div>
                     )}
 
-                    {/* Only render description if it exists in response */}
-                    {section.description && (
+                    {/* Render framework-specific content using dynamic renderer */}
+                    {section.slideContent && Object.keys(section.slideContent).length > 0 && (
                     <div className="md:col-span-2">
-                        <p className="text-sm text-gray-600 leading-relaxed">{section.description}</p>
+                        {(() => {
+                          const rendered = renderFrameworkContent(
+                            section.framework, 
+                            section.slideContent, 
+                            section.keyPoints || [], 
+                            section.citations || []
+                          );
+                          
+                          return (
+                            <div className="framework-content">
+                              <div 
+                                className="prose prose-sm prose-slate max-w-none"
+                                dangerouslySetInnerHTML={{ __html: rendered.html }}
+                              />
+                            </div>
+                          );
+                        })()}
                     </div>
                     )}
 
-                    {/* Only render content if it exists in response */}
-                    {section.html && (
+                    {/* Render insights if available */}
+                    {section.keyPoints && section.keyPoints.length > 0 && (
                     <div className="md:col-span-2">
-                        <div className="prose prose-sm prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: section.html }} />
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Key Insights</h4>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                            {section.keyPoints.map((insight, index) => (
+                                <li key={index} className="flex items-start">
+                                    <span className="text-blue-500 mr-2">•</span>
+                                    {insight}
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                     )}
 
-                    {/* Fallback to markdown if no HTML */}
-                    {!section.html && section.markdown && (
+                    {/* Render citations if available */}
+                    {section.citations && section.citations.length > 0 && (
                     <div className="md:col-span-2">
-                        <div className="prose prose-sm prose-slate max-w-none">
-                          <pre className="whitespace-pre-wrap text-sm text-gray-700">{section.markdown}</pre>
-                        </div>
-                      </div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Sources</h4>
+                        <ul className="text-xs text-gray-500 space-y-1">
+                            {section.citations.map((citation, index) => (
+                                <li key={index} className="flex items-start">
+                                    <span className="text-gray-400 mr-2">•</span>
+                                    {typeof citation === 'string' ? citation : citation.source || citation}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                     )}
 
                     {/* Render framework-specific visualization */}
@@ -485,45 +514,55 @@ export default function SectionNavigator({
                           const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
                           
                           if (!hasRealChartData) {
+                            return null;
+                          }
+                          
+                          // Render charts directly using ChartPreview for framework sections
+                          const charts = section.charts || [];
+                          
+                          // For market_sizing, display charts in a 2x3 grid like the example
+                          if (section.framework === 'market_sizing' && charts.length > 1) {
                             return (
-                              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                <div className="flex items-center">
-                                  <div className="flex-shrink-0">
-                                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                    </svg>
-                                  </div>
-                                  <div className="ml-3">
-                                    <h3 className="text-sm font-medium text-red-800">
-                                      No Chart Data Available
-                                    </h3>
-                                    <div className="mt-2 text-sm text-red-700">
-                                      <p>
-                                        The AI agent for <strong>{section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> did not return chart data.
-                                      </p>
-                                      <p className="mt-1">
-                                        This could be because:
-                                      </p>
-                                      <ul className="mt-1 list-disc list-inside space-y-1">
-                                        <li>No AI agent is configured for this framework</li>
-                                        <li>The agent failed to generate chart data</li>
-                                        <li>The agent response format is not supported</li>
-                                      </ul>
-                                    </div>
-                                  </div>
+                              <div className="mt-3 space-y-3">
+                                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                                  Market Size Analysis
+                                </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                  {charts.map((chart) => {
+                                    if (!chart || !chart.id) return null;
+                                    return (
+                                      <div key={chart.id} className="bg-white rounded-lg border p-3">
+                                        <h4 className="text-sm font-medium text-gray-800 mb-2 text-center">
+                                          {chart.title}
+                                        </h4>
+                                        <div>
+                                          <ChartPreview chart={chart} />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
                           }
                           
-                          // Render the framework component with real data
+                          // Default grid layout for other frameworks
                           return (
-                            <FrameworkRenderer 
-                              framework={section.framework} 
-                              data={section.chartData || section.charts[0]?.config?.data}
-                              insights={section.keyPoints || section.insights}
-                              takeaway={section.takeaway}
-                            />
+                            <div className="mt-3 space-y-3">
+                              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                                Charts
+                              </p>
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {charts.map((chart) => {
+                                  if (!chart || !chart.id) return null;
+                                  return (
+                                    <div key={chart.id}>
+                                      <ChartPreview chart={chart} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           );
                         })()}
                       </div>

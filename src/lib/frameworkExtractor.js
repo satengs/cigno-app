@@ -145,6 +145,19 @@ export function createSkeletonSections(frameworks) {
   
   const sections = frameworks.map((framework, index) => {
     console.log(`🔍 Creating skeleton section ${index + 1} for framework:`, framework);
+    
+    // Determine initial generation status based on CFA-DEMO dependency model
+    let generationStatus = 'waiting';
+    
+    // Phase 1 (Parallel): Market Sizing + Competitive Landscape start immediately
+    if (framework === 'market_sizing' || framework === 'competitive_landscape') {
+      generationStatus = 'waiting'; // Will be set to 'generating' when execution starts
+    }
+    // Phase 2 (Sequential): Others wait for dependencies
+    else {
+      generationStatus = 'waiting';
+    }
+    
     return {
       id: `section_${index + 1}`,
       title: '', // No placeholder title - wait for backend
@@ -159,6 +172,7 @@ export function createSkeletonSections(frameworks) {
       locked: false,
       framework,
       isLoading: true,
+      generationStatus,
       generatedAt: null,
       source: 'skeleton'
     };

@@ -15,8 +15,10 @@ import {
   Plus,
   X,
   Settings,
-  Trash2
+  Trash2,
+  Zap
 } from 'lucide-react';
+import CFADemoProgress from './CFADemoProgress.jsx';
 
 export default function StorylineGenerationForm({ 
   isOpen, 
@@ -46,6 +48,8 @@ export default function StorylineGenerationForm({
 
   const [audienceInput, setAudienceInput] = useState('');
   const [showAudienceSuggestions, setShowAudienceSuggestions] = useState(false);
+  const [cfaDemoMode, setCfaDemoMode] = useState(false);
+  const [cfaDemoProgress, setCfaDemoProgress] = useState({});
 
   const audienceSuggestions = [
     'Board of Directors',
@@ -245,8 +249,68 @@ export default function StorylineGenerationForm({
   };
 
   const handleGenerate = () => {
-    if (onGenerate) {
+    if (cfaDemoMode) {
+      handleCFADemoGenerate();
+    } else if (onGenerate) {
       onGenerate(formData);
+    }
+  };
+
+  const handleCFADemoGenerate = async () => {
+    setCfaDemoProgress({ phase: 'Initializing', progress: 0, status: 'starting' });
+
+    try {
+      const response = await fetch('/api/ai/generate-cfa-demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: `cfa-demo-${Date.now()}`,
+          projectData: formData,
+          deliverableData: {
+            brief: formData.brief,
+            type: formData.type,
+            audience: formData.audience
+          },
+          clientData: { 
+            name: 'UBS', 
+            geography: 'Switzerland',
+            industry: ['Wealth Management', 'Retail Banking']
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`CFA-DEMO generation failed: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('CFA-DEMO result:', result);
+      
+      setCfaDemoProgress({ 
+        phase: 'Completed', 
+        progress: 100, 
+        status: 'completed',
+        summary: {
+          totalDuration: result.totalDuration,
+          completedPhases: 5,
+          totalPhases: 5,
+          successRate: 1
+        }
+      });
+      
+      // Pass result to parent component
+      if (onGenerate) {
+        onGenerate(result.data);
+      }
+      
+    } catch (error) {
+      console.error('CFA-DEMO generation error:', error);
+      setCfaDemoProgress({ 
+        phase: 'Failed', 
+        progress: 0, 
+        status: 'failed',
+        message: error.message
+      });
     }
   };
 
@@ -537,6 +601,58 @@ export default function StorylineGenerationForm({
             </div>
           )}
 
+          {/* CFA-DEMO Mode Toggle */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Analysis Mode
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setCfaDemoMode(false)}
+                className={`p-4 rounded-lg border text-left transition-colors ${
+                  !cfaDemoMode
+                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="flex items-center space-x-2 mb-2">
+                  <Sparkles className="h-5 w-5" />
+                  <span className="font-medium">Standard Analysis</span>
+                </div>
+                <div className="text-sm opacity-75">
+                  General AI-powered storyline generation
+                </div>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setCfaDemoMode(true)}
+                className={`p-4 rounded-lg border text-left transition-colors ${
+                  cfaDemoMode
+                    ? 'border-purple-500 bg-purple-50 text-purple-900'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="flex items-center space-x-2 mb-2">
+                  <Zap className="h-5 w-5" />
+                  <span className="font-medium">CFA-DEMO Mode</span>
+                </div>
+                <div className="text-sm opacity-75">
+                  5-agent strategic analysis for UBS Switzerland pension strategy
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* CFA-DEMO Progress */}
+          {cfaDemoMode && isGenerating && (
+            <CFADemoProgress 
+              isVisible={true}
+              progress={cfaDemoProgress}
+            />
+          )}
+
           {/* Complexity Level */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -581,12 +697,12 @@ export default function StorylineGenerationForm({
               {isGenerating ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>Generating...</span>
+                  <span>{cfaDemoMode ? 'Running CFA-DEMO...' : 'Generating...'}</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-4 w-4" />
-                  <span>Generate Storyline</span>
+                  {cfaDemoMode ? <Zap className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                  <span>{cfaDemoMode ? 'Generate CFA-DEMO' : 'Generate Storyline'}</span>
                 </>
               )}
             </button>

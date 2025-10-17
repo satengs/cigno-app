@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
+import { renderFrameworkContent } from '../../../lib/frameworkRenderer';
+import dynamic from 'next/dynamic';
+
+const ChartPreview = dynamic(() => import('../../storyline/ChartPreview'), { 
+  ssr: false,
+  loading: () => <div className="h-52 flex items-center justify-center text-gray-500">Loading chart...</div>
+});
 
 
 const LAYOUT_OPTIONS = [
@@ -178,8 +185,99 @@ export default function DeliverableLayoutView({
     : storyline?.sections?.[0];
   
   const currentSectionIndex = storyline?.sections?.findIndex(s => s.id === currentSection?.id) ?? 0;
+  
+  // Debug logging
+  console.log('🔧 DeliverableLayoutView - storyline:', storyline);
+  console.log('🔧 DeliverableLayoutView - sections count:', storyline?.sections?.length || 0);
+  console.log('🔧 DeliverableLayoutView - sections:', storyline?.sections);
 
   const cleanText = (value = '') => value.replace(/^[-*#>\s]+/, '').trim();
+
+  // Helper function to render framework content (same as storyline view)
+  const renderFrameworkSection = () => {
+    if (!currentSection?.framework) {
+      return null;
+    }
+
+    // Use the same framework renderer as storyline view
+    const rendered = renderFrameworkContent(
+      currentSection.framework, 
+      currentSection.slideContent, 
+      currentSection.keyPoints || [], 
+      currentSection.citations || []
+    );
+
+    return (
+      <div className="framework-content">
+        <div 
+          className="prose prose-sm prose-slate max-w-none"
+          dangerouslySetInnerHTML={{ __html: rendered.html }}
+        />
+      </div>
+    );
+  };
+
+  // Helper function to render charts (same as storyline view)
+  const renderCharts = () => {
+    if (!currentSection?.framework || !currentSection?.charts || currentSection.charts.length === 0) {
+      return null;
+    }
+
+    // Check if we have real data from AI agent
+    const hasRealChartData = currentSection.chartData || (currentSection.charts && currentSection.charts.length > 0 && currentSection.charts[0]?.config?.data);
+    
+    if (!hasRealChartData) {
+      return null;
+    }
+
+    // Render charts directly using ChartPreview for framework sections
+    const charts = currentSection.charts || [];
+    
+    // For market_sizing, display charts in a 2x3 grid like the example
+    if (currentSection.framework === 'market_sizing' && charts.length > 1) {
+      return (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+            Market Size Analysis
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            {charts.map((chart) => {
+              if (!chart || !chart.id) return null;
+              return (
+                <div key={chart.id} className="bg-white rounded-lg border p-3">
+                  <h4 className="text-sm font-medium text-gray-800 mb-2 text-center">
+                    {chart.title}
+                  </h4>
+                  <div>
+                    <ChartPreview chart={chart} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    
+    // Default grid layout for other frameworks
+    return (
+      <div className="mt-3 space-y-3">
+        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+          Charts
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {charts.map((chart) => {
+            if (!chart || !chart.id) return null;
+            return (
+              <div key={chart.id}>
+                <ChartPreview chart={chart} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const normalizePoint = (point) => {
     if (!point) return { title: '', content: '' };
@@ -316,6 +414,9 @@ export default function DeliverableLayoutView({
           const bullets = Array.isArray(slide.bullets)
             ? slide.bullets.filter(Boolean)
             : [];
+          
+          // Also check for other text content that might not be in bullets
+          const additionalText = slide.description || slide.paragraph || slide.body || '';
 
           return (
             <div
@@ -338,6 +439,21 @@ export default function DeliverableLayoutView({
               {slide.summary && (
                 <p className="text-sm mt-3" style={{ color: 'var(--text-primary)' }}>
                   {slide.summary}
+                </p>
+              )}
+              {slide.content && slide.content !== slide.summary && (
+                <p className="text-sm mt-3" style={{ color: 'var(--text-primary)' }}>
+                  {slide.content}
+                </p>
+              )}
+              {slide.text && slide.text !== slide.summary && slide.text !== slide.content && (
+                <p className="text-sm mt-3" style={{ color: 'var(--text-primary)' }}>
+                  {slide.text}
+                </p>
+              )}
+              {additionalText && additionalText !== slide.summary && additionalText !== slide.content && additionalText !== slide.text && (
+                <p className="text-sm mt-3" style={{ color: 'var(--text-primary)' }}>
+                  {additionalText}
                 </p>
               )}
               {bullets.length > 0 && (
@@ -382,36 +498,47 @@ export default function DeliverableLayoutView({
                 Section {currentSectionIndex + 1} of {storyline?.sections?.length || 1}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-8 h-4/5">
-              <div className="space-y-4">
-                {leftHeading && (
-                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {leftHeading}
-                  </h3>
-                )}
-                {columnLeft.length ? (
-                  <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {columnLeft.map(renderBullet)}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No key messages yet.</p>
-                )}
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
               </div>
-              <div className="space-y-4">
-                {rightHeading && (
-                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {rightHeading}
-                  </h3>
-                )}
-                {columnRight.length ? (
-                  <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {columnRight.map(renderBullet)}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No supporting points yet.</p>
-                )}
+            ) : (
+              <div className="grid grid-cols-2 gap-8 h-4/5">
+                <div className="space-y-4">
+                  {leftHeading && (
+                    <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {leftHeading}
+                    </h3>
+                  )}
+                  {columnLeft.length ? (
+                    <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {columnLeft.map(renderBullet)}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No key messages yet.</p>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  {rightHeading && (
+                    <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {rightHeading}
+                    </h3>
+                  )}
+                  {columnRight.length ? (
+                    <div className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {columnRight.map(renderBullet)}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No supporting points yet.</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         );
       }
@@ -427,27 +554,38 @@ export default function DeliverableLayoutView({
                 Position insights across priority quadrants.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-4 h-4/5">
-              {paddedQuadrants.map((point, index) => {
-                const colors = [
-                  { bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', text: 'text-green-700' },
-                  { bg: 'bg-yellow-50', border: 'border-yellow-200', title: 'text-yellow-800', text: 'text-yellow-700' },
-                  { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-800', text: 'text-blue-700' },
-                  { bg: 'bg-red-50', border: 'border-red-200', title: 'text-red-800', text: 'text-red-700' }
-                ];
-                const color = colors[index % 4];
-                return (
-                  <div key={index} className={`border ${color.border} rounded p-4 ${color.bg}`}>
-                    <h3 className={`font-semibold ${color.title}`}>
-                      {point.title || `Quadrant ${index + 1}`}
-                    </h3>
-                    <p className={`text-sm ${color.text} mt-2`}>
-                      {point.content}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 h-4/5">
+                {paddedQuadrants.map((point, index) => {
+                  const colors = [
+                    { bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', text: 'text-green-700' },
+                    { bg: 'bg-yellow-50', border: 'border-yellow-200', title: 'text-yellow-800', text: 'text-yellow-700' },
+                    { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-800', text: 'text-blue-700' },
+                    { bg: 'bg-red-50', border: 'border-red-200', title: 'text-red-800', text: 'text-red-700' }
+                  ];
+                  const color = colors[index % 4];
+                  return (
+                    <div key={index} className={`border ${color.border} rounded p-4 ${color.bg}`}>
+                      <h3 className={`font-semibold ${color.title}`}>
+                        {point.title || `Quadrant ${index + 1}`}
+                      </h3>
+                      <p className={`text-sm ${color.text} mt-2`}>
+                        {point.content}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       }
@@ -461,21 +599,32 @@ export default function DeliverableLayoutView({
                 {currentSection?.title || storyline?.title || 'Section Overview'}
               </h1>
             </div>
-            <div className="grid grid-cols-3 gap-6 h-4/5">
-              {columnItems.map((point, index) => (
-                <div key={index} className="text-center">
-                  <div className="w-12 h-12 text-white rounded-full flex items-center justify-center text-lg font-bold mx-auto mb-4" style={{ backgroundColor: 'var(--text-primary)' }}>
-                    {index + 1}
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-6 h-4/5">
+                {columnItems.map((point, index) => (
+                  <div key={index} className="text-center">
+                    <div className="w-12 h-12 text-white rounded-full flex items-center justify-center text-lg font-bold mx-auto mb-4" style={{ backgroundColor: 'var(--text-primary)' }}>
+                      {index + 1}
+                    </div>
+                    <h3 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                      {point.title || `Point ${index + 1}`}
+                    </h3>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {point.content}
+                    </p>
                   </div>
-                  <h3 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                    {point.title || `Point ${index + 1}`}
-                  </h3>
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {point.content}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       }
@@ -491,23 +640,34 @@ export default function DeliverableLayoutView({
                 {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
               </p>
             </div>
-            <div className="space-y-6 h-4/5 overflow-y-auto">
-              {renderParagraph()}
-              {/* Only show key points if they come from backend */}
-              {sectionKeyPoints.length > 0 && !currentSection?.isLoading && (
-                <div className="space-y-3">
-                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
-                  <ul className="space-y-2">
-                    {sectionKeyPoints.map((point, index) => (
-                      <li key={index} className="flex items-start">
-                        <span className="w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
-                        <span style={{ color: 'var(--text-primary)' }}>{point.content}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
+              </div>
+            ) : (
+              <div className="space-y-6 h-4/5 overflow-y-auto">
+                {renderParagraph()}
+                {/* Only show key points if they come from backend */}
+                {sectionKeyPoints.length > 0 && !currentSection?.isLoading && (
+                  <div className="space-y-3">
+                    <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
+                    <ul className="space-y-2">
+                      {sectionKeyPoints.map((point, index) => (
+                        <li key={index} className="flex items-start">
+                          <span className="w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
+                          <span style={{ color: 'var(--text-primary)' }}>{point.content}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       }
@@ -524,26 +684,37 @@ export default function DeliverableLayoutView({
                 {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
               </p>
             </div>
-            <div className="h-4/5 flex items-center">
-              <div className="w-full">
-                <div className="flex items-center justify-between relative">
-                  <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
-                  {items.map((item, index) => (
-                    <div key={index} className="relative bg-white px-2">
-                      <div className="w-4 h-4 rounded-full mx-auto mb-3" style={{ backgroundColor: 'var(--text-primary)' }}></div>
-                      <div className="text-center min-w-0">
-                        <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                          {item.title || `Milestone ${index + 1}`}
-                        </h4>
-                        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {item.content}
-                        </p>
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
+              </div>
+            ) : (
+              <div className="h-4/5 flex items-center">
+                <div className="w-full">
+                  <div className="flex items-center justify-between relative">
+                    <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+                    {items.map((item, index) => (
+                      <div key={index} className="relative bg-white px-2">
+                        <div className="w-4 h-4 rounded-full mx-auto mb-3" style={{ backgroundColor: 'var(--text-primary)' }}></div>
+                        <div className="text-center min-w-0">
+                          <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                            {item.title || `Milestone ${index + 1}`}
+                          </h4>
+                          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            {item.content}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         );
       }
@@ -560,30 +731,41 @@ export default function DeliverableLayoutView({
                 {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
               </p>
             </div>
-            <div className="h-4/5 flex items-center justify-center">
-              <div className="flex items-center space-x-4">
-                {items.map((item, index) => (
-                  <React.Fragment key={index}>
-                    <div className="text-center">
-                      <div className="w-24 h-16 rounded flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-                        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {item.title || `Step ${index + 1}`}
-                        </span>
-                      </div>
-                      <p className="text-xs max-w-24" style={{ color: 'var(--text-secondary)' }}>
-                        {item.content || `Outline step ${index + 1}.`}
-                      </p>
-                    </div>
-                    {index < items.length - 1 && (
-                      <div className="flex items-center">
-                        <div className="w-8 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
-                        <div className="w-2 h-2 border-t-2 border-r-2 transform rotate-45 -ml-1" style={{ borderColor: 'var(--border-secondary)' }}></div>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
+            {/* Render framework content if available, otherwise fall back to layout */}
+            {currentSection?.framework ? (
+              <div className="h-4/5 overflow-y-auto">
+                {/* Render the complete framework content (same as storyline view) */}
+                {renderFrameworkSection()}
+                
+                {/* Render charts for framework sections */}
+                {renderCharts()}
               </div>
-            </div>
+            ) : (
+              <div className="h-4/5 flex items-center justify-center">
+                <div className="flex items-center space-x-4">
+                  {items.map((item, index) => (
+                    <React.Fragment key={index}>
+                      <div className="text-center">
+                        <div className="w-24 h-16 rounded flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {item.title || `Step ${index + 1}`}
+                          </span>
+                        </div>
+                        <p className="text-xs max-w-24" style={{ color: 'var(--text-secondary)' }}>
+                          {item.content || `Outline step ${index + 1}.`}
+                        </p>
+                      </div>
+                      {index < items.length - 1 && (
+                        <div className="flex items-center">
+                          <div className="w-8 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+                          <div className="w-2 h-2 border-t-2 border-r-2 transform rotate-45 -ml-1" style={{ borderColor: 'var(--border-secondary)' }}></div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -1162,47 +1344,6 @@ export default function DeliverableLayoutView({
                             )}
                           </div>
                           
-                          {/* Action Icons - Top Right */}
-                          <div className="absolute top-1 right-1 flex gap-0.5 z-10">
-                            {/* Apply Layout Icon */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleApplyLayoutToSection(sectionId);
-                              }}
-                              className="p-0.5 rounded transition-colors hover:bg-green-100"
-                              style={{ 
-                                backgroundColor: 'white',
-                                border: '1px solid var(--border-primary)'
-                              }}
-                              title="Apply Layout"
-                            >
-                              <Check size={8} className="text-green-600" />
-                            </button>
-                            
-                            {/* Generate Slides Icon */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (slideState.status !== 'loading') {
-                                  handleGenerateSlidesForSection(sectionId);
-                                }
-                              }}
-                              className={`p-0.5 rounded transition-colors ${slideState.status === 'loading' ? 'cursor-not-allowed opacity-70' : 'hover:bg-purple-100'}`}
-                              style={{ 
-                                backgroundColor: 'white',
-                                border: '1px solid var(--border-primary)'
-                              }}
-                              title={slideState.status === 'loading' ? 'Generating slides…' : 'Generate Slides'}
-                              disabled={slideState.status === 'loading'}
-                            >
-                              {slideState.status === 'loading' ? (
-                                <Loader2 size={10} className="text-purple-600 animate-spin" />
-                              ) : (
-                                <Sparkles size={10} className="text-purple-600" />
-                              )}
-                            </button>
-                          </div>
                         </div>
                       </div>
                     </div>

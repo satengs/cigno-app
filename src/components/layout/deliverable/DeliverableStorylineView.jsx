@@ -104,6 +104,8 @@ export default function DeliverableStorylineView({
         </div>
       </div>
       <div className="flex-1 p-6 overflow-y-auto">
+        {console.log('🔍 DeliverableStorylineView - generatedStoryline:', generatedStoryline)}
+        {console.log('🔍 DeliverableStorylineView - sections:', generatedStoryline?.sections)}
         <SectionNavigator
           sections={generatedStoryline.sections || []}
           currentSectionIndex={currentSectionIndex}

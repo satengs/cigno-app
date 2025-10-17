@@ -104,5 +104,40 @@ export const FRAMEWORK_SCHEMAS = {
     title: 'Partnership Strategy',
     chartTypes: ['network'],
     defaultChartType: 'network'
+  },
+  cfa_demo_market_sizing: {
+    agent: 'CFADemoMarketSizingAgent',
+    promptKey: 'cfa-demo-market-sizing',
+    title: 'Swiss Pension Market Sizing',
+    chartTypes: ['bar', 'line'],
+    defaultChartType: 'bar'
+  },
+  cfa_demo_competitive: {
+    agent: 'CFADemoCompetitiveAgent', 
+    promptKey: 'cfa-demo-competitive',
+    title: 'Swiss Pension Competitive Landscape',
+    chartTypes: ['matrix', 'radar'],
+    defaultChartType: 'matrix'
+  },
+  cfa_demo_capability: {
+    agent: 'CFADemoCapabilityAgent',
+    promptKey: 'cfa-demo-capability',
+    title: 'UBS Capability Benchmark',
+    chartTypes: ['groupedBar', 'radar'],
+    defaultChartType: 'groupedBar'
+  },
+  cfa_demo_strategic: {
+    agent: 'CFADemoStrategicAgent',
+    promptKey: 'cfa-demo-strategic',
+    title: 'Ecosystem Strategy Options',
+    chartTypes: ['ecosystem', 'process'],
+    defaultChartType: 'ecosystem'
+  },
+  cfa_demo_partnership: {
+    agent: 'CFADemoPartnershipAgent',
+    promptKey: 'cfa-demo-partnership', 
+    title: 'Partnership Implementation',
+    chartTypes: ['timeline', 'network'],
+    defaultChartType: 'timeline'
   }
 };

@@ -22,7 +22,6 @@ import {
   createStorylineBackup
 } from '../../lib/storyline/regenerationUtils';
 import { parseMarkdownWithCharts, deriveSectionMetadata } from '../../lib/markdown/markdownParser';
-import { extractFrameworksFromBriefScoring, createSkeletonSections, getDefaultFrameworks } from '../../lib/frameworkExtractor';
 
 const normalizeInsightList = (value) => {
   if (!value) return [];
@@ -186,12 +185,148 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [isSavingDeliverable, setIsSavingDeliverable] = useState(false);
   const [currentView, setCurrentView] = useState('detailed'); // 'detailed' | 'storyline' | 'layout'
   const [generatedStoryline, setGeneratedStoryline] = useState(null);
+  
+  // Debug: Log generatedStoryline changes
+  useEffect(() => {
+    console.log('🔍 ContentPart - generatedStoryline changed:', generatedStoryline);
+    if (generatedStoryline?.sections) {
+      console.log('🔍 ContentPart - sections count:', generatedStoryline.sections.length);
+      console.log('🔍 ContentPart - sections:', generatedStoryline.sections.map(s => ({
+        id: s.id,
+        title: s.title,
+        framework: s.framework,
+        isLoading: s.isLoading
+      })));
+    }
+  }, [generatedStoryline]);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
   const [isSavingStoryline, setIsSavingStoryline] = useState(false);
   const [storylineDirty, setStorylineDirty] = useState(false);
   const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
   const [slideGenerationProgress, setSlideGenerationProgress] = useState({ completed: 0, total: 0 });
+
+  // Helper function to generate individual section content
+  const generateSectionContent = async (framework, dependencies, sectionIndex, contextData) => {
+    console.log(`🔧 ===== GENERATE-SECTION API ROUTE CALLED =====`);
+    console.log(`📋 Framework: ${framework}`);
+    console.log(`📋 Dependencies:`, Object.keys(dependencies));
+    console.log(`📋 Section Index: ${sectionIndex}`);
+    console.log(`📋 Context Data:`, contextData);
+    
+    // Update section to generating status
+    setGeneratedStoryline(prev => {
+      if (!prev) return null;
+      const updatedSections = [...prev.sections];
+      if (updatedSections[sectionIndex]) {
+        updatedSections[sectionIndex] = {
+          ...updatedSections[sectionIndex],
+          isLoading: true,
+          generationStatus: 'generating',
+          phaseName: updatedSections[sectionIndex].phaseName?.replace(' (Waiting)', ' (In Progress)') || 'Generating...'
+        };
+      }
+      return { ...prev, sections: updatedSections };
+    });
+
+    try {
+      const response = await fetch('/api/ai/generate-section', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          framework,
+          dependencies,
+          projectId: contextData.projectId,
+          projectData: {
+            id: contextData.projectId,
+            name: contextData.projectName || 'UBS Pension Strategy',
+            client_name: contextData.clientName || 'UBS',
+            industry: contextData.industry || 'financial-services',
+            description: contextData.projectDescription || 'Strategic analysis for UBS pension strategy'
+          },
+          deliverableData: {
+            id: contextData.deliverableId,
+            project: contextData.projectId,
+            project_id: contextData.projectId,
+            name: contextData.deliverableName || 'UBS Pension Strategy',
+            brief: contextData.deliverableBrief || 'Strategic analysis and recommendations'
+          },
+          clientData: {
+            name: contextData.clientName || 'UBS',
+            industry: contextData.industry || 'financial-services',
+            geography: contextData.geography || 'Switzerland'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to generate ${framework} section`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ ${framework} section generated:`, result);
+
+      // Update section with completed content
+      setGeneratedStoryline(prev => {
+        if (!prev) return null;
+        const updatedSections = [...prev.sections];
+        if (updatedSections[sectionIndex]) {
+          const sectionData = result.data || result;
+          const frameworkName = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          
+          // Use only the JSON response content - no additional formatting
+          const slideContent = sectionData.slide_content || {};
+          const insights = sectionData.insights || [];
+          const citations = sectionData.citations || [];
+
+          updatedSections[sectionIndex] = {
+            ...updatedSections[sectionIndex],
+            ...sectionData,
+            id: updatedSections[sectionIndex].id, // Preserve original section ID
+            status: 'draft',
+            isLoading: false,
+            generationStatus: 'completed',
+            framework: framework,
+            slideContent: slideContent,
+            keyPoints: insights,
+            takeaway: sectionData.takeaway || '',
+            notes: sectionData.notes || '',
+            charts: sectionData.charts || [],
+            citations: citations,
+            markdown: '', // No markdown - only JSON content
+            html: '', // No HTML - only JSON content
+            phaseName: updatedSections[sectionIndex].phaseName?.replace(' (In Progress)', ' (Completed)') || 'Completed'
+          };
+        }
+        return { ...prev, sections: updatedSections };
+      });
+
+      return result.data || result;
+    } catch (error) {
+      console.error(`❌ Error generating ${framework} section:`, error);
+      
+      // Update section with error status
+      setGeneratedStoryline(prev => {
+        if (!prev) return null;
+        const updatedSections = [...prev.sections];
+        if (updatedSections[sectionIndex]) {
+          updatedSections[sectionIndex] = {
+            ...updatedSections[sectionIndex],
+            isLoading: false,
+            generationStatus: 'error',
+            phaseName: updatedSections[sectionIndex].phaseName?.replace(' (In Progress)', ' (Error)') || 'Error',
+            markdown: `# ${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n\n## Error\nFailed to generate content: ${error.message}`
+          };
+        }
+        return { ...prev, sections: updatedSections };
+      });
+      
+      throw error;
+    }
+  };
 
   // Debug effect to monitor generatedStoryline changes
   useEffect(() => {
@@ -398,7 +533,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         source: chart?.source || '',
         config: chart?.config || {},
         attributes: chart?.attributes || {},
-        raw: chart?.raw || ''
+        raw: chart?.raw || '',
+        generated: chart?.generated || false,
+        type: chart?.type || 'bar'
       }));
     };
 
@@ -407,28 +544,28 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       : 'title-2-columns';
 
     return {
-      id: section.id || section._id || `section_${index + 1}`,
-      title: section.title,
-      description: section.description,
-      markdown: typeof section.markdown === 'string' ? section.markdown : '',
-      html: typeof section.html === 'string' ? section.html : '',
+    id: section.id || section._id || `section_${index + 1}`,
+    title: section.title,
+    description: section.description,
+    markdown: typeof section.markdown === 'string' ? section.markdown : '',
+    html: typeof section.html === 'string' ? section.html : '',
       charts: normalizeCharts(section.charts),
       chartData: cloneToPlainObject(section.chartData, null),
-      status: section.status || 'draft',
-      order: section.order ?? index,
-      keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+    status: section.status || 'draft',
+    order: section.order ?? index,
+    keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
       insights: normalizeInsightList(section.insights || section.keyInsights),
-      contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+    contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
       sources: normalizeStringList(section.sources),
-      estimatedSlides: section.estimatedSlides || section.estimated_pages || section.estimatedPages,
-      slides: Array.isArray(section.slides)
+    estimatedSlides: section.estimatedSlides || section.estimated_pages || section.estimatedPages,
+    slides: Array.isArray(section.slides)
         ? section.slides.map((slide, slideIndex) => normalizeSlideForState(slide, slideIndex, layout))
-        : [],
-      slidesGeneratedAt: section.slidesGeneratedAt || section.slides_generated_at || null,
-      slidesGenerationContext: section.slidesGenerationContext || section.slides_generation_context || null,
-      locked: !!section.locked,
-      lockedBy: section.lockedBy,
-      lockedAt: section.lockedAt,
+      : [],
+    slidesGeneratedAt: section.slidesGeneratedAt || section.slides_generated_at || null,
+    slidesGenerationContext: section.slidesGenerationContext || section.slides_generation_context || null,
+    locked: !!section.locked,
+    lockedBy: section.lockedBy,
+    lockedAt: section.lockedAt,
       framework: typeof section.framework === 'string' ? section.framework : '',
       takeaway: section.takeaway || '',
       notes: section.notes || '',
@@ -438,8 +575,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       generatedAt: section.generatedAt || section.generated_at || null,
       isLoading: !!section.isLoading,
       error: section.error || null,
-      created_at: section.created_at || section.createdAt,
-      updated_at: section.updated_at || section.updatedAt
+    created_at: section.created_at || section.createdAt,
+    updated_at: section.updated_at || section.updatedAt
     };
   }, [normalizeSlideForState, normalizeStatus]);
 
@@ -465,7 +602,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         source: chart?.source || '',
         config: chart?.config || {},
         attributes: chart?.attributes || {},
-        raw: chart?.raw || ''
+        raw: chart?.raw || '',
+        generated: chart?.generated || false,
+        type: chart?.type || 'bar'
       }));
     };
 
@@ -490,21 +629,21 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           : 'title-2-columns';
 
         return {
-          id: section.id || `section_${index + 1}`,
-          title: section.title,
-          description: section.description,
+        id: section.id || `section_${index + 1}`,
+        title: section.title,
+        description: section.description,
           markdown: typeof section.markdown === 'string' ? section.markdown : '',
           html: typeof section.html === 'string' ? section.html : '',
           charts: sanitizeCharts(section.charts),
           chartData: cloneToPlainObject(section.chartData, null),
           status: normalizeStatus(section.status, 'draft'),
-          order: section.order ?? index,
-          keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
+        order: section.order ?? index,
+        keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
           insights: normalizeInsightList(section.insights || section.keyInsights),
-          contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
+        contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
           sources: normalizeStringList(section.sources),
-          estimatedSlides: section.estimatedSlides,
-          locked: !!section.locked,
+        estimatedSlides: section.estimatedSlides,
+        locked: !!section.locked,
           lockedBy: section.locked
             ? getIdString(section.lockedBy?._id || section.lockedBy)
             : undefined,
@@ -1078,12 +1217,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   }, [selectedItem, normalizeDeliverableList, fetchProjectDeliverables, formatDateForInput]);
 
-  // Load existing storyline when selectedItem changes
+  // Load existing storyline when selectedItem changes (only if no storyline in state)
   useEffect(() => {
     console.log('🎯 useEffect triggered with selectedItem:', selectedItem);
     console.log('🎯 selectedItem type:', selectedItem?.type);
     console.log('🎯 selectedItem?._id:', selectedItem?._id);
     console.log('🎯 selectedItem?.id:', selectedItem?.id);
+    console.log('🎯 Current generatedStoryline exists:', !!generatedStoryline);
+    
+    // Only load from database if we don't have a storyline in state
+    if (generatedStoryline) {
+      console.log('🎯 Skipping database load - storyline already exists in state');
+      return;
+    }
     
     const loadExistingStoryline = async () => {
       if (selectedItem?.type !== 'deliverable') {
@@ -1137,7 +1283,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     };
 
     loadExistingStoryline();
-  }, [selectedItem]);
+  }, [selectedItem, generatedStoryline]);
 
   // Notify parent when view changes
   useEffect(() => {
@@ -1629,59 +1775,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   };
 
-  // Function to generate individual section content
-  const generateSectionContent = async (framework, sectionIndex, deliverableData, projectData, clientData) => {
-    try {
-      console.log(`🎯 Generating content for section ${sectionIndex + 1} (${framework})`);
-      
-      const response = await fetch('/api/ai/generate-section', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          framework,
-          sectionIndex,
-          deliverableData,
-          projectData,
-          clientData,
-          briefContent: formData.brief
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to generate section for ${framework}`);
-      }
-
-      const result = await response.json();
-      console.log(`✅ Section ${sectionIndex + 1} (${framework}) generated:`, result);
-
-      return result.data;
-    } catch (error) {
-      console.error(`❌ Error generating section ${sectionIndex + 1} (${framework}):`, error);
-      // Return a fallback section with error info
-      return {
-        id: `section_${sectionIndex + 1}`,
-        title: framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        description: `Error generating content for ${framework}`,
-        markdown: `# ${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n\nContent generation failed. Please try again.`,
-        html: `<h1>${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h1><p>Content generation failed. Please try again.</p>`,
-        charts: [],
-        keyPoints: [],
-        status: 'draft',
-        order: sectionIndex + 1,
-        contentBlocks: [],
-        locked: false,
-        framework,
-        generatedAt: new Date().toISOString(),
-        source: 'error-fallback',
-        error: error.message
-      };
-    }
-  };
 
   const handleGenerateStoryline = async () => {
+    console.log('🚀 ===== CFA-DEMO STORYLINE GENERATION STARTED =====');
+    console.log('📊 Selected item:', selectedItem);
+    console.log('🔍 Item type:', selectedItem?.type);
+    
     if (!selectedItem || selectedItem.type !== 'deliverable') {
       alert('Storyline generation is only available for deliverables');
       return;
@@ -1702,19 +1801,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     setIsGeneratingStoryline(true);
     
     try {
-      // If the selectedItem doesn't have a project field, it might be from the menu system
-      // We need to fetch the actual deliverable data to get the project field
+      // Get project and deliverable data
       let deliverableData = { ...selectedItem };
       const metadata = selectedItem.metadata || {};
-
-      // Derive deliverable ID candidates from metadata or item itself
       const rawDeliverableId = metadata.deliverableId || selectedItem._id || selectedItem.id;
       const deliverableId = getIdString(rawDeliverableId);
 
+      // Fetch deliverable data if needed
       if ((!selectedItem.project && !selectedItem.project_id) && deliverableId && isValidObjectId(deliverableId)) {
-        console.log('🔄 Menu item missing project field, fetching actual deliverable data...');
-        console.log(`🔍 Looking for deliverable with ID: ${deliverableId}`);
-
         try {
           const deliverableResponse = await fetch(`/api/deliverables/${deliverableId}`);
           if (deliverableResponse.ok) {
@@ -1722,24 +1816,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             const resolvedData = responseData?.data?.deliverable || responseData?.data || responseData;
             if (resolvedData) {
               deliverableData = { ...deliverableData, ...resolvedData };
-              console.log('✅ Fetched deliverable data:', deliverableData);
             }
-          } else {
-            let errorMessage = 'Failed to fetch deliverable data from API';
-            try {
-              const errorData = await deliverableResponse.json();
-              errorMessage = errorData?.error || errorData?.details || errorMessage;
-            } catch (parseError) {
-              console.warn('⚠️ Unable to parse deliverable API error response:', parseError);
-            }
-            console.warn('⚠️', errorMessage);
           }
         } catch (fetchError) {
-          console.warn('❌ Failed to fetch deliverable data, continuing with menu item metadata:', fetchError);
+          console.warn('❌ Failed to fetch deliverable data:', fetchError);
         }
       }
 
-      // Ensure we have a project ID, falling back to metadata
+      // Get project ID
       const projectId = getIdString(
         deliverableData.project ||
         deliverableData.project_id ||
@@ -1756,186 +1840,198 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         selectedItem.parentId
       );
       
-      if (!projectId) {
-        console.error('❌ No project ID found in deliverable data');
-        throw new Error('No project ID found in deliverable data. Please ensure the deliverable is properly linked to a project.');
+      if (!projectId || projectId === 'default-project-id') {
+        console.warn('⚠️ No valid project ID found, using fallback values for testing');
+        // Don't throw error, just use fallback values
       }
-      
-      const resolvedDeliverableId = getIdString(deliverableData._id || deliverableData.id || rawDeliverableId || selectedItem._id || selectedItem.id);
 
-      const enrichedDeliverableData = {
-        ...(typeof deliverableData === 'object' ? deliverableData : {}),
-        id: resolvedDeliverableId,
-        project: projectId,
-        project_id: projectId,
-        name: deliverableData.name || formData.name || selectedItem.title || 'Business Strategy',
-        summary: deliverableData.summary || deliverableData.description || metadata.summary || selectedItem.summary || null,
-        description: deliverableData.description || metadata.description || selectedItem.description || formData.description || null,
-        brief: deliverableData.brief || metadata.brief || formData.brief || 'Strategic analysis and recommendations',
-        audience: deliverableData.audience || metadata.audience || formData.audience || selectedItem.audience || ['Business Stakeholders'],
-        stakeholders: deliverableData.stakeholders || metadata.stakeholders || [],
-        objectives: deliverableData.objectives || metadata.objectives || selectedItem.objectives || [],
-        scope: deliverableData.scope || metadata.scope || null,
-        assumptions: deliverableData.assumptions || metadata.assumptions || [],
-        dependencies: deliverableData.dependencies || metadata.dependencies || selectedItem.dependencies || [],
-        risks: deliverableData.risks || metadata.risks || [],
-        success_metrics: deliverableData.success_metrics || metadata.success_metrics || [],
-        constraints: deliverableData.constraints || metadata.constraints || [],
-        deliverables: deliverableData.deliverables || metadata.deliverables || [],
-        key_messages: deliverableData.key_messages || metadata.key_messages || [],
-        document_length: deliverableData.document_length || metadata.document_length || selectedItem.document_length,
-        page_count: deliverableData.page_count || metadata.page_count || null,
-        estimated_hours: deliverableData.estimated_hours || metadata.estimated_hours || selectedItem.estimated_hours || 0,
-        type: deliverableData.type || metadata.type || selectedItem.type || 'deliverable',
-        status: deliverableData.status || metadata.status || selectedItem.status || 'draft',
-        priority: deliverableData.priority || metadata.priority || selectedItem.priority || 'medium',
-        due_date: deliverableData.due_date || metadata.due_date || selectedItem.due_date || null,
-        start_date: deliverableData.start_date || metadata.start_date || selectedItem.start_date || null,
-        end_date: deliverableData.end_date || metadata.end_date || selectedItem.end_date || null,
-        created_by: deliverableData.created_by || metadata.created_by || null,
-        owner: deliverableData.owner || metadata.owner || selectedItem.owner || null,
-        client_owner: deliverableData.client_owner || metadata.client_owner || selectedItem.client_owner || null,
-        internal_owner: deliverableData.internal_owner || metadata.internal_owner || selectedItem.internal_owner || null,
-        tags: deliverableData.tags || metadata.tags || selectedItem.tags || [],
-        related_documents: deliverableData.related_documents || metadata.related_documents || [],
-        metadata: {
-          ...(deliverableData.metadata || {}),
-          ...metadata
+      // Create CFA-DEMO sections with proper phase-based status
+      const cfaDemoSections = [
+        {
+          id: 'cfa-demo-1',
+          title: 'Market Sizing Analysis',
+          description: 'Comprehensive market size assessment and growth projections',
+          framework: 'market_sizing',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 1,
+          phase: 1,
+          phaseName: 'Phase 1: Market Analysis (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'cfa-demo-2', 
+          title: 'Competitive Landscape Analysis',
+          description: 'Strategic assessment of market competitors and positioning',
+          framework: 'competitive_landscape',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 2,
+          phase: 1,
+          phaseName: 'Phase 1: Market Analysis (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'cfa-demo-3',
+          title: 'Capability Benchmark Analysis', 
+          description: 'Evaluation of organizational capabilities and competencies',
+          framework: 'capability_benchmark',
+                  status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 3,
+          phase: 2,
+          phaseName: 'Phase 2: Capability Assessment (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'cfa-demo-4',
+          title: 'Strategic Options Analysis',
+          description: 'Evaluation of strategic alternatives and decision framework',
+          framework: 'strategic_options', 
+                      status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 4,
+          phase: 3,
+          phaseName: 'Phase 3: Strategic Planning (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'cfa-demo-5',
+          title: 'Partnership Strategy Analysis',
+          description: 'Strategic partnership opportunities and implementation roadmap',
+          framework: 'partnerships',
+          status: 'draft', 
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 5,
+          phase: 4,
+          phaseName: 'Phase 4: Partnership Strategy (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
         }
-      };
+      ];
 
-      const requestData = {
-        projectId: projectId,
-        projectData: {
-          id: projectId,
-          name: formData.name || selectedItem?.projectName || 'Business Strategy Project',
-          client_name: selectedItem?.client?.name || 'Client',
-          industry: metadata.industry || 'financial-services',
-          description: formData.brief || deliverableData.brief || 'Strategic analysis and recommendations project'
-        },
-        clientData: {
-          name: selectedItem?.client?.name || 'Client',
-          industry: metadata.industry || 'financial-services'
-        },
-        deliverableData: enrichedDeliverableData
-      };
-
-      console.log('🎭 Generating storyline with framework-based sections');
-
-      // Extract frameworks from brief scoring
-      let frameworks = [];
-      console.log('🔍 Brief scoring data available:', {
-        brief_quality: formData.brief_quality,
-        brief_strengths: formData.brief_strengths,
-        brief_improvements: formData.brief_improvements
-      });
-      
-      if (formData.brief_quality && formData.brief_strengths && formData.brief_improvements) {
-        const briefScoringData = {
-          data: {
-            brief_quality: formData.brief_quality,
-            brief_strengths: formData.brief_strengths,
-            brief_improvements: formData.brief_improvements
-          }
-        };
-        frameworks = extractFrameworksFromBriefScoring(briefScoringData);
-        console.log('🔍 Frameworks extracted from brief scoring:', frameworks);
-      }
-      
-      if (frameworks.length === 0) {
-        frameworks = getDefaultFrameworks();
-        console.log('🔍 Using default frameworks:', frameworks);
-      }
-      
-      console.log('🔍 Final frameworks array:', frameworks);
-      console.log('🔍 Frameworks array length:', frameworks.length);
-
-      // Create skeleton sections immediately
-      const skeletonSections = createSkeletonSections(frameworks);
-      console.log('🔍 Created skeleton sections:', JSON.stringify(skeletonSections, null, 2));
-      
-      const skeletonStoryline = {
-        title: `Strategic Analysis - ${frameworks.length} Framework${frameworks.length > 1 ? 's' : ''}`, // Default title for saving
-        sections: skeletonSections,
-        executiveSummary: '', // No placeholder content - wait for backend
-        presentationFlow: '', // No placeholder content - wait for backend
-        callToAction: '', // No placeholder content - wait for backend
-        totalSections: frameworks.length,
-        estimatedDuration: frameworks.length * 5,
+      // Create initial storyline with waiting sections
+      const initialStoryline = {
+        title: 'UBS Switzerland Pension Strategy Analysis',
+        sections: cfaDemoSections,
+        executiveSummary: '',
+        presentationFlow: '',
+        callToAction: '',
+        totalSections: 5,
+        estimatedDuration: 15,
         generatedAt: new Date().toISOString(),
-        source: 'framework-based'
+        source: 'cfa-demo-orchestrator',
+        currentPhase: 0,
+        phaseStatus: 'initializing'
       };
 
-      setGeneratedStoryline(skeletonStoryline);
+      setGeneratedStoryline(initialStoryline);
       setStorylineDirty(true);
       setCurrentView('storyline');
       
-      console.log('✅ Skeleton storyline created with', frameworks.length, 'sections');
-      console.log('🔍 Skeleton storyline object:', JSON.stringify(skeletonStoryline, null, 2));
+      console.log('✅ Initial storyline created with waiting sections');
+      console.log('📊 Initial storyline sections:', initialStoryline.sections.map(s => ({
+        id: s.id,
+        title: s.title,
+        framework: s.framework,
+        isLoading: s.isLoading,
+        generationStatus: s.generationStatus
+      })));
 
-      // Generate content for each section asynchronously
-      const sectionPromises = frameworks.map(async (framework, index) => {
-        try {
-          const sectionData = await generateSectionContent(
-            framework, 
-            index, 
-            enrichedDeliverableData, 
-            requestData.projectData, 
-            requestData.clientData
-          );
-          
-          setGeneratedStoryline(prev => {
-            if (!prev) return prev;
-            const updatedSections = [...(prev.sections || [])];
-            console.log(`🔍 Received section data for ${framework}:`, JSON.stringify(sectionData, null, 2));
-            console.log(`🔍 Current section before update:`, JSON.stringify(updatedSections[index], null, 2));
-            
-            updatedSections[index] = {
-              ...sectionData,
-              framework: framework, // Preserve the framework property
-              isLoading: false
-            };
-            
-            console.log(`🔍 Updated section after merge:`, JSON.stringify(updatedSections[index], null, 2));
-            
-            return {
-              ...prev,
-              sections: updatedSections
-            };
-          });
-          
-          console.log(`✅ Section ${index + 1} (${framework}) completed`);
-        } catch (error) {
-          console.error(`❌ Failed to generate section ${index + 1} (${framework}):`, error);
-          
-          setGeneratedStoryline(prev => {
-            if (!prev) return prev;
-            const updatedSections = [...(prev.sections || [])];
-            console.log(`🔍 Error case - Current section before update:`, JSON.stringify(updatedSections[index], null, 2));
-            
-            updatedSections[index] = {
-              ...updatedSections[index],
-              framework: framework, // Preserve the framework property
-              title: framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),                                                                  
-              status: 'draft',
-              isLoading: false,
-              error: error.message
-            };
-            
-            console.log(`🔍 Error case - Updated section after merge:`, JSON.stringify(updatedSections[index], null, 2));
-            
-            return {
-              ...prev,
-              sections: updatedSections
-            };
-          });
-        }
+      // Prepare context data for all framework calls with fallback values
+      const contextData = {
+        projectId: projectId || 'default-project-id',
+        projectName: formData?.name || selectedItem?.projectName || 'UBS Pension Strategy',
+        clientName: selectedItem?.client?.name || 'UBS',
+        industry: metadata?.industry || 'financial-services',
+        projectDescription: formData?.brief || deliverableData?.brief || 'Strategic analysis for UBS pension strategy',
+        deliverableId: deliverableId || 'default-deliverable-id',
+        deliverableName: deliverableData?.name || formData?.name || 'UBS Pension Strategy',
+        deliverableBrief: deliverableData?.brief || formData?.brief || 'Strategic analysis and recommendations',
+        geography: 'Switzerland'
+      };
+      
+      console.log('📋 Context Data prepared:', contextData);
+      
+      // Start CFA-DEMO generation with individual framework calls
+      console.log('🎭 Starting CFA-DEMO generation with individual framework calls...');
+      
+      // Phase 1: Parallel execution (Market Sizing + Competitive Landscape)
+      console.log('📊 === PHASE 1: PARALLEL EXECUTION ===');
+      const phase1Promises = [];
+      
+      // Market Sizing (index 0)
+      const marketSizingPromise = generateSectionContent('market_sizing', {}, 0, contextData);
+      phase1Promises.push(marketSizingPromise);
+      
+      // Competitive Landscape (index 1) 
+      const competitiveLandscapePromise = generateSectionContent('competitive_landscape', {}, 1, contextData);
+      phase1Promises.push(competitiveLandscapePromise);
+      
+      console.log('⚡ Executing 2 Phase 1 promises in parallel...');
+      const phase1Results = await Promise.allSettled(phase1Promises);
+      
+      // Phase 2: Capability Benchmark (depends on Competitive Landscape)
+      console.log('📊 === PHASE 2: CAPABILITY BENCHMARK ===');
+      const competitiveResult = phase1Results[1].status === 'fulfilled' ? phase1Results[1].value : null;
+      const capabilityBenchmarkPromise = generateSectionContent('capability_benchmark', { competitive_landscape: competitiveResult }, 2, contextData);
+      const capabilityResult = await capabilityBenchmarkPromise;
+      
+      // Phase 3: Strategic Options (depends on Market Sizing, Competitive Landscape, Capability Benchmark)
+      console.log('📊 === PHASE 3: STRATEGIC OPTIONS ===');
+      const marketResult = phase1Results[0].status === 'fulfilled' ? phase1Results[0].value : null;
+      const strategicOptionsPromise = generateSectionContent('strategic_options', {
+        market_sizing: marketResult,
+        competitive_landscape: competitiveResult,
+        capability_benchmark: capabilityResult
+      }, 3, contextData);
+      const strategicResult = await strategicOptionsPromise;
+      
+      // Phase 4: Partnership Strategy (depends on Strategic Options)
+      console.log('📊 === PHASE 4: PARTNERSHIP STRATEGY ===');
+      const partnershipPromise = generateSectionContent('partnerships', { strategic_options: strategicResult }, 4, contextData);
+      const partnershipResult = await partnershipPromise;
+      
+      console.log('✅ All CFA-DEMO sections completed');
+      
+      // Update storyline with final completion status
+      setGeneratedStoryline(prev => {
+        if (!prev) return null;
+        const updatedSections = prev.sections.map(section => ({
+          ...section,
+          isLoading: false,
+          generationStatus: 'completed',
+          phaseName: section.phaseName?.replace(' (In Progress)', ' (Completed)') || 'Completed'
+        }));
+        return { ...prev, sections: updatedSections };
       });
+      
+              setStorylineDirty(true);
 
-      await Promise.allSettled(sectionPromises);
-      
-      console.log('✅ All sections generation completed');
-      
     } catch (error) {
       console.error('❌ Error generating storyline:', error);
       const errorMessage = error.message || error.toString() || 'Unknown error occurred';
@@ -2538,15 +2634,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
     const handleStorylineTabClick = async () => {
       if (generatedStoryline) {
+        // If we already have a storyline in state, just switch to storyline view
+        console.log('🎯 Storyline tab clicked - using existing storyline in state');
         setCurrentView('storyline');
       } else {
-        // First try to load existing storyline from database
+        // Only load from database if we don't have a storyline in state
         const deliverableId = selectedItem?.type === 'deliverable' 
           ? (selectedItem.metadata?.deliverableId || selectedItem.metadata?.deliverable_id || selectedItem.metadata?.business_entity_id || selectedItem._id || selectedItem.id)
           : (selectedItem?._id || selectedItem?.id);
         console.log('🎯 Storyline tab clicked for deliverable:', deliverableId);
         if (deliverableId) {
-          // Force reload the storyline from database
+          // Load existing storyline from database
           await loadExistingStoryline(deliverableId);
           
           // Check again if we have a storyline after loading
@@ -2604,12 +2702,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           onRegenerateSection={handleRegenerateSection}
           slideGenerationProgress={slideGenerationProgress}
           title={storylineTitle}
-          briefQuality={Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : null}                                                
+          briefQuality={Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : null}
         />
       );
     }
 
     if (currentView === 'layout') {
+      console.log('🔧 ContentPart - Passing to DeliverableLayoutView:');
+      console.log('🔧 - hasStoryline:', !!generatedStoryline);
+      console.log('🔧 - storyline:', generatedStoryline);
+      console.log('🔧 - sections count:', generatedStoryline?.sections?.length || 0);
+      
       return (
         <DeliverableLayoutView
           hasStoryline={!!generatedStoryline}

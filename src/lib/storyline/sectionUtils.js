@@ -55,7 +55,9 @@ const sanitizeCharts = (charts) => {
     source: chart?.source || '',
     config: chart?.config || {},
     attributes: chart?.attributes || {},
-    raw: chart?.raw || ''
+    raw: chart?.raw || '',
+    generated: chart?.generated || false,
+    type: chart?.type || 'bar'
   }));
 };
 
@@ -165,8 +167,11 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
   const order = options.order ?? section.order ?? 0;
   const fallbackTitle = options.fallbackTitle || section.title || `Section ${order}`;
   const markdown = generateSectionMarkdown(section, fallbackTitle);
-  const { html, charts } = parseMarkdownWithCharts(markdown);
+  const { html, charts: markdownCharts } = parseMarkdownWithCharts(markdown);
   const derived = deriveSectionMetadata(markdown);
+  
+  // Preserve existing charts from section data, or use markdown charts as fallback
+  const charts = section.charts && section.charts.length > 0 ? section.charts : markdownCharts;
 
   const keyPointCandidates = sanitizeStringArray(
     derived.keyPoints.length ? derived.keyPoints :
