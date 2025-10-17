@@ -237,12 +237,12 @@ export const validateRegenerationRequest = (storyline) => {
   
   if (!storyline) {
     errors.push('No storyline provided');
-    return { isValid: false, errors, warnings, stats: null };
+    return { valid: false, errors, warnings, stats: null };
   }
   
   if (!storyline.sections || storyline.sections.length === 0) {
     errors.push('Storyline has no sections to regenerate');
-    return { isValid: false, errors, warnings, stats: null };
+    return { valid: false, errors, warnings, stats: null };
   }
   
   const { lockedSections, draftSections } = filterSectionsForRegeneration(storyline);
@@ -263,7 +263,7 @@ export const validateRegenerationRequest = (storyline) => {
   };
   
   return {
-    isValid: errors.length === 0,
+    valid: errors.length === 0,
     errors,
     warnings,
     stats

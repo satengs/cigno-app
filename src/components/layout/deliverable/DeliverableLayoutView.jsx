@@ -272,34 +272,19 @@ export default function DeliverableLayoutView({
 
   const getColumnItems = () => {
     const base = sectionKeyPoints.length ? sectionKeyPoints : normalizedBlockItems;
-    const items = base.slice(0, 3);
-    while (items.length < 3) {
-      const index = items.length;
-      items.push({ title: `Phase ${index + 1}`, content: 'Add supporting detail.' });
-    }
-    return items;
+    return base.slice(0, 3); // Only return actual data from backend
   };
 
   const getTimelineItems = () => {
-    const items = timelineItems.length ? timelineItems.slice(0, 4) : [];
-    while (items.length < 4) {
-      const index = items.length;
-      items.push({ title: `Milestone ${index + 1}`, content: 'Describe the milestone.' });
-    }
-    return items;
+    return timelineItems.length ? timelineItems.slice(0, 4) : []; // Only return actual data from backend
   };
 
   const getProcessItems = () => {
-    const items = processFlowItems.length ? processFlowItems.slice(0, 4) : [];
-    while (items.length < 4) {
-      const index = items.length;
-      items.push({ title: `Step ${index + 1}`, content: 'Outline the action for this step.' });
-    }
-    return items;
+    return processFlowItems.length ? processFlowItems.slice(0, 4) : []; // Only return actual data from backend
   };
 
   const renderBullet = (point, index) => (
-    <p key={index}>• {point.content || point.title || `Point ${index + 1}`}</p>
+    <p key={index}>• {point.content || point.title || ''}</p>
   );
 
   const renderParagraph = () => {
@@ -307,12 +292,17 @@ export default function DeliverableLayoutView({
       return <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: currentSection.html }} />;
     }
     if (currentSection?.markdown) {
-      return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>{currentSection.description || currentSection.markdown}</p>;
+      return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>{currentSection.markdown}</p>;
     }
     if (currentSection?.description) {
       return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>{currentSection.description}</p>;
     }
-    return <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>Add narrative content for this slide.</p>;
+    // Show loading state if content is being generated
+    if (currentSection?.isLoading) {
+      return <p className="leading-relaxed text-gray-500 italic">Generating content...</p>;
+    }
+    // Don't show any placeholder content - only show what comes from backend
+    return null;
   };
 
   const renderSlidesPreview = () => {
@@ -495,7 +485,7 @@ export default function DeliverableLayoutView({
           <div className="h-full">
             <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {currentSection?.title || storyline?.title || 'Content Title'}
+                {currentSection?.title || storyline?.title || ''}
               </h1>
               <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
                 {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
@@ -503,7 +493,8 @@ export default function DeliverableLayoutView({
             </div>
             <div className="space-y-6 h-4/5 overflow-y-auto">
               {renderParagraph()}
-              {sectionKeyPoints.length > 0 && (
+              {/* Only show key points if they come from backend */}
+              {sectionKeyPoints.length > 0 && !currentSection?.isLoading && (
                 <div className="space-y-3">
                   <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
                   <ul className="space-y-2">
@@ -849,7 +840,7 @@ export default function DeliverableLayoutView({
                 <div className="h-full">
                   <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {currentSection?.title || storyline?.title || 'Section Title'}
+                      {currentSection?.title || storyline?.title || ''}
                     </h1>
                     <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
                       Section {currentSectionIndex + 1} of {storyline?.sections?.length || 1}
@@ -944,7 +935,7 @@ export default function DeliverableLayoutView({
                 <div className="h-full">
                   <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {currentSection?.title || storyline?.title || 'Section Title'}
+                      {currentSection?.title || storyline?.title || ''}
                     </h1>
                   </div>
                   <div className="grid grid-cols-3 gap-6 h-4/5">
@@ -954,7 +945,7 @@ export default function DeliverableLayoutView({
                           {index + 1}
                         </div>
                         <h3 className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                          {point.title || point.split('.')[0] || `Point ${index + 1}`}
+                          {point.title || point.split('.')[0] || ''}
                         </h3>
                         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                           {point.content || point.split('.').slice(1).join('.') || point}
@@ -966,10 +957,10 @@ export default function DeliverableLayoutView({
                           {index + 1}
                         </div>
                         <h3 className="font-semibold text-gray-900 mb-2">
-                          {section.title || `Section ${index + 1}`}
+                          {section.title || ''}
                         </h3>
                         <p className="text-sm text-gray-600">
-                          {section.description || `Section ${index + 1} content`}
+                          {section.description || ''}
                         </p>
                       </div>
                     )) || (
@@ -990,39 +981,6 @@ export default function DeliverableLayoutView({
                           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Third phase description</p>
                         </div>
                       </>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {selectedLayout === 'full-width' && (
-                <div className="h-full">
-                  <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
-                    <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {currentSection?.title || storyline?.title || 'Content Title'}
-                    </h1>
-                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-                    </p>
-                  </div>
-                  <div className="space-y-6 h-4/5 overflow-y-auto">
-                    <div className="prose max-w-none">
-                      <p className="leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                        {currentSection?.description || storyline?.executiveSummary || 'Full width content section'}
-                      </p>
-                    </div>
-                    {currentSection?.keyPoints && (
-                      <div className="space-y-3">
-                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
-                        <ul className="space-y-2">
-                          {currentSection.keyPoints.map((point, index) => (
-                            <li key={index} className="flex items-start">
-                              <span className="w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
-                              <span style={{ color: 'var(--text-primary)' }}>{point.content || point}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
                     )}
                   </div>
                 </div>

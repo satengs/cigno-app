@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import SectionNavigator from '../../storyline/SectionNavigator';
 import RegenerationConfirmModal from '../../ui/RegenerationConfirmModal';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
@@ -10,10 +10,8 @@ export default function DeliverableStorylineView({
   storylineDirty,
   isSavingStoryline,
   isGeneratingStoryline,
-  isGeneratingSlides,
   onSaveStoryline,
   onGenerateStoryline,
-  onGenerateSlides,
   onRegenerateStoryline,
   onResetStoryline,
   currentSectionIndex,
@@ -22,8 +20,8 @@ export default function DeliverableStorylineView({
   onStatusChange,
   onToggleLock,
   onRemoveSection,
+  onRegenerateSection,
   title,
-  slideGenerationProgress = { completed: 0, total: 0 },
   briefQuality = null
 }) {
   const normalizedBriefQuality = normalizeScoreValue(briefQuality);
@@ -55,10 +53,6 @@ export default function DeliverableStorylineView({
     );
   }
 
-  const slidesDisabled = isGeneratingSlides || isGeneratingStoryline || isSavingStoryline;
-  const slideProgressLabel = isGeneratingSlides && slideGenerationProgress?.total
-    ? ` (${Math.min(slideGenerationProgress.completed, slideGenerationProgress.total)}/${slideGenerationProgress.total})`
-    : '';
 
   return (
     <div className="flex flex-col min-h-0">
@@ -74,9 +68,9 @@ export default function DeliverableStorylineView({
         <div className="flex items-center space-x-3">
           <button
             onClick={onResetStoryline}
-            disabled={isGeneratingStoryline || isSavingStoryline || isGeneratingSlides}
+            disabled={isGeneratingStoryline || isSavingStoryline}
             className={`px-3 py-2 rounded-sm text-sm font-medium border transition-colors ${
-              isGeneratingStoryline || isSavingStoryline || isGeneratingSlides
+              isGeneratingStoryline || isSavingStoryline
                 ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
                 : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
             }`}
@@ -84,23 +78,10 @@ export default function DeliverableStorylineView({
             Reset
           </button>
           <button
-            onClick={() => onGenerateSlides?.()}
-            disabled={slidesDisabled}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-sm text-sm font-medium transition-colors ${
-              slidesDisabled
-                ? 'bg-purple-200 text-purple-500 cursor-not-allowed'
-                : 'bg-purple-600 text-white hover:bg-purple-700'
-            }`}
-            title="Generate slides for sections without slide content"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>{isGeneratingSlides ? `Generating${slideProgressLabel}` : 'Generate Slides'}</span>
-          </button>
-          <button
             onClick={() => setShowRegenerationModal(true)}
-            disabled={isGeneratingStoryline || isSavingStoryline || isGeneratingSlides}
+            disabled={isGeneratingStoryline || isSavingStoryline}
             className={`flex items-center space-x-2 px-3 py-2 rounded-sm text-sm font-medium transition-colors ${
-              isGeneratingStoryline || isSavingStoryline || isGeneratingSlides
+              isGeneratingStoryline || isSavingStoryline
                 ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
@@ -131,6 +112,7 @@ export default function DeliverableStorylineView({
           onStatusChange={onStatusChange}
           onToggleLock={onToggleLock}
           onRemoveSection={onRemoveSection}
+          onRegenerateSection={onRegenerateSection}
         />
       </div>
 

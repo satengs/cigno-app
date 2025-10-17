@@ -8,19 +8,19 @@ import {
   Lock,
   Unlock,
   FileText,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { createSectionRecord } from '../../lib/storyline/sectionUtils';
+import { FRAMEWORK_SCHEMAS } from '../../lib/storyline/frameworkSchemas';
+import { FrameworkRenderer } from '../frameworks/FrameworkRenderer';
 import dynamic from 'next/dynamic';
 
-const ChartPreview = dynamic(() => import('./ChartPreview'), { ssr: false });
+const ChartPreview = dynamic(() => import('./ChartPreview'), { 
+  ssr: false,
+  loading: () => <div className="p-4 text-center text-gray-500">Loading chart...</div>
+});
 
-const STATUS_OPTIONS = [
-  { value: 'not_started', label: 'Not Started' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'in_review', label: 'In Review' },
-  { value: 'final', label: 'Final' }
-];
 
 const STATUS_BADGE_STYLES = {
   final: 'bg-green-100 text-green-800 border border-green-200',
@@ -29,6 +29,7 @@ const STATUS_BADGE_STYLES = {
   not_started: 'bg-gray-100 text-gray-700 border border-gray-200'
 };
 
+
 export default function SectionNavigator({
   sections = [],
   currentSectionIndex = 0,
@@ -36,7 +37,8 @@ export default function SectionNavigator({
   onUpdateSection,
   onStatusChange,
   onToggleLock,
-  onRemoveSection
+  onRemoveSection,
+  onRegenerateSection
 }) {
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [chartDrafts, setChartDrafts] = useState({});
@@ -53,6 +55,33 @@ export default function SectionNavigator({
   }, [sections]);
 
   const statusBadgeClasses = useMemo(() => STATUS_BADGE_STYLES, []);
+
+  // Handle section regeneration
+  const handleRegenerateSection = useCallback(async (section) => {
+    if (!onRegenerateSection || !section.framework) return;
+    
+    try {
+      await onRegenerateSection(section);
+    } catch (error) {
+      console.error('Error regenerating section:', error);
+    }
+  }, [onRegenerateSection]);
+
+  // Get framework-specific schema data
+  const getFrameworkSchema = (framework) => {
+    return FRAMEWORK_SCHEMAS[framework] || {
+      title: 'Analysis',
+      defaultChartType: 'bar',
+      agent: null,
+      defaultConfig: { datasets: [], labels: [] }
+    };
+  };
+
+  // Dynamic rendering options based on framework type
+
+
+  // Generate framework-specific chart only for successful sections with no existing charts
+
 
   const handleMarkdownChange = useCallback((section, value) => {
     if (!onUpdateSection) return;
@@ -85,15 +114,109 @@ export default function SectionNavigator({
     });
   }, [onUpdateSection]);
 
-  const renderChartPreview = (charts = []) => {
+  // Render framework-specific visual component
+
+  const renderChartPreview = (section) => {
+    // Only render on client side
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    
+    // Don't render charts for error/failed sections - just return null
+    if (section.error || section.status === 'error' || section.source === 'error-fallback') {
+      return null;
+    }
+    
+    // Don't render charts for loading sections
+    if (section.isLoading) {
+      return (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+            Generating Charts...
+          </p>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
+            <p className="text-sm text-gray-500">
+              Chart data is being generated...
+            </p>
+          </div>
+        </div>
+      );
+    }
+    
+    // For framework sections, use FrameworkRenderer
+    if (section.framework) {
+      const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
+      
+      if (!hasRealChartData) {
+        return (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+              {getFrameworkSchema(section.framework).title}
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">
+                    No Chart Data Available
+                  </h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>
+                      The AI agent for <strong>{section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> did not return chart data.
+                    </p>
+                    <p className="mt-1">
+                      This could be because:
+                    </p>
+                    <ul className="mt-1 list-disc list-inside space-y-1">
+                      <li>No AI agent is configured for this framework</li>
+                      <li>The agent failed to generate chart data</li>
+                      <li>The agent response format is not supported</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      
+      return (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+            {getFrameworkSchema(section.framework).title}
+          </p>
+          <FrameworkRenderer 
+            framework={section.framework} 
+            data={section.chartData || section.charts[0]?.config?.data}
+            insights={section.keyPoints || section.insights}
+            takeaway={section.takeaway}
+          />
+        </div>
+      );
+    }
+    
+    // For non-framework sections, render existing charts
+    const charts = section.charts || [];
     if (!charts.length) return null;
+    
     return (
       <div className="mt-3 space-y-3">
-        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Charts</p>
+        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+          Charts
+        </p>
         <div className="grid gap-3 md:grid-cols-2">
-          {charts.map((chart) => (
-            <ChartPreview key={chart.id} chart={chart} />
-          ))}
+          {charts.map((chart) => {
+            if (!chart || !chart.id) return null;
+            return (
+              <div key={chart.id}>
+                <ChartPreview chart={chart} />
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -150,7 +273,7 @@ export default function SectionNavigator({
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 p-12 text-center">
         <FileText className="mb-3 h-8 w-8 text-gray-400" />
         <p className="text-sm font-medium text-gray-600">No sections available yet</p>
-        <p className="text-xs text-gray-500 mt-1">Generate a storyline to get started</p>
+        <p className="text-xs text-gray-500 mt-1">Sections will appear here when generated from backend data</p>
       </div>
     );
   }
@@ -169,6 +292,18 @@ export default function SectionNavigator({
     onUpdateSection?.(sectionId, { description: value });
   };
 
+
+  // Debug: Log section data
+  console.log('🔍 SectionNavigator received sections:', sections.map(s => ({
+    id: s.id,
+    title: s.title,
+    framework: s.framework,
+    hasHtml: !!s.html,
+    hasMarkdown: !!s.markdown,
+    hasDescription: !!s.description,
+    status: s.status,
+    isLoading: s.isLoading
+  })));
 
   return (
     <div className="space-y-4">
@@ -221,15 +356,26 @@ export default function SectionNavigator({
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>
                       {(section.status || 'draft').replace('_', ' ')}
                     </span>
+                    {section.framework && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                        {section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </span>
+                    )}
+                    {/* Debug: Show framework info */}
+                    {!section.framework && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                        No Framework
+                      </span>
+                    )}
                   </div>
                   
                   {section.description ? (
                     <p className="text-sm text-gray-600 line-clamp-2 mb-1">
                       {section.description}
                     </p>
-                  ) : (
-                    <p className="text-sm text-gray-400 italic mb-1">Add a description to outline this section</p>
-                  )}
+                  ) : section.isLoading ? (
+                    <p className="text-sm text-gray-400 italic mb-1">Generating content...</p>
+                  ) : null}
                   
                   {section.sources?.length > 0 && (
                     <div className="flex items-center text-xs text-gray-500">
@@ -263,6 +409,24 @@ export default function SectionNavigator({
                     e.preventDefault();
                     e.stopPropagation();
                     if (section.locked) return;
+                    handleRegenerateSection(section);
+                  }}
+                  disabled={section.locked || !section.framework}
+                  className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
+                    section.locked || !section.framework
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  }`}
+                  title={section.locked ? 'Unlock to regenerate' : !section.framework ? 'No framework to regenerate' : 'Regenerate section content'}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (section.locked) return;
                     onRemoveSection?.(section.id);
                   }}
                   disabled={section.locked}
@@ -282,68 +446,91 @@ export default function SectionNavigator({
               <div className="border-t border-gray-100 bg-gray-50/50">
                 <div className="p-5 space-y-5">
                   <div className="grid gap-5 md:grid-cols-2">
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Section Title</label>
-                      <input
-                        type="text"
-                        id={`section-title-${section.id}`}
-                        value={section.title || ''}
-                        onChange={(e) => handleTitleChange(section.id, e.target.value)}
-                        disabled={isLocked}
-                        className={`w-full rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                          isLocked 
-                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
-                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
-                        }`}
-                        placeholder="Enter section title..."
-                      />
-                    </div>
 
+                    {/* Only render title if it exists in response */}
+                    {section.title && (
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                      <textarea
-                        value={section.description || ''}
-                        onChange={(e) => handleDescriptionChange(section.id, e.target.value)}
-                        disabled={isLocked}
-                        rows={3}
-                        className={`w-full rounded-lg border px-3 py-2.5 text-sm transition-colors resize-none ${
-                          isLocked 
-                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
-                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
-                        }`}
-                        placeholder="Describe the purpose and coverage of this section..."
-                      />
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">{section.title}</h3>
                     </div>
+                    )}
 
+                    {/* Only render description if it exists in response */}
+                    {section.description && (
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Markdown Content</label>
-                      <textarea
-                        value={section.markdown || ''}
-                        onChange={(e) => handleMarkdownChange(section, e.target.value)}
-                        disabled={isLocked}
-                        rows={6}
-                        className={`w-full font-mono text-sm rounded-lg border px-3 py-2.5 transition-colors resize-y min-h-[160px] ${
-                          isLocked
-                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
-                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
-                        }`}
-                        placeholder="Enter or edit markdown content for this section..."
-                      />
+                        <p className="text-sm text-gray-600 leading-relaxed">{section.description}</p>
                     </div>
+                    )}
 
+                    {/* Only render content if it exists in response */}
+                    {section.html && (
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Rendered Preview</label>
-                      <div className="rounded-lg border border-gray-200 bg-white p-4 prose prose-sm prose-slate max-w-none">
-                        {section.html ? (
-                          <div dangerouslySetInnerHTML={{ __html: section.html }} />
-                        ) : (
-                          <p className="text-sm text-gray-400 italic">Markdown preview will appear here.</p>
-                        )}
+                        <div className="prose prose-sm prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: section.html }} />
+                    </div>
+                    )}
+
+                    {/* Fallback to markdown if no HTML */}
+                    {!section.html && section.markdown && (
+                    <div className="md:col-span-2">
+                        <div className="prose prose-sm prose-slate max-w-none">
+                          <pre className="whitespace-pre-wrap text-sm text-gray-700">{section.markdown}</pre>
+                        </div>
                       </div>
-                      {renderChartPreview(section.charts)}
-                    </div>
+                    )}
 
-                    {(section.charts || []).length > 0 && (
+                    {/* Render framework-specific visualization */}
+                    {section.framework && (
+                      <div className="md:col-span-2">
+                        {(() => {
+                          // Check if we have real data from AI agent
+                          const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
+                          
+                          if (!hasRealChartData) {
+                            return (
+                              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                <div className="flex items-center">
+                                  <div className="flex-shrink-0">
+                                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                  <div className="ml-3">
+                                    <h3 className="text-sm font-medium text-red-800">
+                                      No Chart Data Available
+                                    </h3>
+                                    <div className="mt-2 text-sm text-red-700">
+                                      <p>
+                                        The AI agent for <strong>{section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong> did not return chart data.
+                                      </p>
+                                      <p className="mt-1">
+                                        This could be because:
+                                      </p>
+                                      <ul className="mt-1 list-disc list-inside space-y-1">
+                                        <li>No AI agent is configured for this framework</li>
+                                        <li>The agent failed to generate chart data</li>
+                                        <li>The agent response format is not supported</li>
+                                      </ul>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          
+                          // Render the framework component with real data
+                          return (
+                            <FrameworkRenderer 
+                              framework={section.framework} 
+                              data={section.chartData || section.charts[0]?.config?.data}
+                              insights={section.keyPoints || section.insights}
+                              takeaway={section.takeaway}
+                            />
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Hide old chart configuration for framework sections */}
+                    {!section.framework && (section.charts || []).length > 0 && (
                       <div className="md:col-span-2 space-y-5">
                         <p className="text-sm font-medium text-gray-700">Chart Configuration</p>
                         {(section.charts || []).map((chart) => {
@@ -394,83 +581,8 @@ export default function SectionNavigator({
                       </div>
                     )}
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                      <select
-                        value={section.status || 'draft'}
-                        onChange={(e) => onStatusChange?.(section.id, e.target.value)}
-                        disabled={isLocked}
-                        className={`w-full rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                          isLocked 
-                            ? 'border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed'
-                            : 'border-gray-300 bg-white hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100'
-                        }`}
-                      >
-                        {STATUS_OPTIONS.map(option => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Key Points</label>
-                    <div className="space-y-2">
-                      {(section.keyPoints || []).map((point, pointIndex) => (
-                        <div key={pointIndex} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
-                            {pointIndex + 1}
-                          </div>
-                          <span className="flex-1 text-sm text-gray-700">{point}</span>
-                        </div>
-                      ))}
-
-                      {(section.keyPoints || []).length === 0 && (
-                        <div className="text-center py-6 text-sm text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                          No key points available for this section
-                        </div>
-                      )}
-                    </div>
-                  </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 mt-4">
-                    <div className="flex items-center space-x-3">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                        isLocked ? 'bg-green-100' : 'bg-gray-100'
-                      }`}>
-                        {isLocked ? (
-                          <Lock className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Unlock className="h-4 w-4 text-gray-500" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {isLocked ? 'Section Locked' : 'Section Unlocked'}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {isLocked
-                            ? 'This section is locked and marked as Final'
-                            : 'Lock the section once finalized to prevent further edits'}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onToggleLock?.(section.id, !isLocked)}
-                      className={`flex items-center space-x-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-                        isLocked 
-                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300' 
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {isLocked ? (
-                        <><Unlock className="h-4 w-4" /><span>Unlock</span></>
-                      ) : (
-                        <><Lock className="h-4 w-4" /><span>Lock & Finalize</span></>
-                      )}
-                    </button>
-                  </div>
                 </div>
               </div>
             )}

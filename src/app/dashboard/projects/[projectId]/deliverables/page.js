@@ -55,27 +55,13 @@ const DeliverableDetailPage = () => {
     ]
   };
 
+  // TODO: Replace with API call to get real storyline data
+  // This will be replaced with actual API data
   const mockStoryline = {
-    title: 'Central Bank Digital Currencies: Implementation Strategy for Financial Institutions',
-    author: 'McKinsey & Company',
-    pageInfo: 'Page 14 of 28',
-    sections: [
-      {
-        title: 'Executive Summary',
-        content: 'The rapid evolution of central bank digital currencies (CBDCs) represents a fundamental shift in the global financial landscape. As monetary authorities worldwide accelerate their digital currency initiatives, financial institutions must prepare for unprecedented changes in payment infrastructure, customer engagement, and operational models.',
-        subsections: [
-          {
-            title: 'Key Finding: Preparation Timeline',
-            content: 'Financial institutions require a 12-18 month preparation window to adequately adapt their systems, processes, and customer interfaces for CBDC integration. This timeline encompasses technical infrastructure updates, regulatory compliance adjustments, staff training, and customer education initiatives.',
-            phases: [
-              'Phase 1 (Months 1-6): Infrastructure assessment and strategic planning',
-              'Phase 2 (Months 7-12): System development and integration testing', 
-              'Phase 3 (Months 13-18): Pilot programs and staff training'
-            ]
-          }
-        ]
-      }
-    ]
+    title: '',
+    author: '',
+    pageInfo: '',
+    sections: []
   };
 
   useEffect(() => {

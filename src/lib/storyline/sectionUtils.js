@@ -31,7 +31,7 @@ const sanitizeStringArray = (items) => {
     .filter(Boolean);
 };
 
-const mapContentTypeToBlock = (contentType = DEFAULT_CONTENT_BLOCK_TYPE) => {
+export const mapContentTypeToBlock = (contentType = DEFAULT_CONTENT_BLOCK_TYPE) => {
   if (!contentType) return DEFAULT_CONTENT_BLOCK_TYPE;
   const normalized = contentType.toString().toLowerCase();
   const match = CONTENT_TYPE_MAP.find(entry => entry.pattern.test(normalized));
@@ -57,6 +57,43 @@ const sanitizeCharts = (charts) => {
     attributes: chart?.attributes || {},
     raw: chart?.raw || ''
   }));
+};
+
+const cloneMixedValue = (value, fallback = null) => {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  return value;
+};
+
+const normalizeSlides = (slides, fallbackLayout = 'title-2-columns') => {
+  if (!Array.isArray(slides)) return [];
+
+  return slides.map((slide, index) => {
+    const toTrimmedString = (value) => {
+      if (typeof value === 'string') return value.trim();
+      if (value === undefined || value === null) return '';
+      return String(value).trim();
+    };
+
+    return {
+      title: toTrimmedString(slide?.title) || `Slide ${index + 1}`,
+      subtitle: toTrimmedString(slide?.subtitle),
+      summary: toTrimmedString(slide?.summary || slide?.description || slide?.content),
+      bullets: sanitizeStringArray(slide?.bullets || slide?.points || slide?.keyPoints),
+      notes: toTrimmedString(slide?.notes || slide?.speakerNotes),
+      layout: toTrimmedString(slide?.layout || slide?.format) || fallbackLayout
+    };
+  });
 };
 
 export const generateSectionMarkdown = (sectionData = {}, fallbackTitle = '') => {
@@ -173,6 +210,28 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     locked,
     lockedBy: locked ? section.lockedBy : undefined,
     lockedAt: locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
+    framework: section.framework, // Preserve framework property
+    takeaway: section.takeaway || '', // Preserve takeaway property
+    notes: section.notes || '', // Preserve notes property
+    insights: sanitizeStringArray(section.insights || section.keyInsights),
+    sources: sanitizeStringArray(section.sources),
+    layout: section.layout || options.layout,
+    layoutAppliedAt: section.layoutAppliedAt
+      ? new Date(section.layoutAppliedAt)
+      : (section.layout_applied_at ? new Date(section.layout_applied_at) : undefined),
+    chartData: cloneMixedValue(section.chartData, null),
+    source: section.source,
+    generatedAt: section.generatedAt
+      ? new Date(section.generatedAt)
+      : (section.generated_at ? new Date(section.generated_at) : undefined),
+    slides: normalizeSlides(section.slides, section.layout || options.defaultLayout),
+    slidesGeneratedAt: section.slidesGeneratedAt
+      ? new Date(section.slidesGeneratedAt)
+      : (section.slides_generated_at ? new Date(section.slides_generated_at) : undefined),
+    slidesGenerationContext: cloneMixedValue(
+      section.slidesGenerationContext || section.slides_generation_context,
+      undefined
+    ),
     markdown,
     html,
     charts: sanitizeCharts(charts),

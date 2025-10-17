@@ -45,6 +45,20 @@ const sectionSchema = new mongoose.Schema({
       type: String
     }
   }],
+  chartData: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  insights: [{
+    type: String,
+    trim: true,
+    maxlength: 500
+  }],
+  sources: [{
+    type: String,
+    trim: true,
+    maxlength: 1000
+  }],
   status: {
     type: String,
     enum: ['not_started', 'draft', 'in_review', 'final', 'locked'],
@@ -78,6 +92,63 @@ const sectionSchema = new mongoose.Schema({
   },
   lockedAt: {
     type: Date
+  },
+  framework: {
+    type: String,
+    trim: true
+  },
+  takeaway: {
+    type: String,
+    maxlength: 1000
+  },
+  notes: {
+    type: String,
+    maxlength: 2000
+  },
+  layout: {
+    type: String,
+    trim: true
+  },
+  layoutAppliedAt: {
+    type: Date
+  },
+  slides: [{
+    title: {
+      type: String,
+      trim: true
+    },
+    subtitle: {
+      type: String,
+      trim: true
+    },
+    summary: {
+      type: String
+    },
+    bullets: [{
+      type: String,
+      trim: true
+    }],
+    notes: {
+      type: String
+    },
+    layout: {
+      type: String,
+      trim: true
+    }
+  }],
+  slidesGeneratedAt: {
+    type: Date
+  },
+  slidesGenerationContext: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  generatedAt: {
+    type: Date
+  },
+  source: {
+    type: String,
+    trim: true
   },
   created_at: {
     type: Date,

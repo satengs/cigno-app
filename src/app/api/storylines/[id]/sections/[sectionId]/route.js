@@ -27,6 +27,9 @@ export async function PUT(request, { params }) {
       html,
       charts,
       contentType,
+      framework,
+      takeaway,
+      notes,
       userId
     } = body;
 
@@ -58,6 +61,9 @@ export async function PUT(request, { params }) {
     if (markdown !== undefined) section.markdown = markdown;
     if (html !== undefined) section.html = html;
     if (charts !== undefined) section.charts = charts;
+    if (framework !== undefined) section.framework = framework;
+    if (takeaway !== undefined) section.takeaway = takeaway;
+    if (notes !== undefined) section.notes = notes;
 
     const enriched = ensureSectionHasRenderedContent(section, {
       order: section.order ?? 0,

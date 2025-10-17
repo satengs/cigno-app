@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '../../../../lib/db/mongoose.js';
 import Storyline from '../../../../lib/models/Storyline.js';
 import User from '../../../../lib/models/User.js';
+import { createSectionRecord } from '../../../../lib/storyline/sectionUtils.js';
 import { 
   createSuccessResponse, 
   createErrorResponse, 
@@ -83,11 +84,19 @@ export async function PUT(request, { params }) {
 
     // Update sections if provided
     if (sections !== undefined) {
-      storyline.sections = sections.map((section, index) => ({
-        ...section,
-        order: section.order !== undefined ? section.order : index,
-        updated_at: new Date()
-      }));
+      storyline.sections = sections.map((section, index) => {
+        return createSectionRecord(section, {
+          id: section.id || section.sectionId || `section_${index + 1}`,
+          order: section.order !== undefined ? section.order : index,
+          status: section.status || 'draft',
+          locked: !!section.locked,
+          fallbackTitle: section.title || `Section ${index + 1}`,
+          defaultContentType: section.contentBlocks?.[0]?.type || 'Content Block',
+          createdAt: section.created_at ? new Date(section.created_at) : undefined,
+          updatedAt: new Date(),
+          estimatedSlides: section.estimatedSlides
+        });
+      });
     }
 
     // Increment version for significant updates

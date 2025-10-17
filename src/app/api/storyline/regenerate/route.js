@@ -11,393 +11,216 @@ import {
 import { createSectionRecord, ensureSectionHasRenderedContent } from '../../../../lib/storyline/sectionUtils.js';
 
 /**
- * Simulates AI agent storyline generation
- * In production, this would call your actual AI service
+ * Calls the actual AI agent for storyline generation
  */
 async function generateStorylineWithAgent(prompt, context = {}) {
-  // Simulate AI processing delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Parse the regeneration context from the prompt
-  const isPartialRegeneration = prompt.includes('regenerationType: "partial"');
-  const preserveLocked = prompt.includes('preserveLocked: true');
-  
-  // Return a structured response that matches the expected format
-  return {
-    title: "Regenerated Strategic Analysis",
-    executiveSummary: {
-      title: "Executive Summary", 
-      keyMessages: [
-        "Strategic analysis reveals key opportunities for growth",
-        "Market conditions are favorable for expansion",
-        "Recommended approach balances risk and opportunity"
-      ]
-    },
-    mainSections: [
-      {
-        title: "Market Analysis",
-        keyMessages: [
-          "Current market shows strong demand signals",
-          "Competitive landscape analysis reveals positioning opportunities",
-          "Customer segment analysis indicates expansion potential"
-        ],
-        contentType: "Market Analysis",
-        pageAllocation: 3
+  try {
+    // Extract project information from context
+    const { projectId, projectData, deliverableData, clientData } = context;
+    
+    if (!projectId) {
+      throw new Error('Project ID is required for storyline generation');
+    }
+
+    // Call the actual storyline generation API
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/ai/generate-storyline`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      {
-        title: "Strategic Recommendations",
-        keyMessages: [
-          "Implement phased approach to market entry",
-          "Focus on key customer segments initially",
-          "Build strategic partnerships for accelerated growth"
-        ],
-        contentType: "Strategic Framework",
-        pageAllocation: 4
-      },
-      {
-        title: "Implementation Plan",
-        keyMessages: [
-          "Define clear milestones and success metrics",
-          "Allocate resources across key initiatives",
-          "Establish governance structure for execution"
-        ],
-        contentType: "Process Flow",
-        pageAllocation: 3
-      }
-    ],
-    callToAction: {
-      title: "Next Steps",
-      keyMessages: [
-        "Secure leadership approval for strategic direction",
-        "Initiate planning for Phase 1 implementation", 
-        "Establish steering committee for ongoing oversight"
-      ]
-    },
-    sections: [
-      {
-        id: "exec_summary_regen",
+      body: JSON.stringify({
+        projectId,
+        projectData: projectData || {},
+        deliverableData: deliverableData || {},
+        clientData: clientData || {}
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Storyline generation failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Storyline generation failed');
+    }
+
+    // Return the generated storyline data
+    return result.data;
+    
+  } catch (error) {
+    console.error('Error calling storyline generation API:', error);
+    
+    // Fallback to a minimal response if API call fails
+    return {
+      title: "Regenerated Strategic Analysis",
+      executiveSummary: {
         title: "Executive Summary",
-        description: "Strategic analysis reveals key opportunities for growth and market expansion.",
-        status: "draft",
-        order: 0,
-        keyPoints: [
-          "Strategic analysis reveals key opportunities for growth",
-          "Market conditions are favorable for expansion",
-          "Recommended approach balances risk and opportunity"
-        ],
-        contentBlocks: [{
-          type: 'Key Insights',
-          items: ["Strategic analysis reveals key opportunities for growth", "Market conditions are favorable for expansion"]
-        }]
+        keyMessages: ["Content generation in progress..."],
+        content: "Content generation in progress. Please try again if this persists."
       },
-      {
-        id: "market_analysis_regen",
-        title: "Market Analysis", 
-        description: "Current market shows strong demand signals with competitive positioning opportunities.",
-        status: "draft",
-        order: 1,
-        keyPoints: [
-          "Current market shows strong demand signals",
-          "Competitive landscape analysis reveals positioning opportunities",
-          "Customer segment analysis indicates expansion potential"
-        ],
-        contentBlocks: [{
-          type: 'Market Analysis',
-          items: ["Current market shows strong demand signals", "Competitive landscape analysis reveals positioning opportunities"]
-        }]
-      },
-      {
-        id: "strategic_recommendations_regen",
-        title: "Strategic Recommendations",
-        description: "Implement phased approach to market entry with focus on key customer segments.",
-        status: "draft", 
-        order: 2,
-        keyPoints: [
-          "Implement phased approach to market entry",
-          "Focus on key customer segments initially", 
-          "Build strategic partnerships for accelerated growth"
-        ],
-        contentBlocks: [{
-          type: 'Strategic Framework',
-          items: ["Implement phased approach to market entry", "Focus on key customer segments initially"]
-        }]
-      },
-      {
-        id: "implementation_plan_regen",
-        title: "Implementation Plan",
-        description: "Define clear milestones and success metrics with proper resource allocation.",
-        status: "draft",
-        order: 3,
-        keyPoints: [
-          "Define clear milestones and success metrics",
-          "Allocate resources across key initiatives",
-          "Establish governance structure for execution"
-        ],
-        contentBlocks: [{
-          type: 'Process Flow',
-          items: ["Define clear milestones and success metrics", "Allocate resources across key initiatives"]
-        }]
-      },
-      {
-        id: "next_steps_regen",
+      presentationFlow: "Content generation in progress...",
+      callToAction: {
         title: "Next Steps",
-        description: "Secure leadership approval and initiate planning for Phase 1 implementation.",
-        status: "draft",
-        order: 4,
-        keyPoints: [
-          "Secure leadership approval for strategic direction",
-          "Initiate planning for Phase 1 implementation",
-          "Establish steering committee for ongoing oversight"
-        ],
-        contentBlocks: [{
-          type: 'Process Flow',
-          items: ["Secure leadership approval for strategic direction", "Initiate planning for Phase 1 implementation"]
-        }]
-      }
-    ]
-  };
+        keyMessages: ["Content generation in progress..."]
+      },
+      mainSections: []
+    };
+  }
 }
 
 export async function POST(request) {
   try {
     await dbConnect();
-
-    const {
-      storylineId,
-      regenerationPayload,
-      backup,
+    
+    const body = await request.json();
+    const { 
+      storylineId, 
+      regenerationType = 'full', 
+      preserveLocked = true,
+      projectId,
       projectData = {},
       deliverableData = {},
       clientData = {}
-    } = await request.json();
-    
-    console.log('🔄 Storyline Regeneration Request:', {
-      storylineId,
-      lockedSections: regenerationPayload.regenerationContext?.lockedSectionCount,
-      draftSections: regenerationPayload.regenerationContext?.draftSectionCount
-    });
-    
-    // Validate request
-    if (!storylineId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Storyline ID is required'
-      }, { status: 400 });
-    }
-    
-    // Fetch existing storyline
+    } = body;
+
+    // Find existing storyline first
     const existingStoryline = await Storyline.findById(storylineId);
     if (!existingStoryline) {
-      return NextResponse.json({
-        success: false,
-        error: 'Storyline not found'
-      }, { status: 404 });
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Storyline not found' 
+        },
+        { status: 404 }
+      );
     }
-    
-    // Validate storyline for regeneration
+
+    // Validate storyline has sections to regenerate
     const validation = validateRegenerationRequest(existingStoryline);
-    if (!validation.isValid) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid storyline for regeneration',
-        details: validation.errors
-      }, { status: 400 });
+    if (!validation.valid) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Invalid regeneration request', 
+          details: validation.errors 
+        },
+        { status: 400 }
+      );
     }
-    
-    // Filter sections into locked and draft
+
+    // Create backup before regeneration
+    await createStorylineBackup(existingStoryline);
+
+    // Filter sections for regeneration
     const { lockedSections, draftSections } = filterSectionsForRegeneration(existingStoryline);
     
-    console.log('📊 Regeneration Stats:', {
-      totalSections: existingStoryline.sections.length,
-      lockedSections: lockedSections.length,
-      draftSections: draftSections.length,
-      lockedTitles: lockedSections.map(s => s.title),
-      draftTitles: draftSections.map(s => s.title)
-    });
-    
-    // Create AI prompt for regeneration
-    const structuredContext = {
-      project: projectData,
-      deliverable: deliverableData,
-      client: clientData,
-      regeneration: {
-        lockedSections: lockedSections.map(({ id, title, order, keyPoints, contentBlocks, status, description }) => ({
-          id,
-          title,
-          order,
-          status,
-          description,
-          keyPoints,
-          contentBlocks
-        })),
-        draftSections: draftSections.map(({ id, title, order, keyPoints, contentBlocks, status, description }) => ({
-          id,
-          title,
-          order,
-          status,
-          description,
-          keyPoints,
-          contentBlocks
-        }))
-      }
-    };
+    // Determine which sections to regenerate based on regeneration type
+    const sectionsToRegenerate = regenerationType === 'full' ? 
+      [...draftSections, ...lockedSections] : 
+      draftSections;
+    const sectionsToPreserve = regenerationType === 'full' ? 
+      [] : 
+      lockedSections;
 
-    const regenerationPrompt = `
-You are a strategic consultant regenerating a storyline while preserving locked sections.
+    console.log(`🔄 Regenerating ${sectionsToRegenerate.length} sections, preserving ${sectionsToPreserve.length} sections`);
 
-**REGENERATION CONTEXT:**
-- This is a PARTIAL regeneration (preserveLocked: true)
-- ${lockedSections.length} sections are LOCKED and must be preserved
-- ${draftSections.length} sections need regeneration
-- Total sections: ${existingStoryline.sections.length}
+    // Create regeneration payload
+    const regenerationPayload = createRegenerationPayload(
+      existingStoryline,
+      sectionsToRegenerate,
+      regenerationType,
+      { projectId, projectData, deliverableData, clientData }
+    );
 
-**PROJECT CONTEXT:**
-${JSON.stringify(projectData || {}, null, 2)}
+    // Generate new storyline content
+    const regeneratedContent = await generateStorylineWithAgent(
+      regenerationPayload.prompt,
+      { projectId, projectData, deliverableData, clientData }
+    );
 
-**CLIENT CONTEXT:**
-${JSON.stringify(clientData || {}, null, 2)}
-
-**DELIVERABLE CONTEXT:**
-${JSON.stringify(deliverableData || {}, null, 2)}
-
-**CURRENT STORYLINE STRUCTURE:**
-${JSON.stringify(existingStoryline.sections.map(section => ({
-  id: section.id,
-  title: section.title,
-  status: section.locked ? 'LOCKED' : (section.status || 'draft'),
-  order: section.order,
-  description: section.description,
-  keyPoints: section.keyPoints
-})), null, 2)}
-
-**REGENERATION REQUIREMENTS:**
-1. Preserve locked sections exactly as provided
-2. Regenerate only the draft sections listed above
-3. Maintain storyline flow and logical progression
-4. Provide structured sections with titles, descriptions, key points, content blocks, and metadata
-5. Ensure consistent tone and professional language
-6. Include actionable insights and recommendations where relevant
-7. Indicate status for each section (draft/final)
-
-**OUTPUT FORMAT:**
-Return a structured JSON object with the regenerated storyline (excluding unchanged locked sections) and clearly mark section IDs to facilitate merging.
-`;
-    
-    // Generate new storyline content with AI
-    const aiResponse = await generateStorylineWithAgent(regenerationPrompt, structuredContext);
-    
-    // Merge AI response with locked sections
+    // Merge regenerated content with existing storyline
     const mergedStoryline = mergeRegeneratedStoryline(
       existingStoryline,
-      aiResponse, 
-      lockedSections
+      regeneratedContent,
+      sectionsToRegenerate,
+      sectionsToPreserve
     );
-    
-    // Save updated storyline to database
-    Object.assign(existingStoryline, mergedStoryline);
-    const savedStoryline = await existingStoryline.save();
-    
-    console.log('✅ Storyline regenerated successfully:', {
-      storylineId: savedStoryline._id,
-      version: savedStoryline.version,
-      sectionsPreserved: lockedSections.length,
-      sectionsRegenerated: draftSections.length,
-      totalSections: savedStoryline.sections.length
-    });
-    
+
+    // Update storyline in database
+    const updatedStoryline = await Storyline.findByIdAndUpdate(
+      storylineId,
+      mergedStoryline,
+      { new: true, runValidators: true }
+    );
+
     return NextResponse.json({
       success: true,
-      storyline: savedStoryline,
-      metadata: {
-        regeneratedAt: new Date().toISOString(),
-        sectionsPreserved: lockedSections.length,
-        sectionsRegenerated: draftSections.length,
-        totalSections: savedStoryline.sections.length,
-        version: savedStoryline.version,
-        validation: validation.stats,
-        preservedSections: lockedSections.map(s => ({
-          id: s.id,
-          title: s.title,
-          order: s.order
-        })),
-        regeneratedSections: draftSections.map(s => ({
-          id: s.id,
-          title: s.title,
-          order: s.order
-        }))
+      data: {
+        storyline: updatedStoryline,
+        regeneratedSections: sectionsToRegenerate.length,
+        preservedSections: sectionsToPreserve.length
       }
     });
-    
+
   } catch (error) {
-    console.error('❌ Storyline regeneration error:', error);
+    console.error('Storyline regeneration error:', error);
     
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to regenerate storyline',
-      details: error.message
-    }, { status: 500 });
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Failed to regenerate storyline', 
+        details: error.message 
+      },
+      { status: 500 }
+    );
   }
 }
 
 // GET endpoint to check regeneration status/preview
 export async function GET(request) {
   try {
-    const url = new URL(request.url);
-    const storylineId = url.searchParams.get('storylineId');
+    const { searchParams } = new URL(request.url);
+    const storylineId = searchParams.get('storylineId');
     
     if (!storylineId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Storyline ID is required'
-      }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'Storyline ID is required' },
+        { status: 400 }
+      );
     }
-    
+
     await dbConnect();
     
     const storyline = await Storyline.findById(storylineId);
     if (!storyline) {
-      return NextResponse.json({
-        success: false,
-        error: 'Storyline not found'
-      }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Storyline not found' },
+        { status: 404 }
+      );
     }
-    
-    // Validate and analyze storyline for regeneration
-    const validation = validateRegenerationRequest(storyline);
-    const { lockedSections, draftSections } = filterSectionsForRegeneration(storyline);
-    
+
     return NextResponse.json({
       success: true,
-      analysis: {
-        validation,
-        stats: {
-          totalSections: storyline.sections.length,
-          lockedSections: lockedSections.length,
-          draftSections: draftSections.length,
-          canRegenerate: validation.isValid && draftSections.length > 0
-        },
-        lockedSections: lockedSections.map(s => ({
-          id: s.id,
-          title: s.title,
-          order: s.order,
-          status: s.status
-        })),
-        draftSections: draftSections.map(s => ({
-          id: s.id,
-          title: s.title,
-          order: s.order,
-          status: s.status
-        }))
+      data: {
+        storyline,
+        lastUpdated: storyline.updated_at,
+        sectionCount: storyline.sections?.length || 0
       }
     });
-    
+
   } catch (error) {
-    console.error('❌ Regeneration analysis error:', error);
+    console.error('Error fetching storyline:', error);
     
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to analyze storyline for regeneration',
-      details: error.message
-    }, { status: 500 });
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Failed to fetch storyline', 
+        details: error.message 
+      },
+      { status: 500 }
+    );
   }
 }
