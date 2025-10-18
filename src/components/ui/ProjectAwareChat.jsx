@@ -329,14 +329,6 @@ const ProjectAwareChat = ({
             <Send className="h-4 w-4" />
           </button>
         </form>
-        
-        {/* Debug info */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-2 text-xs text-gray-400">
-            User: {sessionUserId.split('-')[0]}... | 
-            {currentContext ? ` Context: ${currentContext.contextId.split('-').slice(-1)[0]}` : ' No context'}
-          </div>
-        )}
       </div>
     </div>
   );

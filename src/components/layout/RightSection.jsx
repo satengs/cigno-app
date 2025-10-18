@@ -30,13 +30,13 @@ import ExportPreviewModal from '../ui/ExportPreviewModal';
 import chatContextManager from '../../lib/chat/ChatContextManager';
 
 export default function RightSection({ isModalOpen = false, selectedItem = null, showLayoutOptions = false, selectedLayout = 'title-2-columns', onLayoutChange, storyline = null, onApplyLayoutToAll }) {
-  // State for collapsible sections
+  // State for collapsible sections - chat closed by default
   const [expandedSections, setExpandedSections] = useState({
     layoutOptions: true, // Default to expanded
     internalResources: true,
     externalResources: true,
     relatedInsights: true,
-    aiAssistant: false
+    aiAssistant: false // Chat closed by default
   });
 
   // Export functionality
@@ -111,6 +111,16 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     }
   }, [expandedSections.aiAssistant]);
 
+  // Update AI assistant expansion based on selected item type
+  useEffect(() => {
+    if (selectedItem?.type === 'project' || selectedItem?.type === 'client') {
+      setExpandedSections(prev => ({
+        ...prev,
+        aiAssistant: true
+      }));
+    }
+  }, [selectedItem?.type]);
+
 
   // Helper function to format timestamp
   const formatTimestamp = (timestamp) => {
@@ -126,8 +136,12 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     scrollToBottom();
   }, [messages]);
 
-  // Fetch current user from database on component mount
+  // Fetch current user from database on component mount and reset chat history
   useEffect(() => {
+    // Reset all chat history on page load
+    chatContextManager.clearAllChatHistory();
+    console.log('🔄 Reset all chat history on page load');
+    
     const fetchCurrentUser = async () => {
       try {
         const response = await fetch('/api/users');
@@ -279,266 +293,34 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     } else {
       setMessages(prev => [...prev, userMessage]);
     }
-    const currentInputValue = inputValue; // Save the input value before clearing
+    
+    const currentInputValue = inputValue;
     setInputValue('');
     setIsLoading(true);
-    const messageStartTime = Date.now();
 
     try {
-      console.log('🚀 Sending message to ai.vave.ch:', currentInputValue);
+      // Simple AI response for now
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // First try the external ai.vave.ch API
-      let response;
-      try {
-        response = await fetch('https://ai.vave.ch/api/chat/send-streaming', {
-          method: 'POST',
-          headers: {
-            'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            message: currentInputValue,
-            userId: currentChatContext?.userId || 'cigno-dashboard-user',
-            chatId: currentChatContext?.chatId || `chat_${Date.now()}`,
-            projectId: currentChatContext?.projectId,
-            projectName: currentChatContext?.projectName
-          })
-        });
-
-        console.log('📡 External API response status:', response.status);
-
-        if (!response.ok) {
-          throw new Error(`External API error: ${response.status}`);
-        }
-
-        // Handle streaming response from external API
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        let fullResponse = '';
-
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  console.log('📄 Stream data:', data);
-                  
-                  // Handle different response types from the API
-                  if (data.type === 'narrative') {
-                    // Add narrative message to UI only (don't save to database)
-                    const narrativeMessage = {
-                      id: `narrative_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                      role: 'narrative',
-                      content: data.content,
-                      timestamp: data.timestamp || new Date().toISOString()
-                    };
-                    // Only update UI state, don't save temporary messages to database
-                    setMessages(prev => [...prev, narrativeMessage]);
-                  } else if (data.role === 'assistant' && data.content) {
-                    // Handle streaming assistant response
-                    fullResponse = data.content;
-                    
-                    // Update the last message with streaming content
-                    setMessages(prev => {
-                      const newMessages = [...prev];
-                      const lastMessage = newMessages[newMessages.length - 1];
-                      if (lastMessage && lastMessage.type === 'assistant') {
-                        lastMessage.content = fullResponse;
-                      } else {
-                        // Add new streaming message
-                        newMessages.push({
-                          id: data.id || `assistant_${Date.now()}`,
-                          type: 'assistant',
-                          content: fullResponse,
-                          timestamp: data.timestamp || new Date().toISOString()
-                        });
-                      }
-                      return newMessages;
-                    });
-                  } else if (data.response) {
-                    // Handle response according to documentation
-                    fullResponse += data.response;
-                    
-                    // Update the last message with streaming content
-                    setMessages(prev => {
-                      const newMessages = [...prev];
-                      const lastMessage = newMessages[newMessages.length - 1];
-                      if (lastMessage && lastMessage.type === 'assistant') {
-                        lastMessage.content = fullResponse;
-                      } else {
-                        // Add new streaming message
-                        newMessages.push({
-                          id: Date.now() + 1,
-                          type: 'assistant',
-                          content: fullResponse,
-                          timestamp: Date.now()
-                        });
-                      }
-                      return newMessages;
-                    });
-                  } else if (data.error) {
-                    throw new Error(data.error || 'Stream error occurred');
-                  }
-                } catch (e) {
-                  console.warn('Failed to parse stream data:', e);
-                }
-              }
-            }
-          }
-        }
-
-        // Final response handling
-        if (fullResponse) {
-          console.log('✅ External AI response completed:', fullResponse);
-          
-          // Create final AI response and save to database
-          const finalAIResponse = {
-            id: Date.now() + 1,
-            type: 'assistant',
-            content: fullResponse,
-            timestamp: new Date().toISOString()
-          };
-          
-          // Save to chat context manager for persistence
-          if (currentChatContext) {
-            chatContextManager.addMessageToCurrentChat(finalAIResponse, {
-              provider: 'external-api',
-              responseTime: Date.now() - messageStartTime
-            });
-            console.log('💾 Saved external AI response to database');
-            
-            // Clean up temporary narrative messages and show only persisted messages
-            setMessages(chatContextManager.getCurrentMessages());
-          } else {
-            // If no chat context, just filter out narrative messages from local state
-            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([finalAIResponse]));
-          }
-        } else {
-          // Fallback if no response received
-          const aiResponse = {
-            id: Date.now() + 1,
-            type: 'assistant',
-            content: 'I received your message but couldn\'t process the response format.',
-            timestamp: Date.now()
-          };
-          
-          // Add to chat context manager for persistence
-          if (currentChatContext) {
-            chatContextManager.addMessageToCurrentChat(aiResponse, {
-              provider: 'external-fallback',
-              responseTime: Date.now() - messageStartTime
-            });
-            // Clean up temporary narrative messages
-            setMessages(chatContextManager.getCurrentMessages());
-          } else {
-            // Filter out narrative messages and add fallback response
-            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([aiResponse]));
-          }
-        }
-        
-        setIsLoading(false);
-        return;
-      } catch (externalError) {
-        console.warn('⚠️ External API failed, trying local fallback:', externalError.message);
-      }
-
-      // Fallback to local API
-      console.log('🔄 Trying local API fallback...');
-      const localResponse = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authService.getAuthHeaders()
-        },
-        body: JSON.stringify({
-          message: currentInputValue,
-          userId: 'cigno-dashboard-user'
-        })
-      });
-
-      console.log('📡 Local API response status:', localResponse.status);
-
-      if (!localResponse.ok) {
-        const errorText = await localResponse.text();
-        console.error('❌ Local API error:', localResponse.status, errorText);
-        throw new Error(`Local API error! status: ${localResponse.status} - ${errorText}`);
-      }
-
-      const data = await localResponse.json();
-      console.log('📄 Local API response data:', data);
-      
-      if (data.ok && data.data.messages) {
-        // Get the last message (should be the AI response)
-        const lastMessage = data.data.messages[data.data.messages.length - 1];
-        
-        if (lastMessage && lastMessage.role === 'assistant') {
-          const aiResponse = {
-            id: Date.now() + 1,
-            type: 'assistant',
-            content: lastMessage.content,
-            timestamp: Date.now()
-          };
-          
-          // Add to chat context manager for persistence
-          if (currentChatContext) {
-            chatContextManager.addMessageToCurrentChat(aiResponse, {
-              provider: 'local-api',
-              responseTime: Date.now() - messageStartTime
-            });
-            // Clean up temporary narrative messages
-            setMessages(chatContextManager.getCurrentMessages());
-          } else {
-            // Filter out narrative messages and add local API response
-            setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([aiResponse]));
-          }
-          console.log('✅ Local AI response added:', lastMessage.content);
-        } else {
-          throw new Error('No assistant message found in local response');
-        }
-      } else {
-        throw new Error(data.error || 'Failed to get response from local chat API');
-      }
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error('💥 Error sending message:', error);
-      
-      // Final fallback - provide a helpful response
-      const fallbackResponse = {
+      const aiResponse = {
         id: Date.now() + 1,
         type: 'assistant',
-        content: `I understand you're asking about "${currentInputValue}". As your Cigno AI assistant, I'm designed to help with EMEA Financial Services consulting. 
-
-While I'm currently running in offline mode, I can still assist you with:
-
-• **Strategic Analysis**: Your query relates to consulting and financial services
-• **Research Support**: I can help identify key areas for investigation  
-• **Regulatory Guidance**: EMEA compliance and regulatory considerations
-• **Deliverable Development**: Creating professional consulting outputs
-
-Could you rephrase your question in the context of financial services consulting, or let me know how I can help with your consulting needs?`,
+        content: `I understand you're asking about "${currentInputValue}". I'm here to help with your project!`,
         timestamp: Date.now()
       };
       
-      // Add to chat context manager for persistence
       if (currentChatContext) {
-        chatContextManager.addMessageToCurrentChat(fallbackResponse, {
-          provider: 'fallback',
-          responseTime: Date.now() - messageStartTime
+        chatContextManager.addMessageToCurrentChat(aiResponse, {
+          provider: 'simple-ai',
+          responseTime: 1000
         });
-        // Clean up temporary narrative messages
         setMessages(chatContextManager.getCurrentMessages());
       } else {
-        // Filter out narrative messages and add fallback response
-        setMessages(prev => prev.filter(msg => msg.role !== 'narrative').concat([fallbackResponse]));
+        setMessages(prev => [...prev, aiResponse]);
       }
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -550,7 +332,6 @@ Could you rephrase your question in the context of financial services consulting
     }
   };
 
-  // Auto-resize textarea based on content
   const handleTextareaChange = (e) => {
     setInputValue(e.target.value);
     
@@ -559,6 +340,7 @@ Could you rephrase your question in the context of financial services consulting
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   };
+
 
   // Resize handlers
   const startResize = (type) => (e) => {
@@ -899,8 +681,11 @@ Could you rephrase your question in the context of financial services consulting
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0 space-y-0">
-          {/* Internal Resources Section */}
-          <div className="flex flex-col">
+          {/* Show resources only for deliverables, only chat for projects and clients */}
+          {selectedItem?.type === 'deliverable' && (
+            <>
+              {/* Internal Resources Section */}
+              <div className="flex flex-col">
         <div 
           className="flex items-center justify-between p-4 cursor-pointer transition-colors"
           style={{ backgroundColor: 'transparent' }}
@@ -1456,6 +1241,8 @@ Could you rephrase your question in the context of financial services consulting
           </div>
         )}
       </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1614,7 +1401,7 @@ Could you rephrase your question in the context of financial services consulting
               </div>
               
               <div className="mt-2 text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
-                Press Enter to send, Ctrl+Enter for new line
+                Press Enter to send, Shift+Enter for new line
               </div>
             </div>
           </div>

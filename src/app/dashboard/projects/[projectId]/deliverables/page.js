@@ -41,9 +41,9 @@ const DeliverableDetailPage = () => {
     maxPages: 200,
     audience: ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
     brief: 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.',
-    qualityScore: 7.5,
-    strengths: 'Technical requirements well defined',
-    improvements: 'Add geographical scope and timeline constraints',
+    qualityScore: null,
+    strengths: null,
+    improvements: null,
     sources: [
       { name: 'CBDC Market Analysis Report', type: 'PDF', pages: 45, progress: 85 },
       { name: 'Global Banking Corp Brief', type: 'Document', pages: 12, progress: 92 },
@@ -407,27 +407,37 @@ const DeliverableDetailPage = () => {
               />
             </div>
 
-            {/* Brief Quality Score */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">Brief Quality Score</label>
-                <span className="text-sm font-medium text-gray-900">7.5 / 10</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                <div 
-                  className="bg-gray-900 h-2 rounded-full" 
-                  style={{ width: '75%' }}
-                ></div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm text-gray-600">
-                  <span className="font-medium">Strengths:</span> Technical requirements well defined
+            {/* Brief Quality Score - only show if evaluated */}
+            {(mockDeliverable.qualityScore || mockDeliverable.strengths || mockDeliverable.improvements) && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Brief Quality Score</label>
+                  <span className="text-sm font-medium text-gray-900">
+                    {mockDeliverable.qualityScore ? `${mockDeliverable.qualityScore} / 10` : 'Not evaluated'}
+                  </span>
                 </div>
-                <div className="text-sm text-gray-600">
-                  <span className="font-medium">Improve:</span> Add geographical scope and timeline constraints
+                {mockDeliverable.qualityScore && (
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                    <div 
+                      className="bg-gray-900 h-2 rounded-full" 
+                      style={{ width: `${(mockDeliverable.qualityScore / 10) * 100}%` }}
+                    ></div>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {mockDeliverable.strengths && (
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Strengths:</span> {mockDeliverable.strengths}
+                    </div>
+                  )}
+                  {mockDeliverable.improvements && (
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Improve:</span> {mockDeliverable.improvements}
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Generate Storyline Button */}
             <div className="flex justify-end">

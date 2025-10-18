@@ -1,49 +1,15 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { normalizeScoreValue } from '../../../utils/scoreUtils';
+import { normalizeScoreValue, isScoreAboveThreshold } from '../../../utils/scoreUtils';
 
 
 const getScoreStyles = (score) => {
-  if (!Number.isFinite(score)) {
-    return {
-      card: 'border-gray-200 bg-gray-50',
-      value: 'text-gray-900',
-      note: 'text-gray-600',
-      progress: 'bg-gray-300',
-      status: 'Not evaluated',
-      helper: 'Run "Test Brief" to evaluate quality before generating a storyline.'
-    };
-  }
-
-  if (score < 7.5) {
-    return {
-      card: 'border-red-200 bg-red-50',
-      value: 'text-red-900',
-      note: 'text-red-700',
-      progress: 'bg-red-500',
-      status: 'Below 7.5 (blocked)',
-      helper: 'Improve the brief before generating a storyline.'
-    };
-  }
-
-  if (score < 8) {
-    return {
-      card: 'border-amber-200 bg-amber-50',
-      value: 'text-amber-900',
-      note: 'text-amber-700',
-      progress: 'bg-amber-500',
-      status: 'Acceptable (≥ 7.5)',
-      helper: 'Consider refining the brief before storytelling.'
-    };
-  }
-
+  // Simple neutral styling without predefined status thresholds
   return {
-    card: 'border-green-200 bg-green-50',
-    value: 'text-green-900',
-    note: 'text-green-700',
-    progress: 'bg-green-500',
-    status: 'Storyline-ready',
-    helper: 'High-clarity brief suitable for storyline generation.'
+    card: 'border-gray-200 bg-gray-50',
+    value: 'text-gray-900',
+    note: 'text-gray-600',
+    progress: 'bg-blue-500'
   };
 };
 
@@ -73,13 +39,31 @@ export default function DeliverableDetailsView({
     : (formData.improvements ? [formData.improvements] : []);
 
   const qualityScore = normalizeScoreValue(formData.brief_quality);
+  
+  // Debug logging to check values
+  if (typeof window !== 'undefined') {
+    console.log('🔍 DEBUG VALUES:', {
+      'formData.brief_quality': formData.brief_quality,
+      'typeof formData.brief_quality': typeof formData.brief_quality,
+      'qualityScore': qualityScore,
+      'typeof qualityScore': typeof qualityScore,
+      'qualityScore === null': qualityScore === null,
+      'qualityScore !== null': qualityScore !== null,
+      'isScoreAboveThreshold(qualityScore, 7.5)': qualityScore !== null ? isScoreAboveThreshold(qualityScore, 7.5) : 'N/A'
+    });
+  }
+  
   const qualityPercent = qualityScore !== null ? Math.min(100, Math.max(0, (qualityScore / 10) * 100)) : 0;
   const qualityStyles = getScoreStyles(qualityScore);
-  const canGenerateStoryline = qualityScore === null || qualityScore >= 7.5;
-  const storylineDisabled = isGeneratingStoryline || !formData.brief?.trim() || !canGenerateStoryline;
-  const storylineDisabledMessage = !canGenerateStoryline
-    ? 'Storyline generation is locked until the brief scores at least 7.5 / 10.'
-    : (!formData.brief?.trim() ? 'Add a brief before generating a storyline.' : null);
+  const canGenerateBasedOnScore = qualityScore !== null && isScoreAboveThreshold(qualityScore, 7.5);
+  const storylineDisabled = isGeneratingStoryline || !formData.brief?.trim() || !canGenerateBasedOnScore;
+  const storylineDisabledMessage = !formData.brief?.trim() 
+    ? 'Add a brief before generating a storyline.' 
+    : qualityScore === null
+      ? 'Test brief first to get a quality score before generating storyline.'
+    : !canGenerateBasedOnScore 
+      ? 'Brief quality score must be 7.5 or higher to generate storyline.'
+      : null;
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const hasRichTextBrief = typeof formData.brief === 'string' && /<[^>]+>/.test(formData.brief);
 
@@ -138,16 +122,12 @@ export default function DeliverableDetailsView({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <select
-              value={formData.type}
-              onChange={(e) => onInputChange('type', e.target.value)}
-              className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            >
-              <option value="Strategy Presentation">Strategy Presentation</option>
-              <option value="Presentation">Presentation</option>
-              <option value="Report">Report</option>
-              <option value="Analysis">Analysis</option>
-            </select>
+            <input
+              type="text"
+              value="Recommendation"
+              readOnly
+              className="w-full rounded-sm border border-gray-300 px-3 py-2 text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+            />
           </div>
         </div>
       </div>
@@ -231,55 +211,53 @@ export default function DeliverableDetailsView({
         )}
       </div>
 
-      <div className={`space-y-4 rounded-sm border p-6 ${qualityStyles.card}`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="block text-sm font-medium text-gray-700">Brief Quality Score</span>
-            <span className={`block text-xs mt-1 ${qualityStyles.note}`}>{qualityStyles.helper}</span>
+      {/* Only show Brief Quality Score if brief has been tested/evaluated */}
+      {(qualityScore !== null && ( recognizedStrengths.length > 0 || suggestedImprovements.length > 0)) && (
+        <div className={`space-y-4 rounded-sm border p-6 ${qualityStyles.card}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="block text-sm font-medium text-gray-700">Brief Quality Score</span>
+            </div>
+            <div className="text-right">
+              <span className={`text-sm font-semibold ${qualityStyles.value}`}>
+                {qualityScore !== null ? `${qualityScore.toFixed(1)} / 10` : 'Not evaluated'}
+              </span>
+            </div>
           </div>
-          <div className="text-right">
-            <span className={`text-sm font-semibold ${qualityStyles.value}`}>
-              {qualityScore !== null ? `${qualityScore.toFixed(1)} / 10` : 'Not evaluated'}
-            </span>
-            <span className={`block text-xs ${qualityStyles.note}`}>{qualityStyles.status}</span>
+          <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
+            <div
+              className={`h-full rounded-sm transition-all ${qualityStyles.progress}`}
+              style={{ width: `${qualityPercent}%` }}
+            />
           </div>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
-          <div
-            className={`h-full rounded-sm transition-all ${qualityStyles.progress}`}
-            style={{ width: `${qualityPercent}%` }}
-          />
-        </div>
 
-        {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {recognizedStrengths.length > 0 && (
-              <div className="border border-emerald-200 bg-white rounded-md p-3">
-                <p className="text-sm font-medium text-emerald-800">Recognized Strengths</p>
-                <ul className="mt-2 space-y-1 text-xs text-emerald-700">
-                  {recognizedStrengths.map((item, index) => (
-                    <li key={`${item}-${index}`}>• {item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {suggestedImprovements.length > 0 && (
-              <div className="border border-blue-200 bg-white rounded-md p-3">
-                <p className="text-sm font-medium text-blue-800">Suggested Improvements</p>
-                <ul className="mt-2 space-y-1 text-xs text-blue-700">
-                  {suggestedImprovements.map((item, index) => (
-                    <li key={`${item}-${index}`}>• {item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
+          {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {recognizedStrengths.length > 0 && (
+                <div className="border border-emerald-200 bg-white rounded-md p-3">
+                  <p className="text-sm font-medium text-emerald-800">Recognized Strengths</p>
+                  <ul className="mt-2 space-y-1 text-xs text-emerald-700">
+                    {recognizedStrengths.map((item, index) => (
+                      <li key={`${item}-${index}`}>• {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {suggestedImprovements.length > 0 && (
+                <div className="border border-blue-200 bg-white rounded-md p-3">
+                  <p className="text-sm font-medium text-blue-800">Suggested Improvements</p>
+                  <ul className="mt-2 space-y-1 text-xs text-blue-700">
+                    {suggestedImprovements.map((item, index) => (
+                      <li key={`${item}-${index}`}>• {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
 
-        {!canGenerateStoryline && (
-          <p className="text-xs text-red-600">Storyline generation is disabled until the brief reaches 7.5 / 10.</p>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
@@ -293,6 +271,7 @@ export default function DeliverableDetailsView({
                 ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                 : 'bg-gray-900 text-white hover:bg-gray-800'
             }`}
+            title={storylineDisabledMessage || ''}
           >
             {isGeneratingStoryline ? 'Generating Storyline...' : 'Generate Storyline'}
           </button>

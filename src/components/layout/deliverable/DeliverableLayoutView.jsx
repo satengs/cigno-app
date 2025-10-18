@@ -780,7 +780,7 @@ export default function DeliverableLayoutView({
   };
 
   const normalizedBriefQuality = normalizeScoreValue(briefQuality);
-  const canGenerateStoryline = normalizedBriefQuality === null || normalizedBriefQuality >= 7.5;
+  const canGenerateStoryline = normalizedBriefQuality !== null && normalizedBriefQuality >= 7.5;
 
   if (!hasStoryline) {
     const disabled = isGeneratingStoryline || !canGenerateStoryline;
@@ -801,7 +801,10 @@ export default function DeliverableLayoutView({
         </button>
         {!canGenerateStoryline && (
           <p className="text-xs text-red-600 mt-3">
-            Storyline generation is disabled until the brief reaches 7.5 / 10.
+            {normalizedBriefQuality === null 
+              ? 'Test brief first to get a quality score before generating storyline.'
+              : 'Brief quality score must be 7.5 or higher to generate storyline.'
+            }
           </p>
         )}
       </div>

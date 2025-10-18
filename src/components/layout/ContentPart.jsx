@@ -172,9 +172,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     type: 'Strategy Presentation',
     due_date: '',
     brief: '',
-    brief_quality: 7.5,
-    brief_strengths: ['Technical requirements well defined'],
-    brief_improvements: ['Add geographical scope and timeline constraints']
+    brief_quality: null,
+    brief_strengths: [],
+    brief_improvements: []
   });
 
   // Ref to track when we've just saved to prevent useEffect from overwriting formData
@@ -185,6 +185,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [isSavingDeliverable, setIsSavingDeliverable] = useState(false);
   const [currentView, setCurrentView] = useState('detailed'); // 'detailed' | 'storyline' | 'layout'
   const [generatedStoryline, setGeneratedStoryline] = useState(null);
+
+  // Add state for actual fetched data
+  const [actualClientData, setActualClientData] = useState(null);
+  const [actualProjectData, setActualProjectData] = useState(null);
+  const [isLoadingActualData, setIsLoadingActualData] = useState(false);
   
   // Debug: Log generatedStoryline changes
   useEffect(() => {
@@ -199,6 +204,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       })));
     }
   }, [generatedStoryline]);
+
+  // Auto-switch to detailed view when storyline is cleared
+  useEffect(() => {
+    if (!generatedStoryline && (currentView === 'storyline' || currentView === 'layout')) {
+      setCurrentView('detailed');
+    }
+  }, [generatedStoryline, currentView]);
+
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
   const [isSavingStoryline, setIsSavingStoryline] = useState(false);
@@ -756,13 +769,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                        selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
               brief: briefToSet,
               brief_quality: qualityFromData,
-              brief_strengths: strengthsFromData.length ? strengthsFromData : ['Technical requirements well defined'],
-              brief_improvements: improvementsFromData.length ? improvementsFromData : ['Add geographical scope and timeline constraints']
+              brief_strengths: strengthsFromData.length ? strengthsFromData : [],
+              brief_improvements: improvementsFromData.length ? improvementsFromData : []
             });
           } else {
             console.log('⚠️ Failed to fetch deliverable data, using selectedItem data');
             // Fallback to selectedItem data if API call fails
-            const qualityFromSelected = normalizeScoreValue(selectedItem.brief_quality ?? 7.5) ?? 7.5;
+            const qualityFromSelected = normalizeScoreValue(selectedItem.brief_quality) ?? null;
 
             setFormData({
               name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
@@ -773,16 +786,16 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               brief_quality: qualityFromSelected,
               brief_strengths: normalizeInsightList(selectedItem.strengths).length
                 ? normalizeInsightList(selectedItem.strengths)
-                : ['Technical requirements well defined'],
+                : [],
               brief_improvements: normalizeInsightList(selectedItem.improvements).length
                 ? normalizeInsightList(selectedItem.improvements)
-                : ['Add geographical scope and timeline constraints']
+                : []
             });
           }
         } catch (error) {
           console.error('❌ Error fetching deliverable data:', error);
           // Fallback to selectedItem data if error occurs
-          const qualityFallback = normalizeScoreValue(selectedItem.brief_quality ?? 7.5) ?? 7.5;
+          const qualityFallback = normalizeScoreValue(selectedItem.brief_quality) ?? null;
 
           setFormData({
             name: selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
@@ -793,10 +806,10 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             brief_quality: qualityFallback,
             brief_strengths: normalizeInsightList(selectedItem.strengths).length
               ? normalizeInsightList(selectedItem.strengths)
-              : ['Technical requirements well defined'],
+              : [],
             brief_improvements: normalizeInsightList(selectedItem.improvements).length
               ? normalizeInsightList(selectedItem.improvements)
-              : ['Add geographical scope and timeline constraints']
+              : []
           });
         }
       };
@@ -1285,6 +1298,65 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     loadExistingStoryline();
   }, [selectedItem, generatedStoryline]);
 
+  // Fetch actual database data for clients and projects
+  useEffect(() => {
+    const fetchActualData = async () => {
+      if (!selectedItem) {
+        setActualClientData(null);
+        setActualProjectData(null);
+        return;
+      }
+
+      setIsLoadingActualData(true);
+
+      try {
+        if (selectedItem.type === 'client') {
+          const clientId = selectedItem.metadata?.business_entity_id || selectedItem.metadata?.client_id || selectedItem._id || selectedItem.id;
+          console.log('🔍 Fetching actual client data for:', clientId);
+          
+          if (clientId) {
+            const response = await fetch(`/api/clients/${clientId}`);
+            if (response.ok) {
+              const result = await response.json();
+              console.log('✅ Fetched actual client data:', result.data?.client);
+              setActualClientData(result.data?.client || null);
+            } else {
+              console.error('❌ Failed to fetch client data:', response.status);
+              setActualClientData(null);
+            }
+          }
+        } else if (selectedItem.type === 'project') {
+          const projectId = selectedItem.metadata?.business_entity_id || selectedItem.metadata?.project_id || selectedItem._id || selectedItem.id;
+          console.log('🔍 Fetching actual project data for:', projectId);
+          
+          if (projectId) {
+            const response = await fetch(`/api/projects/${projectId}`);
+            if (response.ok) {
+              const projectData = await response.json();
+              console.log('✅ Fetched actual project data:', projectData);
+              setActualProjectData(projectData);
+            } else {
+              console.error('❌ Failed to fetch project data:', response.status);
+              setActualProjectData(null);
+            }
+          }
+        } else {
+          // Clear data for deliverables or other types
+          setActualClientData(null);
+          setActualProjectData(null);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching actual data:', error);
+        setActualClientData(null);
+        setActualProjectData(null);
+      } finally {
+        setIsLoadingActualData(false);
+      }
+    };
+
+    fetchActualData();
+  }, [selectedItem]);
+
   // Notify parent when view changes
   useEffect(() => {
     if (onViewChange) {
@@ -1579,6 +1651,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
 
     setShowImproveBrief(false);
+    
+    // Auto-save the deliverable after improving the brief
+    setTimeout(() => {
+      handleSaveDeliverable();
+    }, 100); // Small delay to ensure state is updated
   };
 
   const handleAddDeliverable = (project) => {
@@ -1792,11 +1869,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       return;
     }
 
-    const numericQuality = Number(formData.brief_quality);
-    if (Number.isFinite(numericQuality) && numericQuality < 7.5) {
-      alert('Brief quality must reach at least 7.5 / 10 before generating a storyline. Improve the brief first.');
-      return;
-    }
 
     setIsGeneratingStoryline(true);
     
@@ -1985,14 +2057,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       const phase1Promises = [];
       
       // Market Sizing (index 0)
+      console.log('🏗️ Creating Market Sizing promise...');
       const marketSizingPromise = generateSectionContent('market_sizing', {}, 0, contextData);
       phase1Promises.push(marketSizingPromise);
+      console.log('✅ Market Sizing promise created and pushed');
       
       // Competitive Landscape (index 1) 
+      console.log('🏗️ Creating Competitive Landscape promise...');
       const competitiveLandscapePromise = generateSectionContent('competitive_landscape', {}, 1, contextData);
       phase1Promises.push(competitiveLandscapePromise);
+      console.log('✅ Competitive Landscape promise created and pushed');
       
       console.log('⚡ Executing 2 Phase 1 promises in parallel...');
+      console.log('📋 Phase1Promises array length:', phase1Promises.length);
       const phase1Results = await Promise.allSettled(phase1Promises);
       
       // Phase 2: Capability Benchmark (depends on Competitive Landscape)
@@ -2293,12 +2370,67 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   }
 
   if (selectedItem.type === 'client') {
+    // Show loading state while fetching actual client data
+    if (isLoadingActualData) {
+      return (
+        <div className="flex-1 h-full flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-gray-600">Loading client data...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Use actual client data if available, fallback to menu item structure
+    const clientToUse = actualClientData || selectedItem;
+    
     return (
       <div className="flex-1 h-full p-6 flex flex-col min-h-0">
         <ClientDetailView 
-          client={selectedItem}
+          client={clientToUse}
+          clientMenuItemId={selectedItem.id || selectedItem._id}
           onUpdate={async (updatedClient) => {
-            console.log('Updating client:', updatedClient);
+            console.log('🔧 ContentPart: onUpdate called with:', updatedClient);
+            try {
+              // Get the business entity ID for the API call
+              const clientId = updatedClient.metadata?.business_entity_id || 
+                              updatedClient.metadata?.client_id || 
+                              updatedClient.id || 
+                              updatedClient._id;
+              
+              console.log('🔍 ContentPart: Using clientId for API call:', clientId);
+              
+              const response = await fetch(`/api/clients/${clientId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  name: updatedClient.name || updatedClient.title,
+                  website: updatedClient.website,
+                  location: updatedClient.location,
+                  industry: updatedClient.industry,
+                  tags: updatedClient.tags,
+                  owner: updatedClient.owner
+                })
+              });
+
+              if (response.ok) {
+                console.log('✅ Client updated successfully');
+                // Refresh the menu structure to reflect changes
+                if (refreshFromDatabase) {
+                  await refreshFromDatabase();
+                }
+              } else {
+                const errorData = await response.json();
+                console.error('❌ Failed to update client:', errorData);
+                alert(`Failed to update client: ${errorData.error || 'Unknown error'}`);
+              }
+            } catch (error) {
+              console.error('❌ Error updating client:', error);
+              alert(`Error updating client: ${error.message}`);
+            }
           }}
           onDelete={async (clientToDelete) => {
             console.log('Deleting client:', clientToDelete);
@@ -2321,16 +2453,46 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   }
 
   if (selectedItem.type === 'project') {
+    // Show loading state while fetching actual project data
+    if (isLoadingActualData) {
+      return (
+        <div className="flex-1 h-full flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-gray-600">Loading project data...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Use actual project data if available, merge with existing form data
+    const projectFormToUse = actualProjectData ? {
+      ...projectForm,
+      name: actualProjectData.name || projectForm.name,
+      description: actualProjectData.description || projectForm.description,
+      status: actualProjectData.status || projectForm.status,
+      start_date: actualProjectData.start_date ? formatDateForInput(actualProjectData.start_date) : projectForm.start_date,
+      end_date: actualProjectData.end_date ? formatDateForInput(actualProjectData.end_date) : projectForm.end_date,
+      client_owner: actualProjectData.client_owner?._id || actualProjectData.client_owner || projectForm.client_owner,
+      internal_owner: actualProjectData.internal_owner?._id || actualProjectData.internal_owner || projectForm.internal_owner,
+      budget_amount: actualProjectData.budget_amount ?? projectForm.budget_amount,
+      budget_currency: actualProjectData.budget_currency || projectForm.budget_currency,
+      budget_type: actualProjectData.budget_type || projectForm.budget_type,
+      // Store the full owner objects for display
+      client_owner_data: actualProjectData.client_owner,
+      internal_owner_data: actualProjectData.internal_owner
+    } : projectForm;
+
     const normalizedDeliverables = projectDeliverables.length > 0
       ? projectDeliverables
-      : normalizeDeliverableList(projectForm.deliverables || []);
+      : normalizeDeliverableList(projectFormToUse.deliverables || []);
 
     return (
       <div className="flex-1 h-full overflow-y-auto" style={{ backgroundColor: 'var(--bg-primary)' }}>
         <div className="px-8 py-10 space-y-6">
           <header className="space-y-1">
             <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {projectForm.name}
+              {projectFormToUse.name}
             </h1>
             <p className="text-sm text-gray-500">Project overview generated by Cigno AI</p>
           </header>
@@ -2339,7 +2501,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Description</label>
               <textarea
-                value={projectForm.description}
+                value={projectFormToUse.description}
                 onChange={(e) => handleProjectFormChange('description', e.target.value)}
                 rows={4}
                 className="w-full rounded-sm border border-gray-200 px-4 py-3 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
@@ -2385,21 +2547,31 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Client Owner</label>
                 <select
-                  value={projectForm.client_owner}
+                  value={projectFormToUse.client_owner}
                   onChange={(e) => handleProjectFormChange('client_owner', e.target.value)}
                   className="w-full rounded-sm border border-gray-200 px-4 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
                 >
                   <option value="">Select client contact...</option>
+                  {projectFormToUse.client_owner_data && (
+                    <option value={projectFormToUse.client_owner_data._id}>
+                      {projectFormToUse.client_owner_data.name} ({projectFormToUse.client_owner_data.email_address})
+                    </option>
+                  )}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Internal Owner</label>
                 <select
-                  value={projectForm.internal_owner}
+                  value={projectFormToUse.internal_owner}
                   onChange={(e) => handleProjectFormChange('internal_owner', e.target.value)}
                   className="w-full rounded-sm border border-gray-200 px-4 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
                 >
                   <option value="">Select team member...</option>
+                  {projectFormToUse.internal_owner_data && (
+                    <option value={projectFormToUse.internal_owner_data._id}>
+                      {projectFormToUse.internal_owner_data.first_name} {projectFormToUse.internal_owner_data.last_name}
+                    </option>
+                  )}
                 </select>
               </div>
             </div>
@@ -2528,15 +2700,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                           >
                             {deliverable.name || `Deliverable ${index + 1}`}
                           </button>
-                          <select
-                            value={deliverable.type}
-                            onChange={(e) => handleDeliverableTypeChange(deliverableId, e.target.value)}
-                            className="rounded-sm border border-gray-200 px-3 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                          >
-                            {typeOptions.map(option => (
-                              <option key={option} value={option}>{option}</option>
-                            ))}
-                          </select>
+                          <input
+                            type="text"
+                            value="Recommendation"
+                            readOnly
+                            className="rounded-sm border border-gray-200 px-3 py-1 text-xs text-gray-600 bg-gray-50 cursor-not-allowed"
+                          />
                           <button
                             type="button"
                             className="text-gray-400 hover:text-gray-600"
@@ -2801,22 +2970,30 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         <div className="px-6" style={{ borderBottom: '1px solid var(--border-primary)' }}>
           <div className="flex space-x-1">
             <button
-              onClick={handleStorylineTabClick}
-              className="px-4 py-2 rounded-t-sm font-medium transition-colors"
+              onClick={generatedStoryline ? handleStorylineTabClick : undefined}
+              disabled={!generatedStoryline}
+              className={`px-4 py-2 rounded-t-sm font-medium transition-colors ${
+                !generatedStoryline ? 'cursor-not-allowed opacity-50' : ''
+              }`}
               style={{
                 backgroundColor: currentView === 'storyline' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'storyline' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
+              title={!generatedStoryline ? 'Generate a storyline first to access this tab' : ''}
             >
               Storyline
             </button>
             <button
-              onClick={handleLayoutTabClick}
-              className="px-4 py-2 rounded-t-sm font-medium transition-colors"
+              onClick={generatedStoryline ? handleLayoutTabClick : undefined}
+              disabled={!generatedStoryline}
+              className={`px-4 py-2 rounded-t-sm font-medium transition-colors ${
+                !generatedStoryline ? 'cursor-not-allowed opacity-50' : ''
+              }`}
               style={{
                 backgroundColor: currentView === 'layout' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'layout' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
+              title={!generatedStoryline ? 'Generate a storyline first to access this tab' : ''}
             >
               Layout
             </button>

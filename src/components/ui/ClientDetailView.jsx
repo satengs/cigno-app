@@ -57,7 +57,42 @@ export default function ClientDetailView({
   const [parentId, setParentId] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [clientProjects, setClientProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
   const usersFetched = useRef(false);
+
+  // Fetch projects for this client
+  const fetchClientProjects = async () => {
+    if (!client?.id && !client?._id) return;
+    
+    setLoadingProjects(true);
+    try {
+      // Use business entity ID from metadata if available, otherwise fall back to menu item ID
+      const clientId = client.metadata?.business_entity_id || 
+                      client.metadata?.client_id || 
+                      client.id || 
+                      client._id;
+      const response = await fetch(`/api/projects?clientId=${clientId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setClientProjects(data.projects || []);
+      } else {
+        console.error('Failed to fetch projects:', data.error);
+        setClientProjects([]);
+      }
+    } catch (error) {
+      console.error('Error fetching client projects:', error);
+      setClientProjects([]);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  // Fetch projects when component mounts or client changes
+  useEffect(() => {
+    fetchClientProjects();
+  }, [client?.id, client?._id]);
 
   const industryOptions = [
     { value: '', label: 'Select industry...' },
@@ -119,14 +154,14 @@ export default function ClientDetailView({
     console.log('ClientDetailView: Client changed, reinitializing form data...', client?.id || client?._id);
     if (client) {
       setFormData({
-        clientName: client.title || '',
-        website: client.metadata?.website || '',
-        location: client.metadata?.location || '',
-        industry: client.metadata?.industry || '',
-        owner: client.metadata?.owner || '',
-        tags: client.metadata?.tags || [],
+        clientName: client.title || client.name || '',
+        website: client.website || '',
+        location: client.location || '',
+        industry: client.industry || '',
+        owner: client.owner?._id || client.owner || '',
+        tags: client.tags || [],
         keyPeople: client.metadata?.keyPeople || [],
-        logo: client.metadata?.logo || null
+        logo: client.logo || null
       });
     }
   }, [client]);
@@ -151,14 +186,22 @@ export default function ClientDetailView({
 
   const handleSaveField = async (field) => {
     try {
+      console.log('🔧 ClientDetailView: handleSaveField called for field:', field);
+      console.log('📋 Current client data:', client);
+      console.log('📋 Current formData:', formData);
+      
       const updatedClient = {
         ...client,
         title: field === 'clientName' ? formData.clientName : client.title,
-        metadata: {
-          ...client.metadata,
-          [field]: formData[field]
-        }
+        name: field === 'clientName' ? formData.clientName : client.name,
+        website: field === 'website' ? formData.website : client.website,
+        location: field === 'location' ? formData.location : client.location,
+        industry: field === 'industry' ? formData.industry : client.industry,
+        tags: field === 'tags' ? formData.tags : client.tags,
+        owner: field === 'owner' ? formData.owner : client.owner
       };
+      
+      console.log('📤 Sending updated client:', updatedClient);
       
       await onUpdate(updatedClient);
       setEditingField(null);
@@ -171,14 +214,14 @@ export default function ClientDetailView({
     setEditingField(null);
     // Reset form data to original values
     setFormData({
-      clientName: client.title || '',
-      website: client.metadata?.website || '',
-      location: client.metadata?.location || '',
-      industry: client.metadata?.industry || '',
-      owner: client.metadata?.owner || '',
-      tags: client.metadata?.tags || [],
+      clientName: client.title || client.name || '',
+      website: client.website || '',
+      location: client.location || '',
+      industry: client.industry || '',
+      owner: client.owner?._id || client.owner || '',
+      tags: client.tags || [],
       keyPeople: client.metadata?.keyPeople || [],
-      logo: client.metadata?.logo || null
+      logo: client.logo || null
     });
   };
 
@@ -469,12 +512,25 @@ export default function ClientDetailView({
             <Trash2 className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-gray-600 mb-2">
-          {client.metadata?.description || 'No description available'}
-        </p>
-        <a href="#" className="text-blue-600 text-sm hover:underline">
-          Source: Company overview document
-        </a>
+        {client.metadata?.description && (
+          <p className="text-gray-600 mb-2">
+            {client.metadata.description}
+          </p>
+        )}
+        
+        {/* Client Owner and Internal Owner Information */}
+        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            <span className="font-medium">Client Owner:</span>
+            <span>{client.metadata?.client_owner || (client.owner ? `${client.owner.first_name} ${client.owner.last_name}` : 'Paul Smith')}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            <span className="font-medium">Internal Owner:</span>
+            <span>{client.metadata?.internal_owner || (client.owner ? `${client.owner.first_name} ${client.owner.last_name}` : 'Paul Smith')}</span>
+          </div>
+        </div>
       </div>
 
       {/* Content */}
@@ -641,17 +697,25 @@ export default function ClientDetailView({
           
           {expandedSections.projects && (
             <div className="space-y-3">
-              {client.projects && client.projects.length > 0 ? (
-                client.projects.map((project) => (
+              {loadingProjects ? (
+                <div className="text-center py-6 text-gray-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-300 mx-auto mb-2"></div>
+                  <p className="text-sm">Loading projects...</p>
+                </div>
+              ) : clientProjects && clientProjects.length > 0 ? (
+                clientProjects.map((project) => (
                   <div
-                    key={project.id}
+                    key={project.id || project._id}
                     className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                   >
                     <div className="flex items-center space-x-3">
                       <Folder className="w-5 h-5 text-gray-500" />
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{project.title}</p>
-                        <p className="text-xs text-gray-500">{project.status}</p>
+                        <p className="text-sm font-medium text-gray-900">{project.name || project.title}</p>
+                        <p className="text-xs text-gray-500">
+                          Status: {project.status || 'Active'} | 
+                          Owner: {project.internal_owner?.first_name} {project.internal_owner?.last_name}
+                        </p>
                       </div>
                     </div>
                     <button className="text-gray-400 hover:text-gray-600 p-1">

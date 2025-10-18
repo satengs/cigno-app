@@ -101,8 +101,7 @@ export default function CreateDeliverableModal({
       
       setFormData(prev => ({ 
         ...prev, 
-        brief: generatedBrief,
-        briefQuality: 8.5
+        brief: generatedBrief
       }));
     } catch (error) {
       console.error('Error generating brief:', error);

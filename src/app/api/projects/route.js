@@ -9,12 +9,23 @@ import Deliverable from '../../../lib/models/Deliverable';
 import MenuItemModel from '../../../lib/models/MenuItemModel';
 import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
 
-export async function GET() {
+export async function GET(request) {
   try {
     await connectDB();
     console.log('Database connected, fetching projects...');
     
-    const projects = await Project.findActive()
+    const { searchParams } = new URL(request.url);
+    const clientId = searchParams.get('clientId');
+    
+    let query = Project.findActive();
+    
+    // Filter by client if clientId is provided
+    if (clientId) {
+      query = query.where('client').equals(clientId);
+      console.log(`Filtering projects by client: ${clientId}`);
+    }
+    
+    const projects = await query
       .populate('client_owner', 'name industry')
       .populate('internal_owner', 'first_name last_name email_address')
       .populate('organisation', 'name industry')

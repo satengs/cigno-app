@@ -63,7 +63,7 @@ export default function DeliverableSettingsPage({
   const qualityPercent = qualityScore !== null
     ? Math.min(100, Math.max(0, (qualityScore / 10) * 100))
     : 0;
-  const canGenerateStoryline = qualityScore === null || qualityScore >= 7.5;
+  const canGenerateStoryline = true; // No score threshold restrictions
 
   useEffect(() => {
     if (deliverable) {
@@ -102,8 +102,8 @@ export default function DeliverableSettingsPage({
       setFormData({
         brief: deliverable.brief || intelligentBrief,
         briefQuality: normalizedQuality,
-        recognizedStrengths: strengthInsights.length ? strengthInsights : ['Technical requirements well defined'],
-        suggestedImprovements: improvementInsights.length ? improvementInsights : ['Add geographical scope and timeline constraints'],
+        recognizedStrengths: strengthInsights.length ? strengthInsights : [],
+        suggestedImprovements: improvementInsights.length ? improvementInsights : [],
         notes: deliverable.notes || intelligentNotes,
         tags: deliverable.tags || intelligentTags
       });
@@ -203,8 +203,7 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
       
       setFormData(prev => ({ 
         ...prev, 
-        brief: generatedBrief,
-        briefQuality: 8.5
+        brief: generatedBrief
       }));
     } catch (error) {
       console.error('Error generating brief:', error);
@@ -493,11 +492,6 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
                 </div>
               )}
 
-              {qualityScore !== null && qualityScore < 7.5 && (
-                <p className="text-xs text-red-600">
-                  Storyline generation is disabled until the brief reaches 7.5 / 10.
-                </p>
-              )}
             </div>
           )}
           

@@ -150,12 +150,8 @@ const formatProjectResponse = (rawProject) => {
     status: rawProject.status || 'Planning',
     start_date: toDateInputValue(rawProject.start_date),
     end_date: toDateInputValue(rawProject.end_date),
-    client_owner: clientOwnerId || '',
-    client_owner_name: typeof rawProject.client_owner === 'object' ? rawProject.client_owner.name : null,
-    internal_owner: internalOwnerId || '',
-    internal_owner_name: typeof rawProject.internal_owner === 'object'
-      ? [rawProject.internal_owner.first_name, rawProject.internal_owner.last_name].filter(Boolean).join(' ')
-      : null,
+    client_owner: rawProject.client_owner || clientOwnerId || '',
+    internal_owner: rawProject.internal_owner || internalOwnerId || '',
     budget_amount: Number(budgetAmount) || 0,
     budget_currency: budgetCurrency,
     budget_type: budgetType,
@@ -400,37 +396,51 @@ const ProjectDetailsPage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">Client Owner</label>
                 <select
-                  value={project.client_owner || ''}
+                  value={project.client_owner?._id || project.client_owner || ''}
                   onChange={(e) => handleUpdateProject({ client_owner: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">Select client contact...</option>
-                  {contacts.map(contact => (
+                  {contacts && contacts.length > 0 ? contacts.map(contact => (
                     <option key={getIdString(contact)} value={getIdString(contact)}>
                       {contact.name || contact.email_address}
                     </option>
-                  ))}
+                  )) : (
+                    <option value="" disabled>Loading contacts...</option>
+                  )}
                 </select>
+                {project.client_owner?.name && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Current: {project.client_owner.name} ({project.client_owner.email_address})
+                  </p>
+                )}
               </div>
 
               {/* Internal Owner */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">Internal Owner</label>
                 <select
-                  value={project.internal_owner || ''}
+                  value={project.internal_owner?._id || project.internal_owner || ''}
                   onChange={(e) => handleUpdateProject({ internal_owner: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">Select team member...</option>
-                  {users.map(user => {
+                  {users && users.length > 0 ? users.map(user => {
                     const label = user.name || [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email_address;
                     return (
                       <option key={getIdString(user)} value={getIdString(user)}>
                         {label}
                       </option>
                     );
-                  })}
+                  }) : (
+                    <option value="" disabled>Loading users...</option>
+                  )}
                 </select>
+                {project.internal_owner?.first_name && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Current: {project.internal_owner.first_name} {project.internal_owner.last_name}
+                  </p>
+                )}
               </div>
             </div>
           </div>

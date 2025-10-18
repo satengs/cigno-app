@@ -32,9 +32,10 @@ class ChatContextManager {
    * Create or get chat context for a project
    * @param {Object} project - Project object containing id and name
    * @param {string} userId - Current user ID
+   * @param {Object} clientData - Optional client data
    * @returns {Object} Chat context for the project
    */
-  getOrCreateChatContext(project, userId = 'cigno-user') {
+  getOrCreateChatContext(project, userId = 'cigno-user', clientData = null) {
     if (!project || !project.id) {
       console.warn('ChatContextManager: Invalid project provided');
       return null;
@@ -45,22 +46,31 @@ class ChatContextManager {
     // Check if context already exists
     if (this.chatContexts.has(contextKey)) {
       const existingContext = this.chatContexts.get(contextKey);
-      console.log(`🔄 Loading existing chat context for project: ${project.name}`);
+      console.log(`🔄 Loading existing chat context for project: ${project.name || project.title}`);
       return existingContext;
     }
+
+    // Extract client information from project or provided clientData
+    const clientInfo = clientData || project.client_name || project.metadata?.client_name || 'Unknown Client';
+    const projectName = project.name || project.title || 'Unknown Project';
+    
+    // Create comprehensive welcome message
+    const welcomeMessage = `Hello! I'm here to help you with the "${projectName}" project. What would you like to work on today?`;
 
     // Create new chat context
     const newContext = {
       userId: contextKey,
       clientId: "cigno-app",
       projectId: project.id,
-      projectName: project.name,
+      projectName: projectName,
+      clientData: clientData,
+      projectData: project,
       chatId: `chat_${project.id}_${Date.now()}`,
       messages: [{
         id: `welcome_${Date.now()}`,
         type: 'assistant',
         role: 'assistant',
-        content: `Hello! I'm here to help you with the "${project.name}" project. What would you like to work on today?`,
+        content: welcomeMessage,
         timestamp: new Date().toISOString()
       }],
       createdAt: new Date().toISOString(),
@@ -128,16 +138,17 @@ class ChatContextManager {
    * Switch to a specific project's chat context
    * @param {Object} project - Project object
    * @param {string} userId - Current user ID
+   * @param {Object} clientData - Optional client data
    * @returns {Object} Chat context
    */
-  switchToProject(project, userId = 'cigno-user') {
-    const context = this.getOrCreateChatContext(project, userId);
+  switchToProject(project, userId = 'cigno-user', clientData = null) {
+    const context = this.getOrCreateChatContext(project, userId, clientData);
     
     if (context) {
       // Update last accessed time
       context.lastAccessedAt = new Date().toISOString();
       this.currentContext = context;
-      console.log(`🔀 Switched to chat context for project: ${project.name}`);
+      console.log(`🔀 Switched to chat context for project: ${project.name || project.title}`);
     }
 
     return context;
@@ -341,16 +352,41 @@ class ChatContextManager {
       return false;
     }
 
+    // Create new welcome message
+    const welcomeMessage = `Hello! I'm here to help you with the "${this.currentContext.projectName}" project. What would you like to work on today?`;
+
     this.currentContext.messages = [{
       id: `welcome_${Date.now()}`,
       type: 'assistant',
       role: 'assistant',
-      content: `Hello! I'm here to help you with the "${this.currentContext.projectName}" project. What would you like to work on today?`,
+      content: welcomeMessage,
       timestamp: new Date().toISOString()
     }];
 
     console.log(`🗑️ Cleared chat for project: ${this.currentContext.projectName}`);
     return true;
+  }
+
+  /**
+   * Clear ALL chat history for all projects
+   * @returns {boolean} Success status
+   */
+  clearAllChatHistory() {
+    try {
+      this.chatContexts.clear();
+      this.currentContext = null;
+      
+      // Clear localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('cigno_chat_contexts');
+      }
+      
+      console.log('🗑️ Cleared ALL chat history for all projects');
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to clear all chat history:', error);
+      return false;
+    }
   }
 
   /**
