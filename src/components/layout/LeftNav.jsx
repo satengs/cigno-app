@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Building2, Target, Plus, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Building2, Target, Plus, MoreHorizontal, Folder, FileText, Filter } from 'lucide-react';
 import { UnifiedAddModal } from '../ui';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ThemeToggle from '../theme/ThemeToggle';
@@ -893,18 +893,25 @@ const mapProjectStatusToMenu = (status) => {
         className="border-r flex flex-col h-full transition-all duration-300 ease-in-out sidebar-container"
         style={{ 
           width: isCollapsed ? 64 : sidebarWidth,
-          backgroundColor: 'var(--bg-secondary)',
+          backgroundColor: 'var(--bg-primary)',
           borderColor: 'var(--border-primary)'
         }}
       >
         {/* Header */}
-        <div className="p-3 flex items-center justify-between" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-          <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
-              <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>C</span>
-            </div>
-            {!isCollapsed && (
-              <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Cigno</span>
+        <div className="p-4 flex items-center justify-between border-b" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="flex items-center">
+            {!isCollapsed ? (
+              <img 
+                src="/logo.png" 
+                alt="Cigno Logo" 
+                className="h-8 object-contain"
+              />
+            ) : (
+              <img 
+                src="/favicon.png" 
+                alt="Cigno" 
+                className="w-8 h-8 object-contain"
+              />
             )}
           </div>
           <button
@@ -931,7 +938,7 @@ const mapProjectStatusToMenu = (status) => {
 
         {/* Search Section */}
         {!isCollapsed && (
-          <div className="p-3 border-b" style={{ borderColor: 'var(--border-primary)' }}>
+          <div className="p-4 border-b" style={{ borderColor: 'var(--border-primary)', backgroundColor: 'var(--bg-secondary)' }}>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <svg className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -940,20 +947,14 @@ const mapProjectStatusToMenu = (status) => {
               </div>
               <input
                 type="text"
-                placeholder="Search projects..."
+                placeholder="Search Clients"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-8 py-2 text-sm rounded-lg border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-10 pr-8 py-2 text-sm rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 style={{
                   backgroundColor: 'var(--bg-tertiary)',
                   borderColor: 'var(--border-primary)',
                   color: 'var(--text-primary)'
-                }}
-                onFocus={(e) => {
-                  e.target.style.backgroundColor = 'var(--bg-primary)';
-                }}
-                onBlur={(e) => {
-                  e.target.style.backgroundColor = 'var(--bg-tertiary)';
                 }}
               />
               {searchQuery && (
@@ -971,17 +972,16 @@ const mapProjectStatusToMenu = (status) => {
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-3 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
+          {/* Organization Divider */}
+          <div className="px-2 py-2 flex items-center space-x-2 mb-1">
+            <Filter className="h-4 w-4" style={{ color: 'var(--text-primary)' }} />
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Cigno's organization</span>
+          </div>
+
           {/* CLIENT Section */}
           <div>
-            <div className="w-full flex items-center justify-between mb-2 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-secondary)' }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-              }}
-            >
+            <div className="w-full flex items-center justify-between mb-2 px-2 py-1.5 rounded">
               <button
                 data-testid="client-collapse-button"
                 onClick={() => toggleSection('client')}
@@ -992,7 +992,7 @@ const mapProjectStatusToMenu = (status) => {
                 ) : (
                   <ChevronRight className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                 )}
-                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>CLIENT</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>CLIENT</h3>
               </button>
               <div className="flex items-center space-x-1">
                 <button 
@@ -1067,23 +1067,21 @@ const mapProjectStatusToMenu = (status) => {
                     .map(client => (
                       <div key={client._id || client.id} className="group">
                         <div 
-                          className="group flex items-center justify-between p-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
+                          className="group flex items-center justify-between p-2 rounded-lg transition-colors cursor-pointer" 
                           style={{ 
-                            backgroundColor: idsEqual(selectedNavItem, client) ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                            backgroundColor: idsEqual(selectedNavItem, client) ? '#EEF2FF' : 'transparent'
                           }}
                           onClick={() => handleItemClick({ ...client, type: 'client' })}
                           onMouseEnter={(e) => {
                             if (!idsEqual(selectedNavItem, client)) {
-                              e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                              e.currentTarget.style.backgroundColor = '#F3F4F6';
                             }
-                            // Set hovered item using unique ID
                             setHoveredItem(`client-${client._id || client.id}`);
                           }}
                           onMouseLeave={(e) => {
                             if (!idsEqual(selectedNavItem, client)) {
-                              e.target.style.backgroundColor = 'var(--bg-secondary)';
+                              e.currentTarget.style.backgroundColor = 'transparent';
                             }
-                            // Clear hovered item
                             setHoveredItem(null);
                           }}
                         >
@@ -1106,7 +1104,7 @@ const mapProjectStatusToMenu = (status) => {
                               <div className="w-4 h-4" /> 
                             )}
                             <Building2 className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
-                            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{client.title}</span>
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{client.title}</span>
                           </div>
                           <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `client-${client._id || client.id}` ? 'opacity-100' : 'opacity-0'}`}>
                             <button
@@ -1220,13 +1218,13 @@ const mapProjectStatusToMenu = (status) => {
 
                         {/* PROJECT Section */}
                         {client.children && client.children.length > 0 && !client.isCollapsed && (
-                          <div className="ml-6 mt-2 space-y-1">
-                            <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-tertiary)' }}
+                          <div className="ml-4 mt-2 space-y-1 pl-4 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
+                            <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors"
                               onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = 'var(--bg-secondary)';
+                                e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
                               }}
                               onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                                e.currentTarget.style.backgroundColor = 'transparent';
                               }}
                             >
                               <button
@@ -1234,11 +1232,11 @@ const mapProjectStatusToMenu = (status) => {
                                 className="flex items-center space-x-2 flex-1 text-left"
                               >
                                 {expandedSections.project ? (
-                                  <ChevronDown className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                  <ChevronDown className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
                                 ) : (
-                                  <ChevronRight className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                  <ChevronRight className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
                                 )}
-                                <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>PROJECT</h4>
+                                <h4 className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>PROJECT</h4>
                               </button>
                               <button
                                 onClick={() => handleAddItem('project', resolveBusinessEntityId(client))}
@@ -1256,29 +1254,27 @@ const mapProjectStatusToMenu = (status) => {
                             </div>
 
                                             {expandedSections.project && (
-                                              <div className="ml-4 space-y-0.5">
+                                              <div className="space-y-0.5">
                                 {client.children
                                   .filter(item => item.type === 'project')
                                   .map(project => (
                                     <div key={project._id || project.id} className="group">
                                       <div 
-                                        className="group flex items-center justify-between py-1 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
+                                        className="group flex items-center justify-between py-1.5 px-2 rounded-lg transition-colors cursor-pointer" 
                                         style={{ 
-                                          backgroundColor: idsEqual(selectedNavItem, project) ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                                          backgroundColor: idsEqual(selectedNavItem, project) ? '#EEF2FF' : 'transparent'
                                         }}
                                         onClick={() => handleItemClick({ ...project, type: 'project' })}
                                         onMouseEnter={(e) => {
                                           if (!idsEqual(selectedNavItem, project)) {
-                                            e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                                            e.currentTarget.style.backgroundColor = '#F3F4F6';
                                           }
-                                          // Set hovered item using unique ID
                                           setHoveredItem(`project-${project._id || project.id}`);
                                         }}
                                         onMouseLeave={(e) => {
                                           if (!idsEqual(selectedNavItem, project)) {
-                                            e.target.style.backgroundColor = 'var(--bg-secondary)';
+                                            e.currentTarget.style.backgroundColor = 'transparent';
                                           }
-                                          // Clear hovered item
                                           setHoveredItem(null);
                                         }}
                                       >
@@ -1300,7 +1296,7 @@ const mapProjectStatusToMenu = (status) => {
                                           ) : (
                                             <div className="w-3 h-3" />
                                           )}
-                                          <Target className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
+                                          <Folder className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                                           <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{project.title}</span>
                                         </div>
                                         <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `project-${project._id || project.id}` ? 'opacity-100' : 'opacity-0'}`}>
@@ -1415,13 +1411,13 @@ const mapProjectStatusToMenu = (status) => {
 
                                       {/* DELIVERABLE Section */}
                                       {project.children && project.children.length > 0 && !project.isCollapsed && (
-                                        <div className="ml-4 mt-1 space-y-1">
-                                          <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-tertiary)' }}
+                                        <div className="ml-2 mt-1 space-y-1 pl-4 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
+                                          <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors"
                                             onMouseEnter={(e) => {
-                                              e.target.style.backgroundColor = 'var(--bg-secondary)';
+                                              e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
                                             }}
                                             onMouseLeave={(e) => {
-                                              e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                                              e.currentTarget.style.backgroundColor = 'transparent';
                                             }}
                                           >
                                             <button
@@ -1429,11 +1425,11 @@ const mapProjectStatusToMenu = (status) => {
                                               className="flex items-center space-x-2 flex-1 text-left"
                                             >
                                               {expandedSections.deliverable ? (
-                                                <ChevronDown className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                                <ChevronDown className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
                                               ) : (
-                                                <ChevronRight className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                                <ChevronRight className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
                                               )}
-                                              <h5 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>DELIVERABLE</h5>
+                                              <h5 className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>DELIVERABLE</h5>
                                             </button>
                                             <button
                                               onClick={() => handleAddItem('deliverable', resolveBusinessEntityId(project))}
@@ -1451,47 +1447,34 @@ const mapProjectStatusToMenu = (status) => {
                                           </div>
 
                                           {expandedSections.deliverable && (
-                                            <div className="ml-6 space-y-1 mt-1">
+                                            <div className="space-y-1 mt-1">
                                               {project.children
                                                 .filter(item => item.type === 'deliverable')
                                                 .map(deliverable => (
                                                   <div key={deliverable._id || deliverable.id} className="group">
                                                     <div 
-                                                      className="flex items-start justify-between py-1.5 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer"
+                                                      className="flex items-start justify-between py-2 px-2 rounded-lg transition-colors cursor-pointer"
                                                       style={{ 
-                                                        backgroundColor: idsEqual(selectedNavItem, deliverable) ? 'var(--bg-tertiary)' : 'transparent',
-                                                        border: idsEqual(selectedNavItem, deliverable) ? '1px solid var(--border-primary)' : '1px solid transparent'
+                                                        backgroundColor: idsEqual(selectedNavItem, deliverable) ? '#EEF2FF' : 'transparent',
+                                                        border: idsEqual(selectedNavItem, deliverable) ? '1px solid #C7D2FE' : '1px solid transparent'
                                                       }}
                                                       onClick={() => handleItemClick({ ...deliverable, type: 'deliverable' })}
                                                       onMouseEnter={(e) => {
                                                         if (!idsEqual(selectedNavItem, deliverable)) {
-                                                          e.target.style.backgroundColor = 'var(--bg-tertiary)';
+                                                          e.currentTarget.style.backgroundColor = '#F3F4F6';
                                                         }
-                                                        // Set hovered item using unique ID
                                                         setHoveredItem(`deliverable-${deliverable._id || deliverable.id}`);
                                                       }}
                                                       onMouseLeave={(e) => {
                                                         if (!idsEqual(selectedNavItem, deliverable)) {
-                                                          e.target.style.backgroundColor = 'var(--bg-secondary)';
+                                                          e.currentTarget.style.backgroundColor = 'transparent';
                                                         }
-                                                        // Clear hovered item
                                                         setHoveredItem(null);
                                                       }}
                                                     >
-                                                      <div className="flex flex-col space-y-0.5 flex-1">
+                                                      <div className="flex items-center space-x-2 flex-1">
+                                                        <FileText className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
                                                         <span className="text-xs font-normal" style={{ color: 'var(--text-primary)' }}>{deliverable.title}</span>
-                                                        <div className="flex items-center space-x-1">
-                                                          <div 
-                                                            className="w-2 h-2 rounded-full"
-                                                            style={{ backgroundColor: getStatusInfo(deliverable.status).color }}
-                                                          />
-                                                          <span 
-                                                            className="text-xs font-normal"
-                                                            style={{ color: getStatusInfo(deliverable.status).color }}
-                                                          >
-                                                            {getStatusInfo(deliverable.status).label}
-                                                          </span>
-                                                        </div>
                                                       </div>
                                                       <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `deliverable-${deliverable._id || deliverable.id}` ? 'opacity-100' : 'opacity-0'}`}>
                                                         <div className="relative">

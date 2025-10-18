@@ -78,6 +78,20 @@ function DashboardWithSearchParams() {
       processedUrlRef.current = null;
     }
   }, [searchParams, menuStructure, isLoading, expandItem]);
+
+  // Auto-select first client on page load
+  useEffect(() => {
+    if (!isLoading && menuStructure.length > 0 && !selectedItem && !searchParams.get('deliverable')) {
+      const firstClient = menuStructure.find(item => item.type === 'client');
+      if (firstClient) {
+        console.log('🎯 Auto-selecting first client on page load:', firstClient.title);
+        setSelectedItem({
+          ...firstClient,
+          type: 'client'
+        });
+      }
+    }
+  }, [menuStructure, isLoading, selectedItem, searchParams]);
   
   const handleItemSelect = (item) => {
     console.log('🎯 Dashboard handleItemSelect called with:', {

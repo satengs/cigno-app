@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -28,6 +28,8 @@ import { authService } from '../../lib/auth/AuthService';
 import { useStorylineExport } from '../../lib/export/exportUtils';
 import ExportPreviewModal from '../ui/ExportPreviewModal';
 import chatContextManager from '../../lib/chat/ChatContextManager';
+import documentService, { KNOWLEDGE_BASE_IDS } from '../../lib/services/DocumentService';
+import DocumentCard from '../ui/DocumentCard';
 
 export default function RightSection({ isModalOpen = false, selectedItem = null, showLayoutOptions = false, selectedLayout = 'title-2-columns', onLayoutChange, storyline = null, onApplyLayoutToAll }) {
   // State for collapsible sections - chat closed by default
@@ -91,10 +93,16 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
   const [rightSectionWidth, setRightSectionWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeType, setResizeType] = useState(null);
-  const [internalResourcesHeight, setInternalResourcesHeight] = useState(200);
-  const [externalResourcesHeight, setExternalResourcesHeight] = useState(150);
+  const [internalResourcesFlex, setInternalResourcesFlex] = useState(1);
+  const [externalResourcesFlex, setExternalResourcesFlex] = useState(1);
   const [resizeStartY, setResizeStartY] = useState(0);
-  const [resizeStartHeight, setResizeStartHeight] = useState(0);
+  const [containerRef, setContainerRef] = useState(null);
+
+  // Documents state
+  const [internalDocuments, setInternalDocuments] = useState([]);
+  const [externalDocuments, setExternalDocuments] = useState([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentsError, setDocumentsError] = useState(null);
 
   // Set isClient to true after hydration
   useEffect(() => {
@@ -111,15 +119,56 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     }
   }, [expandedSections.aiAssistant]);
 
-  // Update AI assistant expansion based on selected item type
+  // Note: AI assistant is not auto-opened, user must manually click to expand it
+
+  // Fetch documents when a deliverable is selected
   useEffect(() => {
-    if (selectedItem?.type === 'project' || selectedItem?.type === 'client') {
-      setExpandedSections(prev => ({
-        ...prev,
-        aiAssistant: true
-      }));
-    }
-  }, [selectedItem?.type]);
+    const fetchDocuments = async () => {
+      if (selectedItem?.type !== 'deliverable') {
+        setInternalDocuments([]);
+        setExternalDocuments([]);
+        return;
+      }
+
+      setIsLoadingDocuments(true);
+      setDocumentsError(null);
+
+      try {
+        console.log('📚 Fetching documents for deliverable:', selectedItem.name);
+
+        // Fetch internal and external documents in parallel
+        const [internal, external] = await Promise.all([
+          documentService.fetchDocuments(KNOWLEDGE_BASE_IDS.INTERNAL).catch(err => {
+            console.warn('Could not fetch internal documents:', err.message);
+            return [];
+          }),
+          documentService.fetchDocuments(KNOWLEDGE_BASE_IDS.EXTERNAL, {
+            excludeTitleContains: ['ubs']
+          }).catch(err => {
+            console.warn('Could not fetch external documents:', err.message);
+            return [];
+          })
+        ]);
+
+        setInternalDocuments(internal || []);
+        setExternalDocuments(external || []);
+
+        console.log('✅ Documents loaded:', {
+          internal: internal?.length || 0,
+          external: external?.length || 0
+        });
+      } catch (error) {
+        // Silently fail - don't show errors to users for missing documents
+        console.warn('Documents fetch completed with warnings');
+        setInternalDocuments([]);
+        setExternalDocuments([]);
+      } finally {
+        setIsLoadingDocuments(false);
+      }
+    };
+
+    fetchDocuments();
+  }, [selectedItem]);
 
 
   // Helper function to format timestamp
@@ -349,12 +398,6 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     setIsResizing(true);
     setResizeType(type);
     setResizeStartY(e.clientY);
-    
-    if (type === 'internal-height') {
-      setResizeStartHeight(internalResourcesHeight);
-    } else if (type === 'external-height') {
-      setResizeStartHeight(externalResourcesHeight);
-    }
   };
 
   const handleResize = (e) => {
@@ -363,14 +406,19 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     if (resizeType === 'width') {
       const newWidth = window.innerWidth - e.clientX;
       setRightSectionWidth(Math.max(200, Math.min(600, newWidth)));
-    } else if (resizeType === 'internal-height') {
+    } else if (resizeType === 'resources-divider') {
+      // For divider between internal and external resources
+      // Adjust the flex ratios to redistribute space dynamically
       const deltaY = e.clientY - resizeStartY;
-      const newHeight = resizeStartHeight + deltaY;
-      setInternalResourcesHeight(Math.max(100, Math.min(400, newHeight)));
-    } else if (resizeType === 'external-height') {
-      const deltaY = e.clientY - resizeStartY;
-      const newHeight = resizeStartHeight + deltaY;
-      setExternalResourcesHeight(Math.max(100, Math.min(300, newHeight)));
+      const flexAdjustment = deltaY / 200; // Sensitivity factor for smoother resize
+      
+      const totalFlex = internalResourcesFlex + externalResourcesFlex;
+      const newInternalFlex = Math.max(0.3, Math.min(3, internalResourcesFlex + flexAdjustment));
+      const newExternalFlex = Math.max(0.3, totalFlex - newInternalFlex);
+      
+      setInternalResourcesFlex(newInternalFlex);
+      setExternalResourcesFlex(newExternalFlex);
+      setResizeStartY(e.clientY); // Update start position for continuous dragging
     }
   };
 
@@ -388,7 +436,7 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
         document.removeEventListener('mouseup', stopResize);
       };
     }
-  }, [isResizing, resizeType]);
+  }, [isResizing, resizeType, resizeStartY, internalResourcesFlex, externalResourcesFlex]);
 
 
   // Function to get dynamic insights based on selected content
@@ -500,11 +548,6 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
 
 
   const relatedInsights = getRelatedInsights(selectedItem);
-
-  // TODO: Replace with API calls to get real resources
-  // This will be replaced with actual API data
-  const internalResourcesGroups = [];
-  const externalResourcesGroups = [];
 
   return (
     <div 
@@ -685,429 +728,174 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           {selectedItem?.type === 'deliverable' && (
             <>
               {/* Internal Resources Section */}
-              <div className="flex flex-col">
-        <div 
-          className="flex items-center justify-between p-4 cursor-pointer transition-colors"
-          style={{ backgroundColor: 'transparent' }}
-          onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-          onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-          onClick={() => toggleSection('internalResources')}
-        >
-          <div className="flex items-center space-x-2">
-            <Folder className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+              <div className="flex flex-col min-h-0" style={{ flex: internalResourcesFlex }}>
+                <div 
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer transition-colors border-b"
+                  style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
+                  onClick={() => toggleSection('internalResources')}
+                >
+          <div className="flex items-center space-x-2 flex-1">
             {expandedSections.internalResources ? (
               <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             ) : (
               <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             )}
-            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Internal Resources</span>
-            <span className="text-xs px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-              {internalResourcesGroups.reduce((total, group) => total + group.items.length, 0)}
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Internal Resource</span>
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+              {isLoadingDocuments ? '...' : internalDocuments.length}
             </span>
           </div>
-          <div className="flex items-center space-x-2">
-            <button 
-              className="px-2 py-1 text-xs rounded transition-colors cursor-pointer flex items-center space-x-1"
-              style={{ 
-                backgroundColor: 'var(--accent-primary)',
-                color: 'white'
-              }}
-              onMouseEnter={(e) => e.target.style.opacity = '0.9'}
-              onMouseLeave={(e) => e.target.style.opacity = '1'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addSource('internal');
-                  }}
-              title="Add internal resource"
-            >
-              <Plus className="h-3 w-3" />
-              <span>Add</span>
-            </button>
-          </div>
+          <button 
+            className="p-1 rounded transition-colors"
+            style={{ backgroundColor: 'transparent', color: 'var(--text-secondary)' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('Add internal resource clicked');
+            }}
+            title="Add internal resource"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
         
         {expandedSections.internalResources && (
           <div 
-            className="flex flex-col"
-            style={{ height: `${internalResourcesHeight}px` }}
+            className="flex flex-col flex-1 overflow-y-auto"
           >
-            <div 
-              className="px-4 pb-4 space-y-3 overflow-y-auto flex-1"
-            >
-            {internalResourcesGroups.map((group) => (
-              <div key={group.id} className="space-y-2">
-                <div 
-                  className="flex items-center justify-between cursor-pointer"
-                  onClick={() => toggleGroup('internal', group.id)}
-                >
-                  <div className="flex items-center space-x-2">
-                    {expandedGroups.internal[group.id] ? (
-                      <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                    ) : (
-                      <ChevronUp className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                    )}
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {group.name}
-                    </span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                      {group.items.length}
-                    </span>
+            <div className="px-4 pt-4 pb-4 space-y-3">
+              {isLoadingDocuments ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-8 h-8 border-3 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--text-secondary)' }} />
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Loading resources...</span>
                   </div>
                 </div>
-                
-                {expandedGroups.internal[group.id] && (
-                  <div className="ml-4 space-y-2">
-                        {group.items.map((item) => {
-                          const isSelected = selectedSources.internal.has(item.id);
-                          const currentRelevance = sourceRelevance[item.id] || item.relevance;
-                          
-                          return (
-                      <div 
-                        key={item.id} 
-                              className={`rounded-lg p-3 transition-colors cursor-pointer ${
-                                isSelected ? 'ring-2 ring-blue-500' : ''
-                              }`}
-                        style={{ backgroundColor: 'var(--bg-secondary)' }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                      >
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-3 flex-1 min-w-0">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleSourceSelection('internal', item.id)}
-                                    className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                          <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                                      {item.name}
-                                    </h4>
-                                    <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
-                                      {item.description}
-                                    </p>
-                                    <div className="flex items-center space-x-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                      <span>{item.type}</span>
-                                      <span>•</span>
-                                      <span>{item.size}</span>
-                                      <span>•</span>
-                                      <span>{item.lastModified}</span>
-                                      <span>•</span>
-                                      <span className="px-1.5 py-0.5 rounded text-xs" style={{ 
-                                  backgroundColor: 'var(--bg-tertiary)',
-                                        color: 'var(--text-primary)'
-                                      }}>
-                                        {item.source}
-                                      </span>
-                                    </div>
-                                    <div className="mt-2 flex items-center space-x-2">
-                                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        Relevance: {currentRelevance}%
-                                      </span>
-                                      <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                                        <div 
-                                          className="h-1.5 rounded-full transition-all duration-300"
-                                          style={{ 
-                                            width: `${currentRelevance}%`,
-                                            backgroundColor: currentRelevance >= 90 ? '#10b981' : 
-                                                           currentRelevance >= 70 ? '#f59e0b' : '#ef4444'
-                                          }}
-                                        />
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const newRelevance = Math.min(100, currentRelevance + 5);
-                                          updateSourceRelevance(item.id, newRelevance);
-                                        }}
-                                        disabled={isUpdatingRelevance}
-                                        className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
-                                      >
-                                        +5%
-                                      </button>
-                            </div>
-                          </div>
-                        </div>
-                                <div className="flex items-center space-x-1 ml-2">
-                                  <button 
-                                    className="p-1 rounded transition-colors"
-                                    style={{ 
-                                      backgroundColor: 'transparent',
-                                      color: 'var(--text-secondary)'
-                                    }}
-                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      console.log('View item', item.id);
-                                    }}
-                                    title="View"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </button>
-                                  <button 
-                                    className="p-1 rounded transition-colors"
-                                    style={{ 
-                                      backgroundColor: 'transparent',
-                                      color: 'var(--text-secondary)'
-                                    }}
-                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      removeSource('internal', item.id);
-                                    }}
-                                    title="Remove source"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                      </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+              ) : internalDocuments.length > 0 ? (
+                internalDocuments.map((doc, index) => (
+                  <DocumentCard 
+                    key={doc._id || doc.id || index}
+                    document={doc}
+                    type="internal"
+                    index={index}
+                  />
+                ))
+              ) : (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-center">
+                    <FileText className="w-12 h-12 mx-auto mb-2" style={{ color: 'var(--text-secondary)' }} />
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No internal resources available</p>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-            {/* Resize handle for internal resources */}
-          <div
-              className="w-full h-3 cursor-row-resize flex items-center justify-center"
-            style={{ 
-              backgroundColor: 'transparent',
-                borderTop: '1px solid var(--border-primary)'
-              }}
-              onMouseDown={startResize('internal-height')}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-                e.target.style.borderTop = '2px solid var(--accent-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'transparent';
-                e.target.style.borderTop = '1px solid var(--border-primary)';
-              }}
-              title="Drag to resize internal resources height"
-            >
-              <div className="w-8 h-0.5 rounded" style={{ backgroundColor: 'var(--text-secondary)' }} />
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
+      {/* Resize handle between internal and external resources */}
+      <div
+        className="w-full h-3 cursor-row-resize flex items-center justify-center flex-shrink-0"
+        style={{ 
+          backgroundColor: 'transparent',
+          borderTop: '1px solid var(--border-primary)'
+        }}
+        onMouseDown={startResize('resources-divider')}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+          e.currentTarget.style.borderTop = '2px solid var(--accent-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'transparent';
+          e.currentTarget.style.borderTop = '1px solid var(--border-primary)';
+        }}
+        title="Drag to resize sections"
+      >
+        <div className="w-8 h-0.5 rounded" style={{ backgroundColor: 'var(--text-secondary)' }} />
+      </div>
+
       {/* External Resources Section */}
-      <div className="flex flex-col">
+      <div className="flex flex-col min-h-0" style={{ flex: externalResourcesFlex }}>
         <div 
-          className="flex items-center justify-between p-4 cursor-pointer transition-colors"
-          style={{ backgroundColor: 'transparent' }}
-          onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-          onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+          className="flex items-center justify-between px-4 py-3 cursor-pointer transition-colors border-b"
+          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
           onClick={() => toggleSection('externalResources')}
         >
-          <div className="flex items-center space-x-2">
-            <Globe className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+          <div className="flex items-center space-x-2 flex-1">
             {expandedSections.externalResources ? (
               <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             ) : (
               <ChevronUp className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             )}
-            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>External Resources</span>
-            <span className="text-xs px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-              {externalResourcesGroups.reduce((total, group) => total + group.items.length, 0)}
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>External Resource</span>
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+              {isLoadingDocuments ? '...' : externalDocuments.length}
             </span>
           </div>
-          <div className="flex items-center space-x-2">
-            <button 
-              className="px-2 py-1 text-xs rounded transition-colors cursor-pointer flex items-center space-x-1"
-              style={{ 
-                backgroundColor: 'var(--accent-primary)',
-                color: 'white'
-              }}
-              onMouseEnter={(e) => e.target.style.opacity = '0.9'}
-              onMouseLeave={(e) => e.target.style.opacity = '1'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addSource('external');
-                  }}
-              title="Add external resource"
-            >
-              <Plus className="h-3 w-3" />
-              <span>Add</span>
-            </button>
-          </div>
+          <button 
+            className="p-1 rounded transition-colors"
+            style={{ backgroundColor: 'transparent', color: 'var(--text-secondary)' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('Add external resource clicked');
+            }}
+            title="Add external resource"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
         
         {expandedSections.externalResources && (
           <div 
-            className="flex flex-col"
-            style={{ height: `${externalResourcesHeight}px` }}
+            className="flex flex-col flex-1 overflow-y-auto"
           >
-            <div 
-              className="px-4 pb-4 space-y-3 overflow-y-auto flex-1"
-            >
-            {externalResourcesGroups.map((group) => (
-              <div key={group.id} className="space-y-2">
-                <div 
-                  className="flex items-center justify-between cursor-pointer"
-                  onClick={() => toggleGroup('external', group.id)}
-                >
-                  <div className="flex items-center space-x-2">
-                    {expandedGroups.external[group.id] ? (
-                      <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                    ) : (
-                      <ChevronUp className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
-                    )}
-                    <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {group.name}
-                    </span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                      {group.items.length}
-                    </span>
+            <div className="px-4 pt-4 pb-4 space-y-3 flex-1">
+              {isLoadingDocuments ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-8 h-8 border-3 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--text-secondary)' }} />
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Loading resources...</span>
                   </div>
                 </div>
-                
-                    {expandedGroups.external[group.id] && (
-                      <div className="ml-4 space-y-2">
-                        {group.items.map((item) => {
-                          const isSelected = selectedSources.external.has(item.id);
-                          const currentRelevance = sourceRelevance[item.id] || item.relevance;
-                          
-                          return (
-                            <div 
-                              key={item.id} 
-                              className={`rounded-lg p-3 transition-colors cursor-pointer ${
-                                isSelected ? 'ring-2 ring-blue-500' : ''
-                              }`}
-                              style={{ backgroundColor: 'var(--bg-secondary)' }}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-tertiary)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-3 flex-1 min-w-0">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleSourceSelection('external', item.id)}
-                                    className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                                      {item.name}
-                                    </h4>
-                                    <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
-                                      {item.description}
-                                    </p>
-                                    <div className="flex items-center space-x-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                      <span>{item.type}</span>
-                                      <span>•</span>
-                                      <span>{item.lastAccessed}</span>
-                                      <span>•</span>
-                                      <span className="px-1.5 py-0.5 rounded text-xs" style={{ 
-                                        backgroundColor: 'var(--bg-tertiary)',
-                                        color: 'var(--text-primary)'
-                                      }}>
-                                        {item.source}
-                                      </span>
-                                    </div>
-                                    <div className="mt-2 flex items-center space-x-2">
-                                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        Relevance: {currentRelevance}%
-                                      </span>
-                                      <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                                        <div 
-                                          className="h-1.5 rounded-full transition-all duration-300"
-                                          style={{ 
-                                            width: `${currentRelevance}%`,
-                                            backgroundColor: currentRelevance >= 90 ? '#10b981' : 
-                                                           currentRelevance >= 70 ? '#f59e0b' : '#ef4444'
-                                          }}
-                                        />
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const newRelevance = Math.min(100, currentRelevance + 5);
-                                          updateSourceRelevance(item.id, newRelevance);
-                                        }}
-                                        disabled={isUpdatingRelevance}
-                                        className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
-                                      >
-                                        +5%
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-1 ml-2">
-                                  <button 
-                                    className="p-1 rounded transition-colors"
-                                    style={{ 
-                                      backgroundColor: 'transparent',
-                                      color: 'var(--text-secondary)'
-                                    }}
-                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      window.open(item.url, '_blank');
-                                    }}
-                                    title="Open link"
-                                  >
-                                    <Globe className="h-3 w-3" />
-                                  </button>
-                                  <button 
-                                    className="p-1 rounded transition-colors"
-                                    style={{ 
-                                      backgroundColor: 'transparent',
-                                      color: 'var(--text-secondary)'
-                                    }}
-                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--bg-primary)'}
-                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      removeSource('external', item.id);
-                                    }}
-                                    title="Remove source"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-              </div>
-            ))}
-            </div>
-            
-            {/* Resize handle for external resources */}
-            <div
-              className="w-full h-3 cursor-row-resize flex items-center justify-center"
-              style={{
-                backgroundColor: 'transparent',
-                borderTop: '1px solid var(--border-primary)'
-              }}
-              onMouseDown={startResize('external-height')}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-                e.target.style.borderTop = '2px solid var(--accent-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'transparent';
-                e.target.style.borderTop = '1px solid var(--border-primary)';
-              }}
-              title="Drag to resize external resources height"
-            >
-              <div className="w-8 h-0.5 rounded" style={{ backgroundColor: 'var(--text-secondary)' }} />
+              ) : externalDocuments.length > 0 ? (
+                externalDocuments.map((doc, index) => (
+                  <DocumentCard 
+                    key={doc._id || doc.id || index}
+                    document={doc}
+                    type="external"
+                    index={index}
+                  />
+                ))
+              ) : (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-center">
+                    <Globe className="w-12 h-12 mx-auto mb-2" style={{ color: 'var(--text-secondary)' }} />
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No external resources available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Related Insights Section */}
-      <div className="flex flex-col">
+      {/* Related Insights Section - Disabled for now */}
+      {false && <div className="flex flex-col">
         <div 
           className="flex items-center justify-between p-4 cursor-pointer transition-colors"
           style={{ backgroundColor: 'transparent' }}
@@ -1241,6 +1029,7 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           </div>
         )}
       </div>
+      }
             </>
           )}
         </div>

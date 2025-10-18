@@ -417,8 +417,18 @@ export function renderFrameworkContent(framework, slideContent, insights = [], c
  * Parse section response dynamically based on framework type
  */
 export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
-  console.log(`🔧 Parsing response for framework: ${framework}`);
-  console.log(`📋 Agent result:`, agentResult);
+  console.log('');
+  console.log('🔍 ========== PARSE SECTION RESPONSE START ==========');
+  console.log(`Framework: ${framework}`);
+  console.log(`Section Index: ${sectionIndex}`);
+  console.log('Agent Result Type:', typeof agentResult);
+  console.log('Agent Result Keys:', Object.keys(agentResult || {}));
+  
+  try {
+    console.log('Full Agent Result:', JSON.stringify(agentResult, null, 2));
+  } catch (e) {
+    console.log('Agent Result (non-serializable):', agentResult);
+  }
   
   // Initialize dynamic structure
   const parsedData = {
@@ -442,9 +452,19 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
   
   // Try to parse as JSON first (CFA-DEMO agents return pure JSON)
   if (agentResult.response && typeof agentResult.response === 'string') {
+    console.log('📄 Found agentResult.response (string)');
+    console.log('Response content (first 500 chars):', agentResult.response.substring(0, 500));
+    
     try {
       const responseData = JSON.parse(agentResult.response);
-      console.log(`✅ Parsed JSON response for ${framework}:`, responseData);
+      console.log('✅ Successfully parsed JSON response');
+      console.log('Parsed Data Keys:', Object.keys(responseData));
+      
+      try {
+        console.log('Parsed Response Data:', JSON.stringify(responseData, null, 2));
+      } catch (e) {
+        console.log('Parsed Response Data (non-serializable):', responseData);
+      }
       
       // Extract slide content
       if (responseData.slide_content) {
@@ -485,24 +505,105 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
       parsedData.charts = generateChartsFromSlideContent(responseData.slide_content, framework, sectionIndex);
       
     } catch (e) {
-      console.log(`❌ Could not parse JSON response for ${framework}:`, e.message);
+      console.log(`❌ Failed to parse JSON from agentResult.response:`, e.message);
+      console.log('Response content that failed to parse (first 200 chars):', agentResult.response?.substring(0, 200));
       
-      // Fallback: treat as plain text
-      parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      parsedData.description = agentResult.response;
+      // Fallback: Try to extract JSON from the text (sometimes it's embedded)
+      console.log('🔍 Attempting to extract JSON from text response...');
+      let extractedData = null;
+      
+      if (agentResult.response) {
+        // Try to find JSON in markdown code blocks
+        const jsonMatch = agentResult.response.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          try {
+            extractedData = JSON.parse(jsonMatch[1]);
+            console.log('✅ Extracted JSON from markdown code block');
+          } catch (extractError) {
+            console.log('❌ Failed to parse extracted JSON');
+          }
+        }
+        
+        // Try to find JSON object directly in text
+        if (!extractedData) {
+          const jsonObjectMatch = agentResult.response.match(/\{[\s\S]*"slide_content"[\s\S]*\}/);
+          if (jsonObjectMatch) {
+            try {
+              extractedData = JSON.parse(jsonObjectMatch[0]);
+              console.log('✅ Extracted JSON object from text');
+            } catch (extractError) {
+              console.log('❌ Failed to parse extracted JSON object');
+            }
+          }
+        }
+      }
+      
+      if (extractedData) {
+        // Use extracted data
+        if (extractedData.slide_content) parsedData.slideContent = extractedData.slide_content;
+        if (extractedData.insights) parsedData.insights = extractedData.insights;
+        if (extractedData.citations) parsedData.citations = extractedData.citations;
+        if (extractedData.slide_content?.title) parsedData.title = extractedData.slide_content.title;
+        parsedData.charts = generateChartsFromSlideContent(parsedData.slideContent, framework, sectionIndex);
+      } else {
+        // No JSON found - mark for using fallback in the API route
+        console.log('⚠️ AI returned plain text with no JSON. Section will use fallback data.');
+        parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        parsedData.description = `AI returned conversational response. Using fallback data.`;
+        parsedData.insights = [
+          'AI agent returned conversational text instead of structured data',
+          'Using fallback content for this framework',
+          'Consider regenerating or checking agent configuration'
+        ];
+        parsedData.status = 'fallback_used';
+        parsedData.notes = `AI Response: ${agentResult.response?.substring(0, 200)}...`;
+      }
     }
+  } else if (agentResult.data && typeof agentResult.data === 'object') {
+    // Try direct data field (some agents return data directly)
+    console.log('📦 Found agentResult.data (object)');
+    console.log('Attempting to use data directly as slide_content...');
+    
+    parsedData.slideContent = agentResult.data.slide_content || agentResult.data;
+    parsedData.insights = agentResult.data.insights || [];
+    parsedData.citations = agentResult.data.citations || [];
+    parsedData.title = agentResult.data.title || agentResult.data.slide_content?.title || framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    parsedData.charts = generateChartsFromSlideContent(parsedData.slideContent, framework, sectionIndex);
   } else {
-    // Fallback for non-JSON responses
+    console.log('⚠️ No usable response found in agentResult');
+    console.log('Checking alternative fields...');
+    console.log('agentResult.content:', agentResult.content);
+    console.log('agentResult itself type:', typeof agentResult);
+    
+    // Last fallback
     parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    parsedData.description = agentResult.response || agentResult.content || '';
+    parsedData.description = agentResult.response || agentResult.content || 'No content returned from AI agent';
+    parsedData.status = 'needs_regeneration';
+    parsedData.notes = 'No structured data returned from AI agent. Please regenerate or check agent configuration.';
   }
   
   // Generate HTML using framework renderer
+  console.log('🎨 Rendering framework content...');
   const rendered = renderFrameworkContent(parsedData.framework, parsedData.slideContent, parsedData.insights, parsedData.citations);
   parsedData.title = rendered.title;
   parsedData.html = rendered.html;
   
-  console.log(`✅ Final parsed data for ${framework}:`, parsedData);
+  console.log('');
+  console.log('✅ ========== FINAL PARSED DATA ==========');
+  try {
+    console.log(JSON.stringify(parsedData, null, 2));
+  } catch (e) {
+    console.log('Final Parsed Data (non-serializable):', parsedData);
+  }
+  console.log('Title:', parsedData.title);
+  console.log('Has slideContent:', Object.keys(parsedData.slideContent).length > 0);
+  console.log('Insights count:', parsedData.insights.length);
+  console.log('Citations count:', parsedData.citations.length);
+  console.log('Charts count:', parsedData.charts.length);
+  console.log('HTML length:', parsedData.html?.length || 0);
+  console.log('🔍 ========== PARSE SECTION RESPONSE END ==========');
+  console.log('');
+  
   return parsedData;
 }
 

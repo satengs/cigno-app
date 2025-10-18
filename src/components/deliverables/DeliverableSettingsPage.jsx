@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Button from '../ui/buttons/Button';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { FileText, Wand2, Save, ArrowLeft, X, Sparkles, BookOpen } from 'lucide-react';
@@ -66,6 +66,59 @@ export default function DeliverableSettingsPage({
     : 0;
   const meetsScoreThreshold = qualityScore !== null && isScoreAboveThreshold(qualityScore, storylineScoreThreshold);
   const canGenerateStoryline = meetsScoreThreshold;
+
+  const projectInfo = useMemo(() => {
+    if (!deliverable) {
+      return {
+        id: null,
+        name: '',
+        client_name: '',
+        industry: '',
+        summary: ''
+      };
+    }
+
+    const metadata = deliverable.metadata || {};
+    const rawIndustry = Array.isArray(metadata.industry)
+      ? metadata.industry.filter(Boolean).join(', ')
+      : metadata.industry || deliverable.industry || '';
+
+    const name = metadata.project_name || deliverable.project_name || '';
+    const clientName = metadata.client_name || deliverable.client_name || '';
+    const industry = rawIndustry || '';
+    const geography = metadata.geography || '';
+    const objectives = metadata.objectives || '';
+    const scope = metadata.scope || '';
+    const description = metadata.project_description || metadata.description || '';
+
+    const summaryLines = [
+      name ? `Project Name: ${name}` : null,
+      clientName ? `Client: ${clientName}` : null,
+      industry ? `Industry: ${industry}` : null,
+      geography ? `Geography: ${geography}` : null,
+      objectives ? `Objectives: ${objectives}` : null,
+      scope ? `Scope: ${scope}` : null
+    ].filter(Boolean);
+
+    if (description) {
+      if (summaryLines.length) {
+        summaryLines.push('');
+      }
+      summaryLines.push(description);
+    }
+
+    return {
+      id: metadata.project_id || metadata.projectId || deliverable.project || deliverable.projectId || null,
+      name,
+      client_name: clientName,
+      industry,
+      geography,
+      objectives,
+      scope,
+      description,
+      summary: summaryLines.join('\n')
+    };
+  }, [deliverable]);
 
   useEffect(() => {
     if (deliverable) {
@@ -297,6 +350,58 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
     } catch (error) {
       console.error('❌ Error saving improved brief:', error);
       throw error; // Re-throw to let the modal handle the error
+    }
+  };
+
+  const handleBriefEvaluationSave = async ({ qualityScore, strengths = [], improvements = [] }) => {
+    const normalizedQuality = normalizeScoreValue(qualityScore);
+    const normalizedStrengths = normalizeInsightList(strengths);
+    const normalizedImprovements = normalizeInsightList(improvements);
+
+    setFormData(prev => ({
+      ...prev,
+      briefQuality: normalizedQuality,
+      recognizedStrengths: normalizedStrengths,
+      suggestedImprovements: normalizedImprovements
+    }));
+
+    try {
+      if (!deliverable) {
+        console.warn('⚠️ Skipping auto-save: no deliverable provided');
+        return;
+      }
+
+      const deliverableId = deliverable._id || deliverable.id;
+      if (!deliverableId) {
+        console.warn('⚠️ Skipping auto-save: missing deliverable ID');
+        return;
+      }
+
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brief_quality: normalizedQuality,
+          brief_strengths: normalizedStrengths,
+          brief_improvements: normalizedImprovements,
+          brief_last_evaluated_at: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        let details = 'Unknown error';
+        try {
+          const errorData = await response.json();
+          details = errorData.error || JSON.stringify(errorData);
+        } catch (parseError) {
+          console.warn('Failed to parse auto-save error response:', parseError);
+        }
+        console.error('Auto-save brief evaluation failed:', details);
+      }
+    } catch (autoSaveError) {
+      console.error('Error during brief evaluation auto-save:', autoSaveError);
     }
   };
 
@@ -694,7 +799,8 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
         onSave={handleImproveBriefSave}
         currentBrief={formData.brief}
         deliverable={deliverable}
-        projectData={{}}
+        projectData={projectInfo}
+        onEvaluationSave={handleBriefEvaluationSave}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Settings,
   Trash2,
@@ -22,6 +22,19 @@ import {
   createStorylineBackup
 } from '../../lib/storyline/regenerationUtils';
 import { parseMarkdownWithCharts, deriveSectionMetadata } from '../../lib/markdown/markdownParser';
+
+const EMPTY_PROJECT_CONTEXT = {
+  id: null,
+  name: '',
+  client_name: '',
+  industry: '',
+  geography: '',
+  status: '',
+  objectives: '',
+  scope: '',
+  description: '',
+  summary: ''
+};
 
 const normalizeInsightList = (value) => {
   if (!value) return [];
@@ -368,6 +381,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     budget_type: 'Fixed',
     deliverables: []
   });
+  const [projectContext, setProjectContext] = useState(EMPTY_PROJECT_CONTEXT);
   const [projectDeliverables, setProjectDeliverables] = useState([]);
   const [isLoadingProjectDeliverables, setIsLoadingProjectDeliverables] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -377,6 +391,156 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [sectionToRemove, setSectionToRemove] = useState(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isTestingBrief, setIsTestingBrief] = useState(false);
+
+  const composeProjectSummary = useCallback((info = {}) => {
+    const lines = [
+      info.name ? `Project Name: ${info.name}` : null,
+      info.client_name ? `Client: ${info.client_name}` : null,
+      info.industry ? `Industry: ${info.industry}` : null,
+      info.geography ? `Geography: ${info.geography}` : null,
+      info.objectives ? `Objectives: ${info.objectives}` : null,
+      info.scope ? `Scope: ${info.scope}` : null
+    ].filter(Boolean);
+
+    const description = info.description ? info.description : '';
+    if (description) {
+      if (lines.length) {
+        lines.push('');
+      }
+      lines.push(description);
+    }
+
+    return lines.join('\n');
+  }, []);
+
+  const updateProjectContext = useCallback((rawInfo = {}) => {
+    const toText = (value) => {
+      if (Array.isArray(value)) {
+        return value.filter(Boolean).join(', ');
+      }
+      return typeof value === 'string' ? value.trim() : (value ?? '');
+    };
+
+    const incoming = {
+      id: rawInfo.id || rawInfo._id || rawInfo.project_id || null,
+      name: toText(rawInfo.name || rawInfo.project_name),
+      client_name: toText(rawInfo.client_name || rawInfo.clientName || rawInfo.client?.name),
+      industry: toText(rawInfo.industry ?? rawInfo.client?.industry),
+      geography: toText(rawInfo.geography),
+      status: toText(rawInfo.status),
+      objectives: toText(rawInfo.objectives),
+      scope: toText(rawInfo.scope),
+      description: toText(rawInfo.description || rawInfo.summary || rawInfo.project_description)
+    };
+
+    setProjectContext((prev) => {
+      const next = {
+        id: incoming.id || prev.id || null,
+        name: incoming.name || prev.name || '',
+        client_name: incoming.client_name || prev.client_name || '',
+        industry: incoming.industry || prev.industry || '',
+        geography: incoming.geography || prev.geography || '',
+        status: incoming.status || prev.status || '',
+        objectives: incoming.objectives || prev.objectives || '',
+        scope: incoming.scope || prev.scope || '',
+        description: incoming.description || prev.description || ''
+      };
+
+      const summary = composeProjectSummary(next);
+      return { ...next, summary };
+    });
+  }, [composeProjectSummary]);
+
+  const loadProjectContext = useCallback(async (deliverableData = {}, metadata = {}) => {
+    const candidateProject = deliverableData?.project;
+    const projectRecord = (candidateProject && typeof candidateProject === 'object' && !Array.isArray(candidateProject))
+      ? candidateProject
+      : {};
+
+    const projectId = getIdString(
+      projectRecord._id ||
+      projectRecord.id ||
+      deliverableData?.project ||
+      deliverableData?.project_id ||
+      metadata.project_id ||
+      metadata.projectId ||
+      metadata.business_entity_id ||
+      selectedItem?.project ||
+      selectedItem?.project_id
+    );
+
+    updateProjectContext({
+      id: projectId,
+      name: projectRecord.name || metadata.project_name,
+      client_name: projectRecord.client?.name || metadata.client_name,
+      industry: projectRecord.client?.industry || projectRecord.industry || metadata.industry,
+      geography: projectRecord.geography || metadata.geography,
+      status: projectRecord.status || metadata.status,
+      objectives: projectRecord.objectives || metadata.objectives,
+      scope: projectRecord.scope || metadata.scope,
+      description: projectRecord.description || metadata.project_description || metadata.description
+    });
+
+    if (!projectId || !isValidObjectId(projectId)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      if (!response.ok) {
+        console.warn('Failed to fetch project context:', response.status);
+        return;
+      }
+
+      const project = await response.json();
+      updateProjectContext({
+        id: projectId,
+        name: project.name,
+        client_name: project.client?.name || project.client_name,
+        industry: project.client?.industry || project.industry,
+        geography: project.geography,
+        status: project.status,
+        objectives: project.objectives,
+        scope: project.scope,
+        description: project.description
+      });
+    } catch (error) {
+      console.error('❌ Error fetching project context:', error);
+    }
+  }, [selectedItem, updateProjectContext]);
+
+  const projectDataForAi = useMemo(() => {
+    const metadata = selectedItem?.metadata || {};
+    const industryFromMetadata = Array.isArray(metadata.industry)
+      ? metadata.industry.filter(Boolean).join(', ')
+      : (metadata.industry || '');
+
+    const candidateId = getIdString(
+      projectContext.id ||
+      metadata.project_id ||
+      metadata.projectId ||
+      metadata.business_entity_id ||
+      selectedItem?.project ||
+      selectedItem?.project_id
+    );
+
+    const data = {
+      id: candidateId || null,
+      name: projectContext.name || metadata.project_name || '',
+      client_name: projectContext.client_name || metadata.client_name || '',
+      industry: projectContext.industry || industryFromMetadata || '',
+      geography: projectContext.geography || metadata.geography || '',
+      status: projectContext.status || metadata.status || '',
+      objectives: projectContext.objectives || metadata.objectives || '',
+      scope: projectContext.scope || metadata.scope || '',
+      description: projectContext.description || metadata.project_description || metadata.description || ''
+    };
+
+    return {
+      ...data,
+      summary: composeProjectSummary(data)
+    };
+  }, [composeProjectSummary, projectContext, selectedItem]);
 
   const formatDateForInput = useCallback((value) => {
     if (!value) return '';
@@ -714,6 +878,20 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       console.log('🎯 [USEEFFECT] selectedItem.brief:', selectedItem.brief);
       console.log('🎯 [USEEFFECT] Current formData.brief:', formData.brief);
       console.log('🎯 [USEEFFECT] justSavedRef.current:', justSavedRef.current);
+
+      const metadata = selectedItem.metadata || {};
+
+      updateProjectContext({
+        id: metadata.project_id || metadata.projectId || metadata.business_entity_id,
+        name: metadata.project_name,
+        client_name: metadata.client_name,
+        industry: metadata.industry,
+        geography: metadata.geography,
+        status: metadata.status,
+        objectives: metadata.objectives,
+        scope: metadata.scope,
+        description: metadata.project_description || metadata.description
+      });
       
       // If we just saved, don't overwrite formData - it's already been updated by the save operation
       if (justSavedRef.current) {
@@ -772,6 +950,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               brief_strengths: strengthsFromData.length ? strengthsFromData : [],
               brief_improvements: improvementsFromData.length ? improvementsFromData : []
             });
+
+            await loadProjectContext(deliverableData, metadata);
           } else {
             console.log('⚠️ Failed to fetch deliverable data, using selectedItem data');
             // Fallback to selectedItem data if API call fails
@@ -791,6 +971,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                 ? normalizeInsightList(selectedItem.improvements)
                 : []
             });
+
+            await loadProjectContext(selectedItem, metadata);
           }
         } catch (error) {
           console.error('❌ Error fetching deliverable data:', error);
@@ -811,6 +993,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               ? normalizeInsightList(selectedItem.improvements)
               : []
           });
+
+          await loadProjectContext(selectedItem, metadata);
         }
       };
       
@@ -829,7 +1013,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       console.log('🔍 Selected item metadata:', selectedItem.metadata);
       loadExistingStoryline(deliverableId);
     }
-  }, [selectedItem, isSavingDeliverable]);
+  }, [selectedItem, isSavingDeliverable, updateProjectContext, loadProjectContext]);
 
   // Load existing storyline for the deliverable
   const loadExistingStoryline = async (deliverableId) => {
@@ -1219,6 +1403,18 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         deliverables: normalized
       });
 
+      updateProjectContext({
+        id: projectId,
+        name: selectedItem.name || metadata.project_name,
+        client_name: metadata.client_name || selectedItem.client?.name,
+        industry: metadata.industry || selectedItem.industry,
+        geography: metadata.geography,
+        status: selectedItem.status || metadata.status,
+        objectives: metadata.objectives,
+        scope: metadata.scope,
+        description: selectedItem.description || metadata.description
+      });
+
       // Use the business entity ID (actual project ID) instead of menu item ID
       const businessEntityId = metadata.project_id || metadata.projectId || selectedItem.metadata?.business_entity_id;
       if (businessEntityId) {
@@ -1227,8 +1423,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     } else {
       setProjectDeliverables([]);
       setIsDeliverablesOpen(true);
+      if (selectedItem?.type !== 'deliverable') {
+        setProjectContext({ ...EMPTY_PROJECT_CONTEXT });
+      }
     }
-  }, [selectedItem, normalizeDeliverableList, fetchProjectDeliverables, formatDateForInput]);
+  }, [selectedItem, normalizeDeliverableList, fetchProjectDeliverables, formatDateForInput, updateProjectContext]);
 
   // Load existing storyline when selectedItem changes (only if no storyline in state)
   useEffect(() => {
@@ -1505,12 +1704,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             dueDate: formData.due_date,
             summary: selectedItem?.description || selectedItem?.summary || ''
           },
-          projectData: {
-            ...projectForm,
-            name: projectForm?.name || selectedItem?.metadata?.project_name || projectForm?.project_name,
-            client_name: projectForm?.client_name || selectedItem?.metadata?.client_name,
-            industry: projectForm?.industry || selectedItem?.metadata?.industry
-          }
+          projectData: projectDataForAi
         })
       });
 
@@ -1563,21 +1757,16 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         improvementsList = normalizeInsightList(payload.improvements);
       }
 
-      const normalizedScore = Number.isFinite(scoreValue)
-        ? normalizeScoreValue(scoreValue)
-        : (Number.isFinite(Number(formData.brief_quality)) ? Number(formData.brief_quality) : formData.brief_quality);
-
-      setFormData((prev) => ({
-        ...prev,
-        brief_quality: normalizedScore !== null ? normalizedScore : prev.brief_quality,
-        brief_strengths: strengthsList.length ? strengthsList : prev.brief_strengths,
-        brief_improvements: improvementsList.length ? improvementsList : prev.brief_improvements
-      }));
+      persistBriefEvaluation({
+        qualityScore: scoreValue,
+        strengths: strengthsList,
+        improvements: improvementsList
+      });
 
       console.log('✅ Brief evaluated', {
         source: result?.source || 'custom-agent',
         deliverableId,
-        score: normalizedScore ?? formData.brief_quality
+        score: normalizeScoreValue(scoreValue) ?? formData.brief_quality
       });
     } catch (error) {
       console.error('❌ Error testing brief:', error);
@@ -1601,6 +1790,259 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       recognizedStrengths: [],
       suggestedImprovements: []
     }));
+  };
+
+  const saveDeliverable = async ({ silent = false } = {}) => {
+    if (!selectedItem?._id) {
+      console.error('No deliverable ID to save');
+      if (!silent) {
+        alert('No deliverable selected to save.');
+      }
+      return false;
+    }
+
+    if (!silent) {
+      setIsSavingDeliverable(true);
+    }
+
+    justSavedRef.current = true;
+    setTimeout(() => {
+      justSavedRef.current = false;
+    }, 5000);
+
+    try {
+      console.log('💾 [SAVE START] Saving deliverable changes:', formData);
+      console.log('💾 [SAVE START] Current brief being saved:', formData.brief);
+      console.log('💾 [SAVE START] SelectedItem project info:', {
+        project: selectedItem.project,
+        project_id: selectedItem.project_id,
+        metadata: selectedItem.metadata
+      });
+
+      const projectId = selectedItem.project || selectedItem.project_id || selectedItem.metadata?.project_id || selectedItem.metadata?.projectId;
+
+      if (!projectId) {
+        console.error('❌ Missing required project ID');
+        const message = 'Cannot save: Missing project information. Please refresh the page and try again.';
+        if (!silent) {
+          alert(message);
+        } else {
+          console.warn(message);
+        }
+        return false;
+      }
+
+      if (!formData.due_date) {
+        console.error('❌ Missing required due_date');
+        const message = 'Cannot save: Due date is required. Please set a due date.';
+        if (!silent) {
+          alert(message);
+        } else {
+          console.warn(message);
+        }
+        return false;
+      }
+
+      if (!formData.brief || formData.brief.trim() === '') {
+        console.error('❌ Missing required brief');
+        const message = 'Cannot save: Brief is required. Please add a brief description.';
+        if (!silent) {
+          alert(message);
+        } else {
+          console.warn(message);
+        }
+        return false;
+      }
+
+      const payload = {
+        name: formData.name,
+        brief: formData.brief,
+        due_date: formData.due_date ? new Date(formData.due_date) : null,
+        ...(projectId && { project: projectId }),
+        ...(formData.type && { type: formData.type }),
+        ...(Array.isArray(formData.audience) && { audience: formData.audience }),
+        ...(formData.priority && { priority: formData.priority }),
+        ...(formData.estimated_hours && { estimated_hours: parseInt(formData.estimated_hours) || 0 }),
+        ...(formData.notes && { notes: formData.notes }),
+        ...(formData.tags && { tags: formData.tags }),
+        ...(() => {
+          const normalizedQuality = normalizeScoreValue(formData.brief_quality);
+          return normalizedQuality !== null ? { brief_quality: normalizedQuality } : {};
+        })(),
+        ...(Array.isArray(formData.brief_strengths) && {
+          brief_strengths: formData.brief_strengths
+        }),
+        ...(Array.isArray(formData.brief_improvements) && {
+          brief_improvements: formData.brief_improvements
+        }),
+        ...(selectedItem.created_by && { updated_by: selectedItem.created_by }),
+        ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
+      };
+
+      console.log('💾 [SAVE API] Payload being sent:', payload);
+
+      const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const updatedDeliverable = await response.json();
+        console.log('✅ [SAVE SUCCESS] Deliverable saved successfully');
+
+        setFormData(prev => {
+          const updatedStrengths = normalizeInsightList(
+            updatedDeliverable.brief_strengths ??
+            updatedDeliverable.strengths ??
+            prev.brief_strengths
+          );
+
+          const updatedImprovements = normalizeInsightList(
+            updatedDeliverable.brief_improvements ??
+            updatedDeliverable.improvements ??
+            prev.brief_improvements
+          );
+
+          return {
+            ...prev,
+            name: updatedDeliverable.name || prev.name,
+            brief: updatedDeliverable.brief,
+            due_date: updatedDeliverable.due_date
+              ? new Date(updatedDeliverable.due_date).toISOString().split('T')[0]
+              : prev.due_date,
+            type: updatedDeliverable.type || prev.type,
+            priority: updatedDeliverable.priority || prev.priority,
+            audience: Array.isArray(updatedDeliverable.audience) ? updatedDeliverable.audience : prev.audience,
+            brief_quality: updatedDeliverable.brief_quality ?? prev.brief_quality,
+            brief_strengths: updatedStrengths,
+            brief_improvements: updatedImprovements
+          };
+        });
+
+        if (onItemSelect && selectedItem) {
+          onItemSelect({
+            ...selectedItem,
+            ...updatedDeliverable,
+            type: 'deliverable',
+            metadata: {
+              ...(selectedItem.metadata || {}),
+              deliverableId: updatedDeliverable._id || updatedDeliverable.id,
+              brief: updatedDeliverable.brief,
+              due_date: updatedDeliverable.due_date,
+              project_id:
+                selectedItem.metadata?.project_id ||
+                selectedItem.metadata?.projectId ||
+                updatedDeliverable.project,
+              project_name: selectedItem.metadata?.project_name,
+              client_name: selectedItem.metadata?.client_name,
+              brief_quality: updatedDeliverable.brief_quality ?? selectedItem.metadata?.brief_quality,
+              brief_strengths: normalizeInsightList(updatedDeliverable.brief_strengths ?? updatedDeliverable.strengths ?? []),
+              brief_improvements: normalizeInsightList(updatedDeliverable.brief_improvements ?? updatedDeliverable.improvements ?? [])
+            }
+          });
+        }
+
+        if (!silent) {
+          alert('Deliverable saved successfully!');
+        } else {
+          console.log('💾 [AUTO-SAVE] Deliverable saved silently');
+        }
+
+        return true;
+      }
+
+      let errorMessage = 'Failed to save deliverable changes';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+        console.error('❌ Failed to save deliverable:', errorData);
+      } catch (parseError) {
+        console.error('❌ Failed to parse error response:', parseError);
+      }
+
+      if (!silent) {
+        alert(errorMessage);
+      } else {
+        console.warn('💾 [AUTO-SAVE] Failed to save deliverable:', errorMessage);
+      }
+
+      return false;
+    } catch (error) {
+      console.error('❌ Error saving deliverable:', error);
+      if (!silent) {
+        alert('Error saving deliverable changes');
+      }
+      return false;
+    } finally {
+      if (!silent) {
+        setIsSavingDeliverable(false);
+      }
+    }
+  };
+
+  const persistBriefEvaluation = async ({ qualityScore, strengths = [], improvements = [] }) => {
+    const normalizedQuality = normalizeScoreValue(
+      Number.isFinite(qualityScore) ? qualityScore : Number(qualityScore)
+    );
+    const normalizedStrengths = normalizeInsightList(strengths);
+    const normalizedImprovements = normalizeInsightList(improvements);
+
+    setFormData(prev => ({
+      ...prev,
+      brief_quality: normalizedQuality !== null ? normalizedQuality : prev.brief_quality,
+      brief_strengths: normalizedStrengths,
+      brief_improvements: normalizedImprovements
+    }));
+
+    if (onItemSelect && selectedItem) {
+      onItemSelect({
+        ...selectedItem,
+        brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.brief_quality,
+        brief_strengths: normalizedStrengths,
+        brief_improvements: normalizedImprovements,
+        metadata: {
+          ...(selectedItem.metadata || {}),
+          brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.metadata?.brief_quality,
+          brief_strengths: normalizedStrengths,
+          brief_improvements: normalizedImprovements
+        }
+      });
+    }
+
+    // Immediately save to database
+    const deliverableId = selectedItem?.metadata?.deliverableId 
+      || selectedItem?.metadata?.deliverable_id 
+      || selectedItem?.metadata?.business_entity_id 
+      || selectedItem?._id 
+      || selectedItem?.id;
+      
+    if (deliverableId) {
+      try {
+        const response = await fetch(`/api/deliverables/${deliverableId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            brief_quality: normalizedQuality,
+            brief_strengths: normalizedStrengths,
+            brief_improvements: normalizedImprovements,
+            brief_last_evaluated_at: new Date().toISOString()
+          })
+        });
+
+        if (response.ok) {
+          console.log('✅ Brief evaluation auto-saved to database');
+        } else {
+          console.error('❌ Failed to auto-save brief evaluation');
+        }
+      } catch (error) {
+        console.error('❌ Error auto-saving brief evaluation:', error);
+      }
+    }
   };
 
   const handleBriefSave = (payloadOrBrief, legacyQuality, legacyStrengths, legacyImprovements) => {
@@ -1653,9 +2095,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     setShowImproveBrief(false);
     
     // Auto-save the deliverable after improving the brief
-    setTimeout(() => {
-      handleSaveDeliverable();
-    }, 100); // Small delay to ensure state is updated
+    if (selectedItem?._id) {
+      setTimeout(() => {
+        saveDeliverable({ silent: true });
+      }, 100); // Small delay to ensure state is updated
+    }
   };
 
   const handleAddDeliverable = (project) => {
@@ -1686,170 +2130,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }
   };
 
-  const handleSaveDeliverable = async () => {
-    if (!selectedItem?._id) {
-      console.error('No deliverable ID to save');
-      return;
+  const handleSaveDeliverable = async (event) => {
+    if (event?.preventDefault) {
+      event.preventDefault();
     }
-
-    setIsSavingDeliverable(true);
-    justSavedRef.current = true; // Mark that we're about to save
-    
-    // Safety timeout to reset the flag in case something goes wrong
-    setTimeout(() => {
-      justSavedRef.current = false;
-    }, 5000);
-    
-    try {
-      console.log('💾 [SAVE START] Saving deliverable changes:', formData);
-      console.log('💾 [SAVE START] Current brief being saved:', formData.brief);
-      console.log('💾 [SAVE START] SelectedItem project info:', {
-        project: selectedItem.project,
-        project_id: selectedItem.project_id,
-        metadata: selectedItem.metadata
-      });
-
-      // Ensure we have the required project field
-      const projectId = selectedItem.project || selectedItem.project_id || selectedItem.metadata?.project_id || selectedItem.metadata?.projectId;
-      
-      if (!projectId) {
-        console.error('❌ Missing required project ID');
-        alert('Cannot save: Missing project information. Please refresh the page and try again.');
-        return;
-      }
-
-      // Ensure we have required due_date
-      if (!formData.due_date) {
-        console.error('❌ Missing required due_date');
-        alert('Cannot save: Due date is required. Please set a due date.');
-        return;
-      }
-
-      // Ensure we have required brief
-      if (!formData.brief || formData.brief.trim() === '') {
-        console.error('❌ Missing required brief');
-        alert('Cannot save: Brief is required. Please add a brief description.');
-        return;
-      }
-      
-      // Prepare the payload with proper field mapping
-      const payload = {
-        name: formData.name,
-        brief: formData.brief,
-        // Map UI fields to schema fields
-        due_date: formData.due_date ? new Date(formData.due_date) : null,
-        // Only include project if it exists
-        ...(projectId && { project: projectId }),
-        // Only include type if it's valid according to schema enum
-        ...(formData.type && { type: formData.type }),
-        // Include audience array
-        ...(Array.isArray(formData.audience) && { audience: formData.audience }),
-        // Add any additional fields that exist in formData and schema
-        ...(formData.priority && { priority: formData.priority }),
-        ...(formData.estimated_hours && { estimated_hours: parseInt(formData.estimated_hours) || 0 }),
-        ...(formData.notes && { notes: formData.notes }),
-        ...(formData.tags && { tags: formData.tags }),
-        ...(() => {
-          const normalizedQuality = normalizeScoreValue(formData.brief_quality);
-          return normalizedQuality !== null
-            ? { brief_quality: normalizedQuality }
-            : {};
-        })(),
-        ...(Array.isArray(formData.brief_strengths) && {
-          brief_strengths: formData.brief_strengths
-        }),
-        ...(Array.isArray(formData.brief_improvements) && {
-          brief_improvements: formData.brief_improvements
-        }),
-        // Set updated_by field - use existing user ID if available
-        ...(selectedItem.created_by && { updated_by: selectedItem.created_by }),
-        ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
-      };
-
-      console.log('💾 [SAVE API] Payload being sent:', payload);
-      console.log('💾 [SAVE API] Brief in payload:', payload.brief);
-
-      const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        const updatedDeliverable = await response.json();
-        console.log('✅ [SAVE SUCCESS] Deliverable saved successfully');
-        console.log('✅ [SAVE SUCCESS] Updated deliverable:', updatedDeliverable);
-        console.log('✅ [SAVE SUCCESS] Updated deliverable brief:', updatedDeliverable.brief);
-
-        setFormData(prev => {
-          const updatedStrengths = normalizeInsightList(
-            updatedDeliverable.brief_strengths ??
-            updatedDeliverable.strengths ??
-            prev.brief_strengths
-          );
-
-          const updatedImprovements = normalizeInsightList(
-            updatedDeliverable.brief_improvements ??
-            updatedDeliverable.improvements ??
-            prev.brief_improvements
-          );
-
-          return {
-            ...prev,
-            name: updatedDeliverable.name || prev.name,
-            brief: updatedDeliverable.brief,
-            due_date: updatedDeliverable.due_date
-              ? new Date(updatedDeliverable.due_date).toISOString().split('T')[0]
-              : prev.due_date,
-            type: updatedDeliverable.type || prev.type,
-            priority: updatedDeliverable.priority || prev.priority,
-            audience: Array.isArray(updatedDeliverable.audience) ? updatedDeliverable.audience : prev.audience,
-            brief_quality: updatedDeliverable.brief_quality ?? prev.brief_quality,
-            brief_strengths: updatedStrengths.length ? updatedStrengths : prev.brief_strengths,
-            brief_improvements: updatedImprovements.length ? updatedImprovements : prev.brief_improvements
-          };
-        });
-
-        if (onItemSelect) {
-          onItemSelect({
-            ...selectedItem,
-            ...updatedDeliverable,
-            type: 'deliverable',
-            metadata: {
-              ...(selectedItem.metadata || {}),
-              deliverableId: updatedDeliverable._id || updatedDeliverable.id,
-              brief: updatedDeliverable.brief,
-              due_date: updatedDeliverable.due_date,
-              project_id:
-                selectedItem.metadata?.project_id ||
-                selectedItem.metadata?.projectId ||
-                updatedDeliverable.project,
-              project_name: selectedItem.metadata?.project_name,
-              client_name: selectedItem.metadata?.client_name
-            }
-          });
-        }
-
-        alert('Deliverable saved successfully!');
-      } else {
-        let errorMessage = 'Failed to save deliverable changes';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-          console.error('❌ Failed to save deliverable:', errorData);
-        } catch (parseError) {
-          console.error('❌ Failed to parse error response:', parseError);
-        }
-        alert(errorMessage);
-      }
-    } catch (error) {
-      console.error('❌ Error saving deliverable:', error);
-      alert('Error saving deliverable changes');
-    } finally {
-      setIsSavingDeliverable(false);
-    }
+    await saveDeliverable({ silent: false });
   };
 
 
@@ -3072,10 +3357,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             currentBrief={formData.brief}
             deliverable={selectedItem}
             projectData={{
-              name: selectedItem?.metadata?.project_name || 'Unknown Project',
-              client_name: selectedItem?.metadata?.client_name || 'Unknown Client',
-              industry: selectedItem?.metadata?.industry || 'General'
+              ...projectDataForAi
             }}
+            onEvaluationSave={persistBriefEvaluation}
           />
         )}
 

@@ -226,7 +226,8 @@ export default function ImproveBriefModal({
   onSave,
   currentBrief = '',
   deliverable = {},
-  projectData = {}
+  projectData = {},
+  onEvaluationSave
 }) {
   const [editableBrief, setEditableBrief] = useState('');
   const [currentBriefDraft, setCurrentBriefDraft] = useState('');
@@ -237,6 +238,7 @@ export default function ImproveBriefModal({
   const [qualityScore, setQualityScore] = useState(null);
   const [improvements, setImprovements] = useState([]);
   const [strengths, setStrengths] = useState([]);
+  const [autoScoreTimer, setAutoScoreTimer] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [customInstructions, setCustomInstructions] = useState('');
   const [changeSummary, setChangeSummary] = useState([]);
@@ -309,6 +311,42 @@ export default function ImproveBriefModal({
       setAiExpectedScore(null);
     }
   }, [isOpen, currentBriefText, currentBrief]);
+
+  // Auto-test brief when modal opens with content
+  useEffect(() => {
+    if (isOpen && currentBriefText.trim() && currentBriefText.trim().length > 50) {
+      const timer = setTimeout(() => {
+        console.log('🤖 Auto-testing brief on modal open...');
+        handleTestBrief(true);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  // Auto-test brief when content changes (debounced)
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const briefContent = editableBrief.trim();
+    if (!briefContent || briefContent.length < 50) return; // Only test if substantial content
+    
+    // Clear previous timer
+    if (autoScoreTimer) {
+      clearTimeout(autoScoreTimer);
+    }
+    
+    // Set new timer for auto-test (3 seconds after user stops typing)
+    const timer = setTimeout(() => {
+      console.log('🤖 Auto-testing brief after content change...');
+      handleTestBrief(true);
+    }, 3000);
+    
+    setAutoScoreTimer(timer);
+    
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [editableBrief, isOpen]);
 
   const improveBrief = async () => {
     const originalBrief = currentBriefDraft.trim();
@@ -544,21 +582,59 @@ export default function ImproveBriefModal({
     }
   };
 
-  const handleTestBrief = async () => {
+  // Save brief evaluation directly to database
+  const saveBriefEvaluationToDatabase = async (qualityScore, strengths, improvements) => {
+    try {
+      const deliverableId = deliverable._id || deliverable.id;
+      if (!deliverableId) {
+        console.warn('No deliverable ID for database save');
+        return;
+      }
+
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          brief_quality: qualityScore,
+          brief_strengths: strengths,
+          brief_improvements: improvements,
+          brief_last_evaluated_at: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save brief evaluation to database');
+      }
+
+      console.log('✅ Brief evaluation saved to database');
+    } catch (error) {
+      console.error('❌ Failed to save brief evaluation to database:', error);
+    }
+  };
+
+  const handleTestBrief = async (autoTest = false) => {
     const briefToScore = editableBrief.trim() || currentBriefDraft.trim();
     if (!briefToScore) {
-      setError('Add brief content before testing.');
+      if (!autoTest) {
+        setError('Add brief content before testing.');
+      }
       return;
     }
 
     const deliverableId = deliverable._id || deliverable.id;
     if (!deliverableId) {
-      setError('Unable to determine deliverable ID for scoring.');
+      if (!autoTest) {
+        setError('Unable to determine deliverable ID for scoring.');
+      }
       return;
     }
 
     setIsTesting(true);
-    setError('');
+    if (!autoTest) {
+      setError('');
+    }
 
     try {
       const response = await fetch('/api/ai/score-brief', {
@@ -638,6 +714,23 @@ export default function ImproveBriefModal({
       setQualityScore(normalizedQuality);
       setImprovements(Array.isArray(scoredImprovements) ? scoredImprovements : []);
       setStrengths(Array.isArray(scoredStrengths) ? scoredStrengths : []);
+
+      // Auto-save evaluation to database
+      if (onEvaluationSave) {
+        try {
+          await onEvaluationSave({
+            qualityScore: normalizedQuality,
+            strengths: Array.isArray(scoredStrengths) ? scoredStrengths : [],
+            improvements: Array.isArray(scoredImprovements) ? scoredImprovements : []
+          });
+          console.log('✅ Brief evaluation auto-saved to database');
+        } catch (autoSaveError) {
+          console.error('❌ Error auto-saving brief evaluation:', autoSaveError);
+        }
+      }
+
+      // Also save to deliverable in database immediately
+      await saveBriefEvaluationToDatabase(normalizedQuality, scoredStrengths, scoredImprovements);
     } catch (scoreError) {
       console.error('Error scoring brief:', scoreError);
       setError(scoreError.message || 'Failed to score brief. Please try again.');

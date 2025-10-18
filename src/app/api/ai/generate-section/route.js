@@ -97,59 +97,71 @@ export async function POST(request) {
       if (framework === 'market_sizing') {
         // Phase 1: Market Sizing (no dependencies)
         agentPayload = {
-          message: `Analyze the market size for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}.`,
+          message: `Analyze the market size for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           project_context: baseContext.project,
           deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client
+          client_context: baseContext.client,
+          format: 'json',
+          output_format: 'json'
         };
       } else if (framework === 'competitive_landscape') {
         // Phase 1: Competitive Landscape (no dependencies)
         agentPayload = {
-          message: `Analyze the competitive landscape for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}.`,
+          message: `Analyze the competitive landscape for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           project_context: baseContext.project,
           deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client
+          client_context: baseContext.client,
+          format: 'json',
+          output_format: 'json'
         };
       } else if (framework === 'capability_benchmark') {
         // Phase 2: Capability Benchmark (depends on competitive_landscape)
         agentPayload = {
-          message: `Conduct a capability benchmark for ${baseContext.client.name || 'the client'} against competitors, using insights from the competitive landscape analysis.`,
+          message: `Conduct a capability benchmark for ${baseContext.client.name || 'the client'} against competitors, using insights from the competitive landscape analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           project_context: baseContext.project,
           deliverable_context: baseContext.deliverable,
           client_context: baseContext.client,
-          competitive_landscape_data: dependencies.competitive_landscape || null
+          competitive_landscape_data: dependencies.competitive_landscape || null,
+          format: 'json',
+          output_format: 'json'
         };
       } else if (framework === 'strategic_options') {
         // Phase 3: Strategic Options (depends on market_sizing, competitive_landscape, capability_benchmark)
         agentPayload = {
-          message: `Develop strategic options for ${baseContext.client.name || 'the client'} based on market sizing, competitive landscape, and capability analysis.`,
+          message: `Develop strategic options for ${baseContext.client.name || 'the client'} based on market sizing, competitive landscape, and capability analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           project_context: baseContext.project,
           deliverable_context: baseContext.deliverable,
           client_context: baseContext.client,
           market_sizing_data: dependencies.market_sizing || null,
           competitive_landscape_data: dependencies.competitive_landscape || null,
-          capability_benchmark_data: dependencies.capability_benchmark || null
+          capability_benchmark_data: dependencies.capability_benchmark || null,
+          format: 'json',
+          output_format: 'json'
         };
       } else if (framework === 'partnerships') {
         // Phase 4: Partnership Strategy (depends on strategic_options)
         agentPayload = {
-          message: `Develop partnership strategy for ${baseContext.client.name || 'the client'} based on strategic options analysis.`,
+          message: `Develop partnership strategy for ${baseContext.client.name || 'the client'} based on strategic options analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           project_context: baseContext.project,
           deliverable_context: baseContext.deliverable,
           client_context: baseContext.client,
-          strategic_options_data: dependencies.strategic_options || null
+          strategic_options_data: dependencies.strategic_options || null,
+          format: 'json',
+          output_format: 'json'
         };
       } else {
         // Fallback for unsupported frameworks
         agentPayload = {
-          message: `Generate comprehensive section content for ${framework} framework.`,
+          message: `Generate comprehensive section content for ${framework} framework. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
           context: {
             framework,
             projectData,
             deliverableData,
             clientData,
             dependencies
-          }
+          },
+          format: 'json',
+          output_format: 'json'
         };
       }
       
@@ -210,10 +222,62 @@ export async function POST(request) {
       }
 
       const agentResult = await response.json();
-      console.log(`✅ Section generated for ${framework}:`, agentResult);
+      
+      // LOG RAW AI AGENT RESPONSE FOR DEBUGGING
+      console.log('');
+      console.log('🤖 ========== RAW AI AGENT RESPONSE START ==========');
+      console.log(`Framework: ${framework}`);
+      console.log(`Agent ID: ${agentId}`);
+      try {
+        console.log('Raw Response JSON:', JSON.stringify(agentResult, null, 2));
+      } catch (stringifyError) {
+        console.log('Raw Response (non-serializable):', agentResult);
+      }
+      console.log('Response Type:', typeof agentResult);
+      console.log('Response Keys:', Object.keys(agentResult || {}));
+      console.log('Has "data" field:', 'data' in (agentResult || {}));
+      console.log('Has "response" field:', 'response' in (agentResult || {}));
+      console.log('Has "content" field:', 'content' in (agentResult || {}));
+      console.log('🤖 ========== RAW AI AGENT RESPONSE END ==========');
+      console.log('');
 
       // Parse and normalize the response
       const sectionData = parseSectionResponse(agentResult, framework, sectionIndex);
+      
+      // Check if parsing failed and we need to use fallback
+      if (sectionData.status === 'fallback_used' || sectionData.status === 'needs_regeneration') {
+        console.log('⚠️ Section parsing indicated fallback needed, using fallback content with charts');
+        
+        // Use the fallback content generator to get proper structured data with charts
+        const fallbackJson = generateFallbackContent(framework, agentResult.response);
+        const fallbackData = JSON.parse(fallbackJson);
+        const fallbackSectionData = parseSectionResponse({
+          response: fallbackJson,
+          success: true,
+          source: 'fallback-data'
+        }, framework, sectionIndex);
+        
+        return NextResponse.json({
+          success: true,
+          source: 'fallback-data',
+          framework,
+          agentId: 'fallback',
+          sectionIndex,
+          rawAgentResponse: agentResult,
+          aiReturnedPlainText: true,
+          data: fallbackSectionData
+        });
+      }
+      
+      console.log('');
+      console.log('📦 ========== PARSED SECTION DATA ==========');
+      try {
+        console.log('Parsed Section Data:', JSON.stringify(sectionData, null, 2));
+      } catch (stringifyError) {
+        console.log('Parsed Section Data (non-serializable):', sectionData);
+      }
+      console.log('📦 ========== PARSED SECTION DATA END ==========');
+      console.log('');
 
       return NextResponse.json({
         success: true,
@@ -221,6 +285,7 @@ export async function POST(request) {
         framework,
         agentId,
         sectionIndex,
+        rawAgentResponse: agentResult, // Include raw response for debugging
         data: sectionData
       });
 
