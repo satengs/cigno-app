@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Button from '../ui/buttons/Button';
 import ImproveBriefModal from '../ui/ImproveBriefModal';
 import { FileText, Wand2, Save, ArrowLeft, X, Sparkles, BookOpen } from 'lucide-react';
-import { normalizeScoreValue } from '../../utils/scoreUtils';
+import { normalizeScoreValue, isScoreAboveThreshold } from '../../utils/scoreUtils';
 
 const normalizeInsightList = (value) => {
   if (!value) return [];
@@ -51,6 +51,7 @@ export default function DeliverableSettingsPage({
   const [showImproveBriefModal, setShowImproveBriefModal] = useState(false);
 
   const qualityScore = normalizeScoreValue(formData.briefQuality);
+  const storylineScoreThreshold = 7.5;
 
   const recognizedStrengths = Array.isArray(formData.recognizedStrengths)
     ? formData.recognizedStrengths
@@ -63,7 +64,8 @@ export default function DeliverableSettingsPage({
   const qualityPercent = qualityScore !== null
     ? Math.min(100, Math.max(0, (qualityScore / 10) * 100))
     : 0;
-  const canGenerateStoryline = true; // No score threshold restrictions
+  const meetsScoreThreshold = qualityScore !== null && isScoreAboveThreshold(qualityScore, storylineScoreThreshold);
+  const canGenerateStoryline = meetsScoreThreshold;
 
   useEffect(() => {
     if (deliverable) {
@@ -531,6 +533,13 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
             {!formData.brief.trim() && (
               <p className="text-amber-600 text-xs mt-2">
                 A brief is required to generate a storyline.
+              </p>
+            )}
+            {formData.brief.trim() && !canGenerateStoryline && (
+              <p className="text-amber-600 text-xs mt-2">
+                {qualityScore === null
+                  ? 'Test brief first to get a quality score before generating storyline.'
+                  : `Brief quality score must be ${storylineScoreThreshold} or higher to generate storyline.`}
               </p>
             )}
           </div>

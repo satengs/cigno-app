@@ -113,6 +113,17 @@ const Button = React.forwardRef(({
     }
   };
 
+  const disabledStyles = {
+    backgroundColor: '#e5e7eb',
+    color: '#9ca3af',
+    borderColor: '#e5e7eb',
+    boxShadow: 'none',
+    cursor: 'not-allowed'
+  };
+
+  const resolvedBaseStyles = getButtonStyles();
+  const isDisabled = disabled || loading;
+
   return (
     <button
       ref={ref}
@@ -122,21 +133,23 @@ const Button = React.forwardRef(({
         sizes[size],
         className
       )}
-      style={getButtonStyles()}
+      style={isDisabled ? { ...resolvedBaseStyles, ...disabledStyles } : resolvedBaseStyles}
       onMouseEnter={(e) => {
+        if (isDisabled) return;
         const hoverStyles = getHoverStyles();
-        Object.assign(e.target.style, hoverStyles);
+        Object.assign(e.currentTarget.style, hoverStyles);
       }}
       onMouseLeave={(e) => {
-        const originalStyles = getButtonStyles();
-        Object.assign(e.target.style, originalStyles);
+        if (isDisabled) return;
+        Object.assign(e.currentTarget.style, resolvedBaseStyles);
       }}
       onFocus={(e) => {
-        e.target.style.boxShadow = '0 0 0 2px rgba(147, 51, 234, 0.2)';
+        if (isDisabled) return;
+        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(147, 51, 234, 0.2)';
       }}
       onBlur={(e) => {
-        const originalStyles = getButtonStyles();
-        e.target.style.boxShadow = originalStyles.boxShadow || 'none';
+        if (isDisabled) return;
+        e.currentTarget.style.boxShadow = resolvedBaseStyles.boxShadow || 'none';
       }}
       disabled={disabled || loading}
       {...props}
