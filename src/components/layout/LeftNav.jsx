@@ -167,7 +167,7 @@ const [selectedNavItem, setSelectedNavItem] = useState(null);
         const clients = [];
         const projects = [];
         const users = [
-          { id: 'user1', first_name: 'Sarah', last_name: 'Johnson', name: 'Sarah Johnson' },
+          { id: 'user1', first_name: 'Philippe', last_name: 'Reynier', name: 'Philippe Reynier' },
           { id: 'user2', first_name: 'Michael', last_name: 'Chen', name: 'Michael Chen' },
           { id: 'user3', first_name: 'Emma', last_name: 'Williams', name: 'Emma Williams' },
           { id: 'user4', first_name: 'David', last_name: 'Brown', name: 'David Brown' },
@@ -1652,11 +1652,11 @@ const mapProjectStatusToMenu = (status) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>SJ</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>PR</span>
               </div>
               {!isCollapsed && (
                 <div>
-                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>Sarah Johnson</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>Philippe Reynier</p>
                 </div>
               )}
             </div>

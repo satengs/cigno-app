@@ -5,6 +5,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import Modal from './modals/Modal';
 import Button from './buttons/Button';
 import { normalizeScoreValue } from '../../utils/scoreUtils';
+import { saveBriefQuality, testBriefQuality } from '../../lib/services/BriefService';
 
 const normalizeInsightList = (value, visited = new Set()) => {
   if (!value) return [];
@@ -24,10 +25,14 @@ const normalizeInsightList = (value, visited = new Set()) => {
   }
 
   if (typeof value === 'string') {
+    // Split only on actual bullet separators, not all dashes or hyphens
     return value
-      .split(/[\n\r•\-;]+/)
-      .map(item => item.replace(/^[-•\d.\s]+/, '').trim())
-      .filter(Boolean);
+      .split(/[\n\r]+/)  // Only split on newlines, not on dashes
+      .map(item => {
+        // Remove leading bullet characters and numbers
+        return item.replace(/^[•\-\*\d.\s]+/, '').trim();
+      })
+      .filter(item => item.length > 0);
   }
 
   return [String(value).trim()].filter(Boolean);
@@ -292,16 +297,44 @@ export default function ImproveBriefModal({
 
   useEffect(() => {
     if (isOpen) {
+      console.log('');
+      console.log('🔓 ========== MODAL OPENING ==========');
+      console.log('Deliverable object:', deliverable);
+      console.log('deliverable.brief_quality:', deliverable?.brief_quality);
+      console.log('deliverable.briefQuality:', deliverable?.briefQuality);
+      console.log('deliverable.brief_strengths:', deliverable?.brief_strengths);
+      console.log('deliverable.brief_improvements:', deliverable?.brief_improvements);
+      console.log('currentBrief:', typeof currentBrief, currentBrief);
+      
       setEditableBrief(currentBriefText);
       setCurrentBriefDraft(currentBriefText);
+      
+      // Load current quality score from deliverable
       const initialQuality = normalizeScoreValue(
         deliverable?.brief_quality ??
         deliverable?.briefQuality ??
         (typeof currentBrief === 'object' ? currentBrief?.qualityScore : null)
       );
+      
+      const initialStrengths = deliverable?.brief_strengths 
+        || deliverable?.strengths 
+        || (typeof currentBrief === 'object' ? currentBrief?.strengths : null)
+        || [];
+        
+      const initialImprovements = deliverable?.brief_improvements 
+        || deliverable?.improvements
+        || (typeof currentBrief === 'object' ? currentBrief?.improvements : null)
+        || [];
+      
+      console.log('📊 [MODAL OPEN] Loaded quality score:', initialQuality);
+      console.log('📊 [MODAL OPEN] Loaded strengths:', initialStrengths.length, 'items');
+      console.log('📊 [MODAL OPEN] Loaded improvements:', initialImprovements.length, 'items');
+      console.log('🔓 ========== END MODAL OPEN ==========');
+      console.log('');
+      
       setQualityScore(initialQuality);
-      setImprovements([]);
-      setStrengths([]);
+      setImprovements(initialImprovements);
+      setStrengths(initialStrengths);
       setIsTesting(false);
       setHasImproved(false);
       setError('');
@@ -310,43 +343,7 @@ export default function ImproveBriefModal({
       setAiRationale('');
       setAiExpectedScore(null);
     }
-  }, [isOpen, currentBriefText, currentBrief]);
-
-  // Auto-test brief when modal opens with content
-  useEffect(() => {
-    if (isOpen && currentBriefText.trim() && currentBriefText.trim().length > 50) {
-      const timer = setTimeout(() => {
-        console.log('🤖 Auto-testing brief on modal open...');
-        handleTestBrief(true);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen]);
-
-  // Auto-test brief when content changes (debounced)
-  useEffect(() => {
-    if (!isOpen) return;
-    
-    const briefContent = editableBrief.trim();
-    if (!briefContent || briefContent.length < 50) return; // Only test if substantial content
-    
-    // Clear previous timer
-    if (autoScoreTimer) {
-      clearTimeout(autoScoreTimer);
-    }
-    
-    // Set new timer for auto-test (3 seconds after user stops typing)
-    const timer = setTimeout(() => {
-      console.log('🤖 Auto-testing brief after content change...');
-      handleTestBrief(true);
-    }, 3000);
-    
-    setAutoScoreTimer(timer);
-    
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [editableBrief, isOpen]);
+  }, [isOpen, currentBriefText, currentBrief, deliverable]);
 
   const improveBrief = async () => {
     const originalBrief = currentBriefDraft.trim();
@@ -524,21 +521,38 @@ export default function ImproveBriefModal({
         payload?.rationale ||
         payload?.insight ||
         '';
+      
+      // Extract expected score
       const expectedScoreValue =
         primarySuggestion?.expected_score ??
         primarySuggestion?.expectedScore ??
         payload?.expected_score ??
         payload?.expectedScore;
+      
+      console.log('📊 [IMPROVE] Raw expected_score from API:', expectedScoreValue);
+      console.log('📊 [IMPROVE] Type:', typeof expectedScoreValue);
+      
+      // normalizeScoreValue already handles 0-100 to 0-10 conversion
       const normalizedExpectedScore = normalizeScoreValue(expectedScoreValue);
+      
+      console.log('📊 [IMPROVE] Normalized expected_score:', normalizedExpectedScore);
+      console.log('📊 [IMPROVE] Will set aiExpectedScore state to:', normalizedExpectedScore);
 
       setEditableBrief(htmlToText(improvedHtml));
-      setQualityScore(normalizedQuality);
-      setImprovements(normalizedImprovements);
-      setStrengths(normalizedStrengths);
       setChangeSummary(normalizedChanges);
       setAiRationale(rationaleText);
       setAiExpectedScore(normalizedExpectedScore);
       setHasImproved(true);
+      
+      console.log('');
+      console.log('✅ ========== IMPROVE BRIEF COMPLETE ==========');
+      console.log('Improved text set:', htmlToText(improvedHtml).substring(0, 100) + '...');
+      console.log('Changes made:', normalizedChanges.length, 'items');
+      console.log('AI rationale:', rationaleText);
+      console.log('aiExpectedScore STATE SET TO:', normalizedExpectedScore);
+      console.log('hasImproved STATE SET TO:', true);
+      console.log('✅ ========== END IMPROVE ==========');
+      console.log('');
     } catch (error) {
       console.error('Error improving brief:', error);
       setError(error.message || 'Failed to improve brief. Please try again.');
@@ -560,180 +574,89 @@ export default function ImproveBriefModal({
 
     try {
       const htmlBrief = textToHtml(briefToSave);
-      if (onSave) {
-        const strengthsArray = Array.isArray(strengths) ? strengths : normalizeInsightList(strengths);
-        const improvementsArray = Array.isArray(improvements) ? improvements : normalizeInsightList(improvements);
+      const strengthsArray = Array.isArray(strengths) ? strengths : normalizeInsightList(strengths);
+      const improvementsArray = Array.isArray(improvements) ? improvements : normalizeInsightList(improvements);
 
+      console.log('');
+      console.log('💾 ========== SAVE FROM POPUP ==========');
+      console.log('Brief content length:', htmlBrief.length);
+      console.log('Current qualityScore state:', qualityScore);
+      console.log('Expected score after improvements:', aiExpectedScore);
+      console.log('Has improved?:', hasImproved);
+      console.log('Strengths count:', strengthsArray.length);
+      console.log('Improvements count:', improvementsArray.length);
+      
+      // If brief was improved but not tested, use the expected score
+      const scoreToSave = hasImproved && aiExpectedScore !== null ? aiExpectedScore : qualityScore;
+      
+      console.log('Score that will be saved:', scoreToSave);
+      console.log('💾 ========== END SAVE INFO ==========');
+      console.log('');
+
+      // Save brief and quality using callback
+      if (onSave) {
         await onSave({
           brief: htmlBrief,
-          qualityScore: Number.isFinite(qualityScore) ? Number(qualityScore.toFixed(1)) : null,
+          qualityScore: scoreToSave,
           strengths: strengthsArray,
-          improvements: improvementsArray,
-          strengthsText: strengthsArray.join('; '),
-          improvementsText: improvementsArray.join('; ')
+          improvements: improvementsArray
         });
       }
+      
       onClose();
     } catch (error) {
-      console.error('Error saving improved brief:', error);
+      console.error('❌ Error saving improved brief:', error);
       setError(error.message || 'Failed to save improved brief. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Save brief evaluation directly to database
-  const saveBriefEvaluationToDatabase = async (qualityScore, strengths, improvements) => {
-    try {
-      const deliverableId = deliverable._id || deliverable.id;
-      if (!deliverableId) {
-        console.warn('No deliverable ID for database save');
-        return;
-      }
 
-      const response = await fetch(`/api/deliverables/${deliverableId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          brief_quality: qualityScore,
-          brief_strengths: strengths,
-          brief_improvements: improvements,
-          brief_last_evaluated_at: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save brief evaluation to database');
-      }
-
-      console.log('✅ Brief evaluation saved to database');
-    } catch (error) {
-      console.error('❌ Failed to save brief evaluation to database:', error);
-    }
-  };
-
-  const handleTestBrief = async (autoTest = false) => {
+  const handleTestBrief = async () => {
     const briefToScore = editableBrief.trim() || currentBriefDraft.trim();
     if (!briefToScore) {
-      if (!autoTest) {
-        setError('Add brief content before testing.');
-      }
+      setError('Add brief content before testing.');
       return;
     }
 
     const deliverableId = deliverable._id || deliverable.id;
     if (!deliverableId) {
-      if (!autoTest) {
-        setError('Unable to determine deliverable ID for scoring.');
-      }
+      setError('Unable to determine deliverable ID.');
       return;
     }
 
     setIsTesting(true);
-    if (!autoTest) {
-      setError('');
-    }
+    setError('');
 
     try {
-      const response = await fetch('/api/ai/score-brief', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
+      // Use centralized service with FULL context (same as improve-brief)
+      const qualityData = await testBriefQuality(
+        deliverableId,
+        briefToScore,
+        {
+          title: deliverable.name,
+          type: deliverable.type,
+          audience: deliverable.audience,
+          priority: deliverable.priority,
+          dueDate: deliverable.due_date,
+          summary: buildDeliverableSummary()
         },
-        body: JSON.stringify({
-          deliverableId,
-          currentBrief: briefToScore,
-          deliverableData: {
-            title: deliverable.name,
-            type: deliverable.type,
-            audience: deliverable.audience,
-            priority: deliverable.priority,
-            dueDate: deliverable.due_date,
-            summary: buildDeliverableSummary()
-          },
-          projectData: {
-            ...projectData,
-            summary: buildProjectSummary()
-          }
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || result?.error) {
-        throw new Error(result?.error || result?.details || 'Failed to score brief.');
-      }
-
-      const payload = result.data || result;
-      const candidateNodes = collectCandidateNodes(payload);
-
-      const scoredQuality = extractNumberFromNodes(candidateNodes, [
-        'qualityScore',
-        'score',
-        'rating',
-        'overallScore',
-        'briefQuality',
-        'quality',
-        'total_score'
-      ]);
-
-      let scoredImprovements = extractListFromNodes(candidateNodes, [
-        'suggestedImprovements',
-        'suggested_improvements',
-        'improvements',
-        'improvementAreas',
-        'improvement_areas',
-        'areasForImprovement',
-        'areas_for_improvement',
-        'gaps',
-        'opportunities',
-        'nextSteps',
-        'recommendedImprovements'
-      ]);
-
-      let scoredStrengths = extractListFromNodes(candidateNodes, [
-        'recognizedStrengths',
-        'recognized_strengths',
-        'strengths',
-        'highlights',
-        'positives',
-        'whatWentWell'
-      ]);
-
-      if (!scoredImprovements.length && payload.improvements) {
-        scoredImprovements = normalizeInsightList(payload.improvements);
-      }
-      if (!scoredStrengths.length && payload.strengths) {
-        scoredStrengths = normalizeInsightList(payload.strengths);
-      }
-
-      const normalizedQuality = normalizeScoreValue(scoredQuality);
-
-      setQualityScore(normalizedQuality);
-      setImprovements(Array.isArray(scoredImprovements) ? scoredImprovements : []);
-      setStrengths(Array.isArray(scoredStrengths) ? scoredStrengths : []);
-
-      // Auto-save evaluation to database
-      if (onEvaluationSave) {
-        try {
-          await onEvaluationSave({
-            qualityScore: normalizedQuality,
-            strengths: Array.isArray(scoredStrengths) ? scoredStrengths : [],
-            improvements: Array.isArray(scoredImprovements) ? scoredImprovements : []
-          });
-          console.log('✅ Brief evaluation auto-saved to database');
-        } catch (autoSaveError) {
-          console.error('❌ Error auto-saving brief evaluation:', autoSaveError);
+        {
+          ...projectData,
+          summary: buildProjectSummary()
         }
-      }
+      );
 
-      // Also save to deliverable in database immediately
-      await saveBriefEvaluationToDatabase(normalizedQuality, scoredStrengths, scoredImprovements);
-    } catch (scoreError) {
-      console.error('Error scoring brief:', scoreError);
-      setError(scoreError.message || 'Failed to score brief. Please try again.');
+      // Update UI state
+      setQualityScore(qualityData.score);
+      setImprovements(qualityData.improvements);
+      setStrengths(qualityData.strengths);
+
+      console.log('✅ Test complete and saved');
+    } catch (error) {
+      console.error('❌ Test failed:', error);
+      setError(error.message);
     } finally {
       setIsTesting(false);
     }
@@ -772,73 +695,61 @@ export default function ImproveBriefModal({
       className="h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] my-6 overflow-hidden flex flex-col"
     >
       <div className="flex flex-col gap-4 flex-1 overflow-hidden min-h-0">
-        {hasInsights && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {qualityScore !== null && (
-              <div className={`rounded-lg p-3 border ${qualityStyles.card}`}>
-                <div className="flex items-center justify-between">
-                  <p className={`text-sm font-medium ${qualityStyles.title}`}>Quality Score</p>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${qualityStyles.badge}`}>
-                    {qualityStyles.statusLabel}
-                  </span>
-                </div>
-                <p className={`text-2xl font-semibold ${qualityStyles.value}`}>{qualityScore.toFixed(1)} / 10</p>
-                <p className={`text-xs mt-1 ${qualityStyles.note}`}>{qualityStyles.caption}</p>
+        {/* Score Cards - Always visible */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {qualityScore !== null && (
+            <div className={`rounded-lg p-3 border ${qualityStyles.card}`}>
+              <div className="flex items-center justify-between">
+                <p className={`text-sm font-medium ${qualityStyles.title}`}>Current Brief Score</p>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${qualityStyles.badge}`}>
+                  {qualityStyles.statusLabel}
+                </span>
               </div>
-            )}
-            {formattedExpectedScore !== null && (
-              <div className={`rounded-lg p-3 border ${expectedStyles.card}`}>
-                <div className="flex items-center justify-between">
-                  <p className={`text-sm font-medium ${expectedStyles.title}`}>Projected Brief Score</p>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${expectedStyles.badge}`}>
-                    {expectedStyles.statusLabel}
-                  </span>
-                </div>
-                <p className={`text-2xl font-semibold ${expectedStyles.value}`}>{formattedExpectedScore} / 10</p>
-                <p className={`text-xs mt-1 ${expectedStyles.note}`}>AI estimate after applying the suggested changes.</p>
+              <p className={`text-2xl font-semibold ${qualityStyles.value}`}>{qualityScore.toFixed(1)} / 10</p>
+              <p className={`text-xs mt-1 ${qualityStyles.note}`}>{qualityStyles.caption}</p>
+            </div>
+          )}
+          {formattedExpectedScore !== null && hasImproved && (
+            <div className={`rounded-lg p-3 border ${expectedStyles.card}`}>
+              <div className="flex items-center justify-between">
+                <p className={`text-sm font-medium ${expectedStyles.title}`}>After Improvements</p>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${expectedStyles.badge}`}>
+                  {expectedStyles.statusLabel}
+                </span>
               </div>
-            )}
-            {strengths.length > 0 && (
-              <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-3">
-                <p className="text-sm font-medium text-emerald-800">Recognized Strengths</p>
-                <ul className="mt-2 space-y-1 text-xs text-emerald-700">
-                  {strengths.slice(0, 5).map((item, index) => (
-                    <li key={index}>• {item}</li>
-                  ))}
-                  {strengths.length > 5 && (
-                    <li>• +{strengths.length - 5} additional strengths</li>
-                  )}
-                </ul>
-              </div>
-            )}
-            {improvements.length > 0 && (
-              <div className="border border-blue-200 bg-blue-50 rounded-lg p-3">
-                <p className="text-sm font-medium text-blue-800">Suggested Improvements</p>
-                <ul className="mt-2 space-y-1 text-xs text-blue-700">
-                  {improvements.slice(0, 5).map((item, index) => (
-                    <li key={index}>• {item}</li>
-                  ))}
-                  {improvements.length > 5 && (
-                    <li>• +{improvements.length - 5} additional suggestions</li>
-                  )}
-                </ul>
-              </div>
-            )}
-            {changeSummary.length > 0 && (
-              <div className="border border-purple-200 bg-purple-50 rounded-lg p-3">
-                <p className="text-sm font-medium text-purple-800">Key Updates Applied</p>
-                <ul className="mt-2 space-y-1 text-xs text-purple-700">
-                  {changeSummary.slice(0, 5).map((item, index) => (
-                    <li key={index}>• {item}</li>
-                  ))}
-                  {changeSummary.length > 5 && (
-                    <li>• +{changeSummary.length - 5} additional updates</li>
-                  )}
-                </ul>
-              </div>
-            )}
+              <p className={`text-2xl font-semibold ${expectedStyles.value}`}>{formattedExpectedScore} / 10</p>
+              <p className={`text-xs mt-1 ${expectedStyles.note}`}>Estimated score with AI improvements</p>
+            </div>
+          )}
+        </div>
+
+        {/* Feedback - Only show suggestions before improving */}
+        {!hasImproved && improvements.length > 0 && (
+          <div className="border border-blue-200 bg-blue-50 rounded-lg p-3">
+            <p className="text-sm font-medium text-blue-800 mb-2">Suggestions to Improve</p>
+            <ul className="space-y-1 text-xs text-blue-700">
+              {improvements.slice(0, 4).map((item, index) => (
+                <li key={index}>• {item}</li>
+              ))}
+              {improvements.length > 4 && (
+                <li className="text-blue-600 font-medium mt-1">+{improvements.length - 4} more suggestions</li>
+              )}
+            </ul>
           </div>
         )}
+        
+        {/* Changes - Only show after improving */}
+        {hasImproved && changeSummary.length > 0 && (
+          <div className="border border-purple-200 bg-purple-50 rounded-lg p-3">
+            <p className="text-sm font-medium text-purple-800 mb-2">AI Improvements Applied</p>
+            <ul className="space-y-1 text-xs text-purple-700">
+              {changeSummary.map((item, index) => (
+                <li key={index}>• {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
 
         {isBelowThreshold && (
           <div className="border border-red-200 bg-red-50 text-xs text-red-700 rounded-lg p-3">

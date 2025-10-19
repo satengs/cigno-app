@@ -912,6 +912,10 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             const deliverableData = data.data?.deliverable || data.data || data;
             
             console.log('✅ Fetched deliverable data:', deliverableData);
+            console.log('📊 Brief quality from DB:', deliverableData.brief_quality);
+            console.log('📊 Brief strengths from DB:', deliverableData.brief_strengths);
+            console.log('📊 Brief improvements from DB:', deliverableData.brief_improvements);
+            
             const strengthsFromData = normalizeInsightList(
               deliverableData.brief_strengths ??
               deliverableData.strengths ??
@@ -930,16 +934,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             
             const qualityFromData = normalizeScoreValue(
               deliverableData.brief_quality ??
-              selectedItem.brief_quality ??
-              7.5
-            ) ?? 7.5;
+              selectedItem.brief_quality
+            );
 
             const briefToSet = deliverableData.brief || selectedItem.brief || 'Global Banking Corp requires a comprehensive strategy for implementing Central Bank Digital Currency (CBDC) capabilities. The presentation should address technical infrastructure requirements, regulatory compliance considerations, and strategic positioning for competitive advantage in the evolving digital currency landscape.';
             console.log('🎯 [USEEFFECT] Setting form brief to:', briefToSet);
             console.log('🎯 [USEEFFECT] deliverableData.brief:', deliverableData.brief);
             console.log('🎯 [USEEFFECT] selectedItem.brief:', selectedItem.brief);
             
-            setFormData({
+            const formDataToSet = {
               name: deliverableData.name || selectedItem.name || 'CBDC Implementation Strategy for Global Banking',
               audience: deliverableData.audience || selectedItem.audience || ['Board of Directors', 'Technical Teams', 'Sarah Mitchell (CEO)'],
               type: deliverableData.type || selectedItem.type || 'Strategy Presentation',
@@ -947,9 +950,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                        selectedItem.due_date ? new Date(selectedItem.due_date).toISOString().split('T')[0] : '2025-02-15',
               brief: briefToSet,
               brief_quality: qualityFromData,
-              brief_strengths: strengthsFromData.length ? strengthsFromData : [],
-              brief_improvements: improvementsFromData.length ? improvementsFromData : []
-            });
+              brief_strengths: strengthsFromData,
+              brief_improvements: improvementsFromData
+            };
+            
+            console.log('💾 Setting formData with brief_quality:', formDataToSet.brief_quality);
+            setFormData(formDataToSet);
 
             await loadProjectContext(deliverableData, metadata);
           } else {
@@ -1757,17 +1763,32 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         improvementsList = normalizeInsightList(payload.improvements);
       }
 
-      persistBriefEvaluation({
-        qualityScore: scoreValue,
-        strengths: strengthsList,
-        improvements: improvementsList
+      // Save to database
+      const saveResponse = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief_quality: scoreValue,
+          brief_strengths: strengthsList,
+          brief_improvements: improvementsList
+        })
       });
 
-      console.log('✅ Brief evaluated', {
-        source: result?.source || 'custom-agent',
-        deliverableId,
-        score: normalizeScoreValue(scoreValue) ?? formData.brief_quality
-      });
+      if (!saveResponse.ok) {
+        console.error('❌ Failed to save score to database');
+      } else {
+        const updated = await saveResponse.json();
+        
+        // Update formData with saved values
+        setFormData(prev => ({
+          ...prev,
+          brief_quality: updated.brief_quality,
+          brief_strengths: updated.brief_strengths || [],
+          brief_improvements: updated.brief_improvements || []
+        }));
+        
+        console.log('✅ Brief evaluated and saved, score:', updated.brief_quality);
+      }
     } catch (error) {
       console.error('❌ Error testing brief:', error);
       alert(error.message || 'Failed to evaluate brief.');
@@ -1865,21 +1886,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         ...(formData.estimated_hours && { estimated_hours: parseInt(formData.estimated_hours) || 0 }),
         ...(formData.notes && { notes: formData.notes }),
         ...(formData.tags && { tags: formData.tags }),
-        ...(() => {
-          const normalizedQuality = normalizeScoreValue(formData.brief_quality);
-          return normalizedQuality !== null ? { brief_quality: normalizedQuality } : {};
-        })(),
-        ...(Array.isArray(formData.brief_strengths) && {
-          brief_strengths: formData.brief_strengths
-        }),
-        ...(Array.isArray(formData.brief_improvements) && {
-          brief_improvements: formData.brief_improvements
-        }),
+        // Always include brief quality fields (even if null) to ensure they're saved
+        brief_quality: normalizeScoreValue(formData.brief_quality),
+        brief_strengths: Array.isArray(formData.brief_strengths) ? formData.brief_strengths : [],
+        brief_improvements: Array.isArray(formData.brief_improvements) ? formData.brief_improvements : [],
         ...(selectedItem.created_by && { updated_by: selectedItem.created_by }),
         ...(selectedItem.updated_by && !selectedItem.created_by && { updated_by: selectedItem.updated_by })
       };
 
       console.log('💾 [SAVE API] Payload being sent:', payload);
+      console.log('💾 [SAVE API] Brief quality in payload:', payload.brief_quality);
+      console.log('💾 [SAVE API] formData.brief_quality before save:', formData.brief_quality);
 
       const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
         method: 'PATCH',
@@ -1984,122 +2001,75 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   };
 
   const persistBriefEvaluation = async ({ qualityScore, strengths = [], improvements = [] }) => {
-    const normalizedQuality = normalizeScoreValue(
-      Number.isFinite(qualityScore) ? qualityScore : Number(qualityScore)
-    );
-    const normalizedStrengths = normalizeInsightList(strengths);
-    const normalizedImprovements = normalizeInsightList(improvements);
+    // This is no longer needed - handleTestBrief now saves directly
+    // Keeping for backward compatibility
+  };
 
-    setFormData(prev => ({
-      ...prev,
-      brief_quality: normalizedQuality !== null ? normalizedQuality : prev.brief_quality,
-      brief_strengths: normalizedStrengths,
-      brief_improvements: normalizedImprovements
-    }));
-
-    if (onItemSelect && selectedItem) {
-      onItemSelect({
-        ...selectedItem,
-        brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.brief_quality,
-        brief_strengths: normalizedStrengths,
-        brief_improvements: normalizedImprovements,
-        metadata: {
-          ...(selectedItem.metadata || {}),
-          brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.metadata?.brief_quality,
-          brief_strengths: normalizedStrengths,
-          brief_improvements: normalizedImprovements
-        }
-      });
-    }
-
-    // Immediately save to database
+  const handleBriefSave = async (result) => {
+    console.log('');
+    console.log('📥 ========== BRIEF SAVE HANDLER CALLED ==========');
+    console.log('Result object received:', result);
+    console.log('result.brief length:', result.brief?.length);
+    console.log('result.qualityScore:', result.qualityScore);
+    console.log('result.strengths count:', result.strengths?.length);
+    console.log('result.improvements count:', result.improvements?.length);
+    console.log('📥 ========== END RESULT ==========');
+    console.log('');
+    
     const deliverableId = selectedItem?.metadata?.deliverableId 
       || selectedItem?.metadata?.deliverable_id 
       || selectedItem?.metadata?.business_entity_id 
       || selectedItem?._id 
       || selectedItem?.id;
+
+    if (!deliverableId) {
+      console.error('❌ No deliverable ID');
+      setShowImproveBrief(false);
+      return;
+    }
+
+    try {
+      console.log('💾 [BRIEF SAVE] Saving to database...');
+      console.log('💾 [BRIEF SAVE] Score being saved:', result.qualityScore);
       
-    if (deliverableId) {
-      try {
-        const response = await fetch(`/api/deliverables/${deliverableId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            brief_quality: normalizedQuality,
-            brief_strengths: normalizedStrengths,
-            brief_improvements: normalizedImprovements,
-            brief_last_evaluated_at: new Date().toISOString()
-          })
-        });
-
-        if (response.ok) {
-          console.log('✅ Brief evaluation auto-saved to database');
-        } else {
-          console.error('❌ Failed to auto-save brief evaluation');
-        }
-      } catch (error) {
-        console.error('❌ Error auto-saving brief evaluation:', error);
-      }
-    }
-  };
-
-  const handleBriefSave = (payloadOrBrief, legacyQuality, legacyStrengths, legacyImprovements) => {
-    justSavedRef.current = true; // Mark that we're updating formData from brief save
-    
-    // Safety timeout to reset the flag in case something goes wrong
-    setTimeout(() => {
-      justSavedRef.current = false;
-    }, 2000);
-    
-    let improvedBriefValue = payloadOrBrief;
-    let qualityValue = legacyQuality;
-    let strengthsArray = normalizeInsightList(legacyStrengths);
-    let improvementsArray = normalizeInsightList(legacyImprovements);
-
-    if (payloadOrBrief && typeof payloadOrBrief === 'object' && !Array.isArray(payloadOrBrief)) {
-      improvedBriefValue = payloadOrBrief.brief ?? payloadOrBrief.improvedBrief ?? '';
-      qualityValue = payloadOrBrief.qualityScore ?? payloadOrBrief.score ?? legacyQuality;
-      strengthsArray = normalizeInsightList(payloadOrBrief.strengths ?? payloadOrBrief.strengthsText);
-      improvementsArray = normalizeInsightList(payloadOrBrief.improvements ?? payloadOrBrief.improvementsText);
-    }
-
-    const normalizedQuality = normalizeScoreValue(qualityValue);
-    const normalizedStrengths = strengthsArray.length ? strengthsArray : formData.brief_strengths;
-    const normalizedImprovements = improvementsArray.length ? improvementsArray : formData.brief_improvements;
-
-    setFormData(prev => ({
-      ...prev,
-      brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : prev.brief,
-      brief_quality: normalizedQuality !== null ? normalizedQuality : prev.brief_quality,
-      brief_strengths: normalizedStrengths,
-      brief_improvements: normalizedImprovements
-    }));
-
-    if (onItemSelect) {
-      onItemSelect({
-        ...selectedItem,
-        brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : selectedItem.brief,
-        brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.brief_quality,
-        brief_strengths: normalizedStrengths,
-        brief_improvements: normalizedImprovements,
-        metadata: {
-          ...(selectedItem.metadata || {}),
-          brief: typeof improvedBriefValue === 'string' && improvedBriefValue.trim() ? improvedBriefValue : selectedItem.metadata?.brief,
-          brief_quality: normalizedQuality !== null ? normalizedQuality : selectedItem.metadata?.brief_quality
-        }
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief: result.brief,
+          brief_quality: result.qualityScore,
+          brief_strengths: result.strengths || [],
+          brief_improvements: result.improvements || []
+        })
       });
-    }
 
-    setShowImproveBrief(false);
-    
-    // Auto-save the deliverable after improving the brief
-    if (selectedItem?._id) {
-      setTimeout(() => {
-        saveDeliverable({ silent: true });
-      }, 100); // Small delay to ensure state is updated
+      if (!response.ok) throw new Error('Failed to save');
+
+      const updated = await response.json();
+      console.log('✅ [BRIEF SAVE] DB returned:', {
+        brief_quality: updated.brief_quality,
+        brief_strengths_count: updated.brief_strengths?.length,
+        brief_improvements_count: updated.brief_improvements?.length
+      });
+      
+      // Force state update
+      const newFormData = {
+        ...formData,
+        brief: updated.brief,
+        brief_quality: updated.brief_quality,
+        brief_strengths: updated.brief_strengths || [],
+        brief_improvements: updated.brief_improvements || []
+      };
+      
+      console.log('📝 [BRIEF SAVE] Setting formData.brief_quality to:', newFormData.brief_quality);
+      setFormData(newFormData);
+
+    } catch (error) {
+      console.error('❌ [BRIEF SAVE] Failed:', error);
+      alert('Failed to save brief: ' + error.message);
     }
+    
+    setShowImproveBrief(false);
   };
 
   const handleAddDeliverable = (project) => {
@@ -3355,7 +3325,16 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             onClose={() => setShowImproveBrief(false)}
             onSave={handleBriefSave}
             currentBrief={formData.brief}
-            deliverable={selectedItem}
+            deliverable={{
+              ...selectedItem,
+              _id: selectedItem?.metadata?.deliverableId || selectedItem?.metadata?.deliverable_id || selectedItem?._id || selectedItem?.id,
+              name: formData.name,
+              type: formData.type,
+              audience: formData.audience,
+              brief_quality: formData.brief_quality,
+              brief_strengths: formData.brief_strengths,
+              brief_improvements: formData.brief_improvements
+            }}
             projectData={{
               ...projectDataForAi
             }}

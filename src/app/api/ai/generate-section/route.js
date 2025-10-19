@@ -244,9 +244,9 @@ export async function POST(request) {
       // Parse and normalize the response
       const sectionData = parseSectionResponse(agentResult, framework, sectionIndex);
       
-      // Check if parsing failed and we need to use fallback
-      if (sectionData.status === 'fallback_used' || sectionData.status === 'needs_regeneration') {
-        console.log('⚠️ Section parsing indicated fallback needed, using fallback content with charts');
+      // Check if we need to use fallback - ONLY if AI explicitly failed
+      if (sectionData.status === 'fallback_used') {
+        console.log('⚠️ AI explicitly indicated failure, using fallback content with charts');
         
         // Use the fallback content generator to get proper structured data with charts
         const fallbackJson = generateFallbackContent(framework, agentResult.response);
@@ -265,9 +265,13 @@ export async function POST(request) {
           sectionIndex,
           rawAgentResponse: agentResult,
           aiReturnedPlainText: true,
+          aiExplicitlyFailed: true,
           data: fallbackSectionData
         });
       }
+      
+      // If status is 'partial' or 'generated', use what we have from AI
+      console.log(`ℹ️ Using AI data with status: ${sectionData.status}`);
       
       console.log('');
       console.log('📦 ========== PARSED SECTION DATA ==========');

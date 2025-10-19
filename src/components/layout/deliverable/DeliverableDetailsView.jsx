@@ -1,17 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { normalizeScoreValue, isScoreAboveThreshold } from '../../../utils/scoreUtils';
-
-
-const getScoreStyles = (score) => {
-  // Simple neutral styling without predefined status thresholds
-  return {
-    card: 'border-gray-200 bg-gray-50',
-    value: 'text-gray-900',
-    note: 'text-gray-600',
-    progress: 'bg-blue-500'
-  };
-};
+import BriefQualityDisplay from '../../ui/BriefQualityDisplay';
 
 export default function DeliverableDetailsView({
   formData,
@@ -39,22 +29,6 @@ export default function DeliverableDetailsView({
     : (formData.improvements ? [formData.improvements] : []);
 
   const qualityScore = normalizeScoreValue(formData.brief_quality);
-  
-  // Debug logging to check values
-  if (typeof window !== 'undefined') {
-    console.log('🔍 DEBUG VALUES:', {
-      'formData.brief_quality': formData.brief_quality,
-      'typeof formData.brief_quality': typeof formData.brief_quality,
-      'qualityScore': qualityScore,
-      'typeof qualityScore': typeof qualityScore,
-      'qualityScore === null': qualityScore === null,
-      'qualityScore !== null': qualityScore !== null,
-      'isScoreAboveThreshold(qualityScore, 7.5)': qualityScore !== null ? isScoreAboveThreshold(qualityScore, 7.5) : 'N/A'
-    });
-  }
-  
-  const qualityPercent = qualityScore !== null ? Math.min(100, Math.max(0, (qualityScore / 10) * 100)) : 0;
-  const qualityStyles = getScoreStyles(qualityScore);
   const canGenerateBasedOnScore = qualityScore !== null && isScoreAboveThreshold(qualityScore, 7.5);
   const storylineDisabled = isGeneratingStoryline || !formData.brief?.trim() || !canGenerateBasedOnScore;
   const storylineDisabledMessage = !formData.brief?.trim() 
@@ -211,53 +185,12 @@ export default function DeliverableDetailsView({
         )}
       </div>
 
-      {/* Only show Brief Quality Score if brief has been tested/evaluated */}
-      {(qualityScore !== null && ( recognizedStrengths.length > 0 || suggestedImprovements.length > 0)) && (
-        <div className={`space-y-4 rounded-sm border p-6 ${qualityStyles.card}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="block text-sm font-medium text-gray-700">Brief Quality Score</span>
-            </div>
-            <div className="text-right">
-              <span className={`text-sm font-semibold ${qualityStyles.value}`}>
-                {qualityScore !== null ? `${qualityScore.toFixed(1)} / 10` : 'Not evaluated'}
-              </span>
-            </div>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-sm bg-gray-200">
-            <div
-              className={`h-full rounded-sm transition-all ${qualityStyles.progress}`}
-              style={{ width: `${qualityPercent}%` }}
-            />
-          </div>
-
-          {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
-            <div className="grid gap-3 md:grid-cols-2">
-              {recognizedStrengths.length > 0 && (
-                <div className="border border-emerald-200 bg-white rounded-md p-3">
-                  <p className="text-sm font-medium text-emerald-800">Recognized Strengths</p>
-                  <ul className="mt-2 space-y-1 text-xs text-emerald-700">
-                    {recognizedStrengths.map((item, index) => (
-                      <li key={`${item}-${index}`}>• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {suggestedImprovements.length > 0 && (
-                <div className="border border-blue-200 bg-white rounded-md p-3">
-                  <p className="text-sm font-medium text-blue-800">Suggested Improvements</p>
-                  <ul className="mt-2 space-y-1 text-xs text-blue-700">
-                    {suggestedImprovements.map((item, index) => (
-                      <li key={`${item}-${index}`}>• {item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
-      )}
+      {/* Brief Quality Score Display - Single Source of Truth */}
+      <BriefQualityDisplay 
+        score={qualityScore}
+        strengths={recognizedStrengths}
+        improvements={suggestedImprovements}
+      />
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">

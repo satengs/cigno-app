@@ -13,8 +13,9 @@ const normalizeList = (value) => {
       .filter(Boolean);
   }
   if (typeof value === 'string') {
+    // Only split on newlines, semicolons, and bullet points - NOT dashes (to preserve "buy-vs-build", "well-defined", etc.)
     return value
-      .split(/[\n;,•\-]+/)
+      .split(/[\n;,•]+/)
       .map(item => item.replace(/^[-•\s]+/, '').trim())
       .filter(Boolean);
   }
@@ -65,6 +66,10 @@ export async function PATCH(request, { params }) {
     
     const { id } = params;
     const updates = await request.json();
+    
+    console.log('📝 [PATCH API] Updating deliverable:', id);
+    console.log('📝 [PATCH API] Updates received:', updates);
+    console.log('📝 [PATCH API] brief_quality in updates:', updates.brief_quality);
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -76,18 +81,32 @@ export async function PATCH(request, { params }) {
     const sanitizedUpdates = { ...updates };
 
     if ('brief_quality' in sanitizedUpdates) {
+      console.log('📊 [PATCH API] Original brief_quality value:', sanitizedUpdates.brief_quality);
+      console.log('📊 [PATCH API] Type:', typeof sanitizedUpdates.brief_quality);
+      
       const numericQuality = Number(sanitizedUpdates.brief_quality);
-      sanitizedUpdates.brief_quality = Number.isFinite(numericQuality)
-        ? Number(numericQuality.toFixed(1))
-        : null;
+      console.log('📊 [PATCH API] After Number():', numericQuality);
+      console.log('📊 [PATCH API] Is finite?:', Number.isFinite(numericQuality));
+      
+      if (Number.isFinite(numericQuality)) {
+        sanitizedUpdates.brief_quality = Number(numericQuality.toFixed(1));
+        console.log('✅ [PATCH API] Sanitized brief_quality (will save):', sanitizedUpdates.brief_quality);
+      } else {
+        sanitizedUpdates.brief_quality = null;
+        console.log('⚠️ [PATCH API] Setting brief_quality to null (invalid number)');
+      }
+    } else {
+      console.log('⚠️ [PATCH API] No brief_quality field in updates');
     }
 
     if ('brief_strengths' in sanitizedUpdates) {
       sanitizedUpdates.brief_strengths = normalizeList(sanitizedUpdates.brief_strengths);
+      console.log('📊 [PATCH API] Sanitized brief_strengths count:', sanitizedUpdates.brief_strengths.length);
     }
 
     if ('brief_improvements' in sanitizedUpdates) {
       sanitizedUpdates.brief_improvements = normalizeList(sanitizedUpdates.brief_improvements);
+      console.log('📊 [PATCH API] Sanitized brief_improvements count:', sanitizedUpdates.brief_improvements.length);
     }
 
     if (
@@ -96,7 +115,15 @@ export async function PATCH(request, { params }) {
       'brief_improvements' in sanitizedUpdates
     ) {
       sanitizedUpdates.brief_last_evaluated_at = new Date();
+      console.log('📅 [PATCH API] Set brief_last_evaluated_at');
     }
+
+    console.log('📦 [PATCH API] Final sanitized updates:', JSON.stringify(sanitizedUpdates, null, 2));
+    console.log('📦 [PATCH API] Will update these fields:', Object.keys(sanitizedUpdates));
+
+    // First, check current value in database
+    const currentDoc = await Deliverable.findById(id).select('brief_quality brief_strengths brief_improvements').lean();
+    console.log('📂 [PATCH API] Current values in DB BEFORE update:', currentDoc);
 
     const deliverable = await Deliverable.findByIdAndUpdate(
       id,
@@ -110,6 +137,15 @@ export async function PATCH(request, { params }) {
         { status: 404 }
       );
     }
+
+    console.log('✅ [PATCH API] Deliverable updated successfully');
+    console.log('✅ [PATCH API] Saved brief_quality:', deliverable.brief_quality);
+    console.log('✅ [PATCH API] Saved brief_strengths:', deliverable.brief_strengths);
+    console.log('✅ [PATCH API] Saved brief_improvements:', deliverable.brief_improvements);
+    
+    // Verify the data was actually written to database
+    const verification = await Deliverable.findById(id).select('brief_quality brief_strengths brief_improvements brief_last_evaluated_at').lean();
+    console.log('🔍 [PATCH API] VERIFICATION - Data in DB after update:', verification);
 
     return NextResponse.json(deliverable);
   } catch (error) {

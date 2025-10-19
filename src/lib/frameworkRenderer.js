@@ -539,47 +539,71 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
       }
       
       if (extractedData) {
-        // Use extracted data
+        // Use extracted data from markdown or embedded JSON
+        console.log('✅ Using extracted JSON data from AI response');
         if (extractedData.slide_content) parsedData.slideContent = extractedData.slide_content;
         if (extractedData.insights) parsedData.insights = extractedData.insights;
         if (extractedData.citations) parsedData.citations = extractedData.citations;
         if (extractedData.slide_content?.title) parsedData.title = extractedData.slide_content.title;
         parsedData.charts = generateChartsFromSlideContent(parsedData.slideContent, framework, sectionIndex);
+        parsedData.status = 'generated'; // Mark as successfully generated
       } else {
-        // No JSON found - mark for using fallback in the API route
-        console.log('⚠️ AI returned plain text with no JSON. Section will use fallback data.');
-        parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        parsedData.description = `AI returned conversational response. Using fallback data.`;
-        parsedData.insights = [
-          'AI agent returned conversational text instead of structured data',
-          'Using fallback content for this framework',
-          'Consider regenerating or checking agent configuration'
-        ];
-        parsedData.status = 'fallback_used';
-        parsedData.notes = `AI Response: ${agentResult.response?.substring(0, 200)}...`;
+        // Check if AI explicitly said it couldn't do the task
+        const responseText = (agentResult.response || '').toLowerCase();
+        const isErrorResponse = responseText.includes('unable') || 
+                               responseText.includes('cannot') || 
+                               responseText.includes('error') ||
+                               responseText.includes('failed') ||
+                               responseText.startsWith('i was unable') ||
+                               responseText.startsWith('i cannot');
+        
+        if (isErrorResponse) {
+          // AI explicitly failed - use fallback
+          console.log('⚠️ AI explicitly indicated failure. Marking for fallback data.');
+          parsedData.status = 'fallback_used';
+          parsedData.notes = `AI Response: ${agentResult.response?.substring(0, 200)}...`;
+        } else {
+          // AI returned plain text but didn't fail - try to use what we can
+          console.log('⚠️ AI returned plain text (not explicit failure). Using minimal data.');
+          parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          parsedData.description = agentResult.response?.substring(0, 500) || 'No structured content returned';
+          parsedData.status = 'partial'; // Not a complete failure, but not ideal
+          parsedData.notes = 'AI returned plain text without structured JSON. Content may be incomplete.';
+        }
       }
     }
   } else if (agentResult.data && typeof agentResult.data === 'object') {
     // Try direct data field (some agents return data directly)
     console.log('📦 Found agentResult.data (object)');
-    console.log('Attempting to use data directly as slide_content...');
+    console.log('Attempting to use data directly...');
     
     parsedData.slideContent = agentResult.data.slide_content || agentResult.data;
     parsedData.insights = agentResult.data.insights || [];
     parsedData.citations = agentResult.data.citations || [];
     parsedData.title = agentResult.data.title || agentResult.data.slide_content?.title || framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     parsedData.charts = generateChartsFromSlideContent(parsedData.slideContent, framework, sectionIndex);
+    parsedData.status = 'generated'; // Mark as successfully generated from direct data field
+    console.log('✅ Using AI data from agentResult.data field');
   } else {
     console.log('⚠️ No usable response found in agentResult');
     console.log('Checking alternative fields...');
     console.log('agentResult.content:', agentResult.content);
     console.log('agentResult itself type:', typeof agentResult);
     
-    // Last fallback
-    parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    parsedData.description = agentResult.response || agentResult.content || 'No content returned from AI agent';
-    parsedData.status = 'needs_regeneration';
-    parsedData.notes = 'No structured data returned from AI agent. Please regenerate or check agent configuration.';
+    // Check if there's any content at all
+    const contentText = agentResult.content || agentResult.message || '';
+    if (contentText) {
+      console.log('Found content in alternative field, using it');
+      parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      parsedData.description = contentText.substring(0, 500);
+      parsedData.status = 'partial';
+    } else {
+      // Truly no data - use fallback
+      console.log('❌ No data found anywhere in agent response. Marking for fallback.');
+      parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      parsedData.status = 'fallback_used';
+      parsedData.notes = 'No data returned from AI agent. Using fallback content.';
+    }
   }
   
   // Generate HTML using framework renderer

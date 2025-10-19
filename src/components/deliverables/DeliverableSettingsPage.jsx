@@ -276,133 +276,66 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
   };
 
   const handleImproveBriefSave = async (result) => {
+    console.log('');
+    console.log('📥 ========== SETTINGS SAVE HANDLER CALLED ==========');
+    console.log('Result object received:', result);
+    console.log('result.brief length:', result.brief?.length);
+    console.log('result.qualityScore:', result.qualityScore);
+    console.log('result.strengths count:', result.strengths?.length);
+    console.log('result.improvements count:', result.improvements?.length);
+    console.log('📥 ========== END RESULT ==========');
+    console.log('');
+    
+    const deliverableId = deliverable._id || deliverable.id;
+    
     try {
-      if (!deliverable) {
-        throw new Error('No deliverable selected for saving.');
-      }
-
-      const isLegacyInvocation = typeof result === 'string' || Array.isArray(result);
-
-      const improvedBrief = !isLegacyInvocation && result && typeof result === 'object'
-        ? result.brief ?? result.improvedBrief ?? formData.brief
-        : (typeof result === 'string' ? result : formData.brief);
-
-      const qualityScoreValue = !isLegacyInvocation && result && typeof result === 'object'
-        ? result.qualityScore ?? result.score ?? formData.briefQuality
-        : formData.briefQuality;
-
-      const strengthsArray = !isLegacyInvocation && result && typeof result === 'object'
-        ? normalizeInsightList(result.strengths ?? result.strengthsText)
-        : [];
-
-      const improvementsArray = !isLegacyInvocation && result && typeof result === 'object'
-        ? normalizeInsightList(result.improvements ?? result.improvementsText)
-        : [];
-
-      const normalizedQuality = normalizeScoreValue(qualityScoreValue);
-      const fallbackQuality = normalizeScoreValue(formData.briefQuality);
-
-      const recognizedStrengths = strengthsArray.length
-        ? strengthsArray
-        : formData.recognizedStrengths;
-
-      const suggestedImprovements = improvementsArray.length
-        ? improvementsArray
-        : formData.suggestedImprovements;
-
-      // Update the form data with the improved brief
-      setFormData(prev => ({ 
-        ...prev, 
-        brief: improvedBrief,
-        briefQuality: normalizedQuality !== null ? normalizedQuality : fallbackQuality,
-        recognizedStrengths,
-        suggestedImprovements
-      }));
+      console.log('💾 [SETTINGS SAVE] Saving...');
+      console.log('💾 [SETTINGS SAVE] Score being saved:', result.qualityScore);
       
-      // Automatically save the improved brief to the database
-      const deliverableId = deliverable._id || deliverable.id;
-      const response = await fetch('/api/deliverables', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: deliverableId,
-          brief: improvedBrief,
-          brief_quality: normalizedQuality !== null ? normalizedQuality : fallbackQuality,
-          brief_strengths: recognizedStrengths,
-          brief_improvements: suggestedImprovements
+          brief: result.brief,
+          brief_quality: result.qualityScore,
+          brief_strengths: result.strengths || [],
+          brief_improvements: result.improvements || []
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save improved brief');
-      }
+      if (!response.ok) throw new Error('Failed to save');
 
-      const result = await response.json();
+      const updated = await response.json();
+      console.log('✅ [SETTINGS SAVE] Saved, returned score:', updated.brief_quality);
       
-      if (onSave) {
-        onSave(result.data.deliverable);
-      }
-      
-      console.log('✅ Improved brief saved successfully');
+      // Update form state
+      setFormData(prev => {
+        const newData = {
+          ...prev,
+          brief: updated.brief,
+          briefQuality: updated.brief_quality,
+          recognizedStrengths: updated.brief_strengths || [],
+          suggestedImprovements: updated.brief_improvements || []
+        };
+        console.log('📝 [SETTINGS SAVE] Updated briefQuality to:', newData.briefQuality);
+        return newData;
+      });
+
     } catch (error) {
-      console.error('❌ Error saving improved brief:', error);
-      throw error; // Re-throw to let the modal handle the error
+      console.error('❌ [SETTINGS SAVE] Failed:', error);
+      throw error;
     }
   };
 
   const handleBriefEvaluationSave = async ({ qualityScore, strengths = [], improvements = [] }) => {
-    const normalizedQuality = normalizeScoreValue(qualityScore);
-    const normalizedStrengths = normalizeInsightList(strengths);
-    const normalizedImprovements = normalizeInsightList(improvements);
-
+    // Update form state when test happens
+    console.log('📝 [EVAL SAVE] Updating form state, score:', qualityScore);
     setFormData(prev => ({
       ...prev,
-      briefQuality: normalizedQuality,
-      recognizedStrengths: normalizedStrengths,
-      suggestedImprovements: normalizedImprovements
+      briefQuality: qualityScore,
+      recognizedStrengths: strengths,
+      suggestedImprovements: improvements
     }));
-
-    try {
-      if (!deliverable) {
-        console.warn('⚠️ Skipping auto-save: no deliverable provided');
-        return;
-      }
-
-      const deliverableId = deliverable._id || deliverable.id;
-      if (!deliverableId) {
-        console.warn('⚠️ Skipping auto-save: missing deliverable ID');
-        return;
-      }
-
-      const response = await fetch(`/api/deliverables/${deliverableId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          brief_quality: normalizedQuality,
-          brief_strengths: normalizedStrengths,
-          brief_improvements: normalizedImprovements,
-          brief_last_evaluated_at: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        let details = 'Unknown error';
-        try {
-          const errorData = await response.json();
-          details = errorData.error || JSON.stringify(errorData);
-        } catch (parseError) {
-          console.warn('Failed to parse auto-save error response:', parseError);
-        }
-        console.error('Auto-save brief evaluation failed:', details);
-      }
-    } catch (autoSaveError) {
-      console.error('Error during brief evaluation auto-save:', autoSaveError);
-    }
   };
 
   const handleSubmit = async (e) => {
@@ -559,48 +492,12 @@ Target completion: ${deliverable.due_date ? new Date(deliverable.due_date).toLoc
             )}
           </div>
           
-          {(qualityScore !== null || recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">AI Quality Score</span>
-                <span className="font-medium text-gray-800">
-                  {qualityScore !== null ? `${qualityScore} / 10` : 'Not evaluated'}
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${qualityPercent}%` }}
-                />
-              </div>
-
-              {(recognizedStrengths.length > 0 || suggestedImprovements.length > 0) && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {recognizedStrengths.length > 0 && (
-                    <div className="border border-emerald-200 bg-white rounded-md p-3">
-                      <p className="text-sm font-medium text-emerald-700">Recognized Strengths</p>
-                      <ul className="mt-2 space-y-1 text-xs text-emerald-600">
-                        {recognizedStrengths.map((item, index) => (
-                          <li key={`recognized-${index}`}>• {item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {suggestedImprovements.length > 0 && (
-                    <div className="border border-blue-200 bg-white rounded-md p-3">
-                      <p className="text-sm font-medium text-blue-700">Suggested Improvements</p>
-                      <ul className="mt-2 space-y-1 text-xs text-blue-600">
-                        {suggestedImprovements.map((item, index) => (
-                          <li key={`improvement-${index}`}>• {item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-          )}
+          {/* Brief Quality Display - Single Source of Truth */}
+          <BriefQualityDisplay
+            score={qualityScore}
+            strengths={recognizedStrengths}
+            improvements={suggestedImprovements}
+          />
           
           {errors.brief && (
             <p className="text-xs text-red-600 mt-1">{errors.brief}</p>

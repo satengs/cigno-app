@@ -494,10 +494,15 @@ export default function ClientDetailView({
     <div className="bg-white">
       {/* Header */}
       <div className="p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {formData.clientName || 'Unnamed Client'}
-          </h1>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex-1">
+            <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+              {formData.clientName || client.name || client.title || 'Unnamed Client'}
+            </h1>
+            <p className="text-base text-gray-600 leading-relaxed">
+              UBS is a leading global wealth manager and universal bank in Switzerland
+            </p>
+          </div>
           <button
             onClick={() => {
               const businessEntityId = client.metadata?.business_entity_id || 
@@ -512,44 +517,26 @@ export default function ClientDetailView({
             <Trash2 className="w-5 h-5" />
           </button>
         </div>
-        {client.metadata?.description && (
-          <p className="text-gray-600 mb-2">
-            {client.metadata.description}
-          </p>
-        )}
-        
-        {/* Client Owner and Internal Owner Information */}
-        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4" />
-            <span className="font-medium">Client Owner:</span>
-            <span>{client.metadata?.client_owner || (client.owner ? `${client.owner.first_name} ${client.owner.last_name}` : 'Paul Smith')}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            <span className="font-medium">Internal Owner:</span>
-            <span>{client.metadata?.internal_owner || (client.owner ? `${client.owner.first_name} ${client.owner.last_name}` : 'Paul Smith')}</span>
-          </div>
-        </div>
       </div>
 
       {/* Content */}
       <div className="px-6 pb-6 space-y-6">
         {/* Logo Section */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">Logo:</label>
           <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 bg-gray-800 rounded flex items-center justify-center">
+            <div className="w-16 h-16 bg-white rounded flex items-center justify-center border border-gray-200">
               {formData.logo ? (
                 <img 
                   src={formData.logo instanceof File ? URL.createObjectURL(formData.logo) : formData.logo} 
                   alt="Client logo" 
-                  className="w-full h-full object-contain rounded"
+                  className="w-full h-full object-contain rounded p-2"
                 />
               ) : (
-                <span className="text-white font-semibold text-lg">
-                  {formData.clientName ? formData.clientName.split(' ').map(word => word[0]).join('').substring(0, 3) : 'GBC'}
-                </span>
+                <img 
+                  src="/ubs-logo.png" 
+                  alt="UBS Logo" 
+                  className="w-full h-full object-contain p-2"
+                />
               )}
             </div>
             <div>
@@ -714,7 +701,7 @@ export default function ClientDetailView({
                         <p className="text-sm font-medium text-gray-900">{project.name || project.title}</p>
                         <p className="text-xs text-gray-500">
                           Status: {project.status || 'Active'} | 
-                          Owner: {project.internal_owner?.first_name} {project.internal_owner?.last_name}
+                          Owner: {project.internal_owner?.first_name && project.internal_owner?.last_name ? `${project.internal_owner.first_name} ${project.internal_owner.last_name}` : 'Philippe Reynier'}
                         </p>
                       </div>
                     </div>

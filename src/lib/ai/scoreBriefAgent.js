@@ -193,7 +193,7 @@ export async function scoreBriefWithAgent({
   const AI_CONFIG = {
     baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
     apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
-    scoreAgentId: process.env.AI_BRIEF_SCORE_AGENT_ID || '68eec5005a1a64c93c600fda'
+    scoreAgentId: process.env.AI_BRIEF_SCORE_AGENT_ID || '68f48912dfc921b68ec3eb2b'
   };
 
   let sanitizedImprovement = improvementPayload;
@@ -235,8 +235,10 @@ export async function scoreBriefWithAgent({
         'X-API-Key': AI_CONFIG.apiKey
       },
       body: JSON.stringify({
-        message: textForEvaluation,
-        context
+        message: `${textForEvaluation}\n\nPlease return ONLY valid JSON format with: {"score": <number 0-10>, "strengths": [<array>], "improvements": [<array>], "suggestions": [<array>]}`,
+        context,
+        format: 'json',
+        output_format: 'json'
       })
     });
 
@@ -246,28 +248,100 @@ export async function scoreBriefWithAgent({
     }
 
     const agentResult = await response.json();
+    
+    // LOG RAW RESPONSE
+    console.log('');
+    console.log('🧠 ========== BRIEF SCORING AGENT RESPONSE START ==========');
+    console.log('Agent ID:', AI_CONFIG.scoreAgentId);
     try {
-      console.log('🧠 Raw scoring agent result:', JSON.stringify(agentResult, null, 2));
+      console.log('Raw Response JSON:', JSON.stringify(agentResult, null, 2));
     } catch (logError) {
-      console.log('🧠 Raw scoring agent result (non-serializable):', agentResult);
+      console.log('Raw Response (non-serializable):', agentResult);
     }
+    console.log('Response Type:', typeof agentResult);
+    console.log('Response Keys:', Object.keys(agentResult || {}));
+    console.log('🧠 ========== BRIEF SCORING AGENT RESPONSE END ==========');
+    console.log('');
+    
     let payload = agentResult?.data || agentResult?.response || agentResult;
     
     // If payload is a JSON string, parse it
     if (typeof payload === 'string') {
+      console.log('📄 Response is a string, attempting to parse...');
+      console.log('String content (first 500 chars):', payload.substring(0, 500));
+      
       try {
         payload = JSON.parse(payload);
+        console.log('✅ Successfully parsed JSON string');
       } catch (parseError) {
-        console.warn('⚠️ Failed to parse response as JSON:', parseError);
-        payload = {};
+        console.log('❌ Failed initial JSON parse, trying to extract JSON from text...');
+        
+        // Try to extract JSON from markdown code blocks
+        const jsonMatch = payload.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          try {
+            payload = JSON.parse(jsonMatch[1]);
+            console.log('✅ Extracted JSON from markdown code block');
+          } catch (extractError) {
+            console.warn('⚠️ Failed to parse extracted JSON from markdown');
+            payload = {};
+          }
+        } else {
+          // Try to find JSON object in text
+          const jsonObjectMatch = payload.match(/\{[\s\S]*?\}/);
+          if (jsonObjectMatch) {
+            try {
+              payload = JSON.parse(jsonObjectMatch[0]);
+              console.log('✅ Extracted JSON object from text');
+            } catch (extractError) {
+              console.warn('⚠️ Failed to parse extracted JSON object');
+              payload = {};
+            }
+          } else {
+            console.warn('⚠️ No JSON found in string response, using empty payload');
+            payload = {};
+          }
+        }
       }
     }
 
-    const qualityScoreRaw = payload?.qualityScore ?? payload?.score ?? payload?.total_score;
+    console.log('📦 Payload after parsing:', payload);
+    console.log('Payload keys:', Object.keys(payload || {}));
+
+    // Extract score from multiple possible fields
+    const qualityScoreRaw = payload?.qualityScore 
+      ?? payload?.score 
+      ?? payload?.total_score 
+      ?? payload?.quality_score
+      ?? payload?.briefQuality
+      ?? payload?.rating;
+      
+    console.log('🎯 Quality score raw value:', qualityScoreRaw);
+    
     const normalizedScore = normalizeScore(qualityScoreRaw);
-    const strengths = normalizeTextArray(payload?.strengths ?? payload?.highlights);
-    const improvements = normalizeTextArray(payload?.improvements ?? payload?.gaps);
-    const suggestions = normalizeTextArray(payload?.suggestions ?? payload?.nextSteps);
+    console.log('🎯 Normalized score:', normalizedScore);
+    
+    const strengths = normalizeTextArray(
+      payload?.strengths 
+      ?? payload?.highlights 
+      ?? payload?.positives
+      ?? payload?.strong_points
+    );
+    
+    const improvements = normalizeTextArray(
+      payload?.improvements 
+      ?? payload?.gaps 
+      ?? payload?.weaknesses
+      ?? payload?.areas_for_improvement
+      ?? payload?.suggested_improvements
+    );
+    
+    const suggestions = normalizeTextArray(
+      payload?.suggestions 
+      ?? payload?.nextSteps 
+      ?? payload?.recommendations
+      ?? payload?.action_items
+    );
 
     const normalizedResult = {
       qualityScore: normalizedScore ?? heuristicInsights.score,
