@@ -42,11 +42,13 @@ class ChatContextManager {
     }
 
     const contextKey = `${userId}_${project.id}`;
+    console.log(`🔑 Context key: ${contextKey} for project: ${project.name || project.title} (ID: ${project.id})`);
     
     // Check if context already exists
     if (this.chatContexts.has(contextKey)) {
       const existingContext = this.chatContexts.get(contextKey);
       console.log(`🔄 Loading existing chat context for project: ${project.name || project.title}`);
+      console.log(`📊 Existing context has ${existingContext.messages?.length || 0} messages`);
       return existingContext;
     }
 
@@ -117,7 +119,7 @@ class ChatContextManager {
           type: msg.role,
           role: msg.role,
           content: msg.content,
-          timestamp: msg.timestamp
+          timestamp: new Date(msg.timestamp).getTime() // Convert to timestamp for UI
         })).reverse(); // Reverse to get chronological order
 
         // Replace welcome message with database messages if they exist
@@ -142,13 +144,42 @@ class ChatContextManager {
    * @returns {Object} Chat context
    */
   switchToProject(project, userId = 'cigno-user', clientData = null) {
-    const context = this.getOrCreateChatContext(project, userId, clientData);
+    // Normalize project data - handle both project and deliverable items
+    let projectData = project;
+    
+    // If this is a deliverable, use its parent project for chat context
+    if (project.type === 'deliverable') {
+      // Use the getProjectId helper to ensure consistent project ID extraction
+      const projectId = this.getProjectId(project);
+      projectData = {
+        id: projectId,
+        name: project.projectName || project.title || 'Current Project',
+        type: 'project',
+        // Preserve deliverable info for context
+        currentDeliverable: {
+          id: project.id,
+          name: project.name || project.title,
+          type: project.type
+        }
+      };
+      console.log(`🔀 Deliverable detected, using parent project context: ${projectData.name} (Project ID: ${projectData.id})`);
+    } else {
+      console.log(`🔀 Project detected, using project context: ${project.name || project.title} (Project ID: ${project.id})`);
+    }
+    
+    const context = this.getOrCreateChatContext(projectData, userId, clientData);
     
     if (context) {
       // Update last accessed time
       context.lastAccessedAt = new Date().toISOString();
       this.currentContext = context;
-      console.log(`🔀 Switched to chat context for project: ${project.name || project.title}`);
+      console.log(`🔀 Switched to chat context for project: ${projectData.name || projectData.title}`);
+      console.log(`📊 Context has ${context.messages?.length || 0} messages`);
+      
+      // Log current deliverable if applicable
+      if (projectData.currentDeliverable) {
+        console.log(`📄 Current deliverable: ${projectData.currentDeliverable.name} (ID: ${projectData.currentDeliverable.id})`);
+      }
     }
 
     return context;
@@ -160,6 +191,116 @@ class ChatContextManager {
    */
   getCurrentContext() {
     return this.currentContext;
+  }
+
+  /**
+   * Debug method to list all current contexts
+   */
+  listAllContexts() {
+    console.log(`📋 All chat contexts (${this.chatContexts.size}):`);
+    for (const [key, context] of this.chatContexts.entries()) {
+      console.log(`  - ${key}: ${context.projectName} (${context.messages?.length || 0} messages)`);
+    }
+  }
+
+  /**
+   * Check if two items share the same project context
+   * @param {Object} item1 - First item (project or deliverable)
+   * @param {Object} item2 - Second item (project or deliverable)
+   * @param {string} userId - User ID
+   * @returns {boolean} True if they share the same project context
+   */
+  shareSameProjectContext(item1, item2, userId = 'cigno-user') {
+    if (!item1 || !item2) return false;
+    
+    // Get project IDs for both items using the helper method
+    const projectId1 = this.getProjectId(item1);
+    const projectId2 = this.getProjectId(item2);
+    
+    return projectId1 === projectId2;
+  }
+
+  /**
+   * Get the project ID for any item (project or deliverable)
+   * @param {Object} item - Project or deliverable item
+   * @returns {string} Project ID
+   */
+  getProjectId(item) {
+    if (!item) return null;
+    
+    console.log(`🔍 getProjectId for item:`, {
+      type: item.type,
+      id: item.id,
+      projectId: item.projectId,
+      project: item.project,
+      name: item.name || item.title
+    });
+    
+    if (item.type === 'deliverable') {
+      // For deliverables, use the project field first, then projectId, then fall back to id
+      const projectId = item.project || item.projectId || item.id;
+      console.log(`📄 Deliverable project ID: ${projectId} (from project: ${item.project}, projectId: ${item.projectId}, fallback id: ${item.id})`);
+      return projectId;
+    } else {
+      // For projects, use the id directly
+      console.log(`📁 Project ID: ${item.id}`);
+      return item.id;
+    }
+  }
+
+  /**
+   * Ensure context consistency when switching between project and deliverable
+   * @param {Object} newItem - New item being switched to
+   * @param {string} userId - User ID
+   * @returns {Object|null} Updated chat context
+   */
+  ensureContextConsistency(newItem, userId = 'cigno-user') {
+    if (!newItem) return null;
+    
+    // Get the project ID for the new item
+    const newProjectId = this.getProjectId(newItem);
+    
+    // If we have a current context, check if we need to switch
+    if (this.currentContext) {
+      const currentProjectId = this.currentContext.projectId;
+      
+      console.log(`🔍 Context check: Current=${currentProjectId}, New=${newProjectId}, NewType=${newItem.type}`);
+      console.log(`🔍 New item details:`, {
+        id: newItem.id,
+        projectId: newItem.projectId,
+        name: newItem.name || newItem.title,
+        type: newItem.type
+      });
+      
+      // If same project context, just update the current deliverable info
+      if (currentProjectId === newProjectId) {
+        console.log(`🔄 Same project context detected, updating deliverable info`);
+        
+        if (newItem.type === 'deliverable') {
+          this.currentContext.currentDeliverable = {
+            id: newItem.id,
+            name: newItem.name || newItem.title,
+            type: newItem.type
+          };
+          console.log(`📄 Updated current deliverable: ${this.currentContext.currentDeliverable.name}`);
+        } else {
+          this.currentContext.currentDeliverable = null;
+          console.log(`📁 Cleared current deliverable (now in project view)`);
+        }
+        
+        // Update last accessed time
+        this.currentContext.lastAccessedAt = new Date().toISOString();
+        
+        return this.currentContext;
+      } else {
+        console.log(`🔄 Different project context detected, switching to new project`);
+      }
+    } else {
+      console.log(`🔄 No current context, creating new context`);
+    }
+    
+    // Different project context or no current context, switch normally
+    return this.switchToProject(newItem, userId);
   }
 
   /**
@@ -176,18 +317,27 @@ class ChatContextManager {
 
     const messageWithTimestamp = {
       ...message,
-      timestamp: new Date().toISOString()
+      timestamp: message.timestamp || new Date().getTime() // Use provided timestamp or current time
     };
 
     this.currentContext.messages.push(messageWithTimestamp);
     this.currentContext.lastAccessedAt = new Date().toISOString();
+    
+    console.log(`💬 Added message to ${this.currentContext.projectName} chat:`, {
+      messageId: messageWithTimestamp.id,
+      content: message.content?.substring(0, 50) + '...',
+      totalMessages: this.currentContext.messages.length,
+      timestamp: messageWithTimestamp.timestamp
+    });
     
     // Save to database asynchronously
     this.saveChatMessageToDatabase(messageWithTimestamp, aiMetadata).catch(error => {
       console.error('Failed to save chat message to database:', error);
     });
     
-    console.log(`💬 Added message to ${this.currentContext.projectName} chat:`, message.content?.substring(0, 50) + '...');
+    // Save to localStorage as backup
+    this.saveToStorage();
+    
     return true;
   }
 
@@ -270,7 +420,17 @@ class ChatContextManager {
       );
 
       console.log(`📂 Loaded ${messages.length} messages from database for project: ${this.currentContext.projectName}`);
-      return messages.reverse(); // Reverse to get chronological order
+      
+      // Convert database messages to UI format
+      const uiMessages = messages.map(msg => ({
+        id: msg.messageId,
+        type: msg.role,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.timestamp).getTime() // Convert to timestamp for UI
+      })).reverse(); // Reverse to get chronological order
+      
+      return uiMessages;
 
     } catch (error) {
       console.error('ChatContextManager: Database load failed:', error);
@@ -297,7 +457,7 @@ class ChatContextManager {
           type: msg.role,
           role: msg.role,
           content: msg.content,
-          timestamp: msg.timestamp
+          timestamp: new Date(msg.timestamp).getTime() // Convert to timestamp for UI
         }));
 
         // Merge with existing messages, avoiding duplicates
@@ -306,7 +466,7 @@ class ChatContextManager {
         
         if (newMessages.length > 0) {
           this.currentContext.messages = [...this.currentContext.messages, ...newMessages]
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            .sort((a, b) => a.timestamp - b.timestamp);
           console.log(`🔄 Synced ${newMessages.length} new messages from database`);
         }
       }

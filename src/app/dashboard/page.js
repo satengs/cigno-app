@@ -193,16 +193,18 @@ function DashboardWithSearchParams() {
           onStorylineChange={setCurrentStoryline}
         />
 
-        {/* Right Section */}
-        <RightSection 
-          isModalOpen={isModalOpen} 
-          selectedItem={selectedItem} 
-          showLayoutOptions={selectedItem?._view === 'layout' || currentContentView === 'layout'}
-          selectedLayout={selectedLayout}
-          onLayoutChange={setSelectedLayout}
-          storyline={currentStoryline}
-          onApplyLayoutToAll={handleApplyLayoutToAll}
-        />
+        {/* Right Section - Hide for client view */}
+        {selectedItem?.type !== 'client' && (
+          <RightSection 
+            isModalOpen={isModalOpen} 
+            selectedItem={selectedItem} 
+            showLayoutOptions={selectedItem?._view === 'layout' || currentContentView === 'layout'}
+            selectedLayout={selectedLayout}
+            onLayoutChange={setSelectedLayout}
+            storyline={currentStoryline}
+            onApplyLayoutToAll={handleApplyLayoutToAll}
+          />
+        )}
       </div>
       
     </div>

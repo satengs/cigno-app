@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import connectDB from '../../../../../lib/db/mongoose.js';
 import Deliverable from '../../../../../lib/models/Deliverable';
 import Project from '../../../../../lib/models/Project';
+import Client from '../../../../../lib/models/Client';
+import User from '../../../../../lib/models/User';
 import mongoose from 'mongoose';
 
 export async function GET(request, { params }) {

@@ -65,17 +65,32 @@ async function initializeAIProvider() {
       
       projectChatService.setAIProvider(vaveProvider);
     } else {
-      console.log('Vave AI not configured, using fallback providers');
+      console.log('Vave AI not configured, using mock AI provider');
       
-      // Try backend provider
-      const backendInitialized = await backendProvider.initialize();
-      if (backendInitialized) {
-        projectChatService.setAIProvider(backendProvider);
-      } else {
-        // Fallback to OpenAI
-        await openAIProvider.initialize();
-        projectChatService.setAIProvider(openAIProvider);
-      }
+      // Mock AI provider for development
+      const mockProvider = {
+        isAvailable: () => true,
+        generate: async (messages) => {
+          const lastMessage = messages[messages.length - 1];
+          const projectName = lastMessage.projectName || 'this project';
+          
+          // Simulate AI thinking time
+          await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+          
+          // Generate contextual responses based on the message
+          const responses = [
+            `I understand you're working on ${projectName}. That's an interesting question about "${lastMessage.content}". Let me help you with that.`,
+            `For ${projectName}, I'd recommend considering the strategic implications of what you're asking. Here's my analysis: "${lastMessage.content}" suggests we should focus on the key deliverables.`,
+            `Great question about ${projectName}! Based on your message "${lastMessage.content}", I think we should explore the market dynamics and competitive landscape.`,
+            `Regarding ${projectName}, your question "${lastMessage.content}" touches on some important strategic considerations. Let me provide some insights.`,
+            `I see you're asking about "${lastMessage.content}" for ${projectName}. This is a critical aspect that requires careful analysis of the current market conditions.`
+          ];
+          
+          return responses[Math.floor(Math.random() * responses.length)];
+        }
+      };
+      
+      projectChatService.setAIProvider(mockProvider);
     }
     
     isInitialized = true;

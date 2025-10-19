@@ -30,83 +30,109 @@ export async function GET() {
       itemMap.set(item._id.toString(), normalizedItem);
     });
     
-    // Second pass: Add deliverables as menu items ONLY if no menu item already exists for them
-    allDeliverables.forEach(deliverable => {
-      const deliverableId = deliverable._id.toString();
-      
-      // Check if a menu item already exists for this deliverable
-      const existingMenuItem = Array.from(itemMap.values()).find(item => 
-        item.type === 'deliverable' && (
-          item.metadata?.deliverableId === deliverableId ||
-          item.metadata?.deliverable_id === deliverableId ||
-          item.metadata?.business_entity_id === deliverableId
-        )
-      );
-      
-      if (!existingMenuItem) {
-        console.log(`Creating missing menu item for deliverable: ${deliverable.name}`);
+    // Second pass: Clean up orphaned menu items and add deliverables as menu items
+    console.log(`Processing ${allDeliverables.length} deliverables...`);
+    
+    // First, remove orphaned deliverable menu items (menu items that reference non-existent deliverables)
+    const deliverableIds = new Set(allDeliverables.map(d => d._id.toString()));
+    const orphanedMenuItems = [];
+    
+    // Items to preserve even if orphaned
+    const preserveItems = ['New Pension Strategy for UBS Switzerland'];
+    
+    for (const [itemId, item] of itemMap.entries()) {
+      if (item.type === 'deliverable') {
+        const referencedDeliverableId = item.metadata?.deliverableId || 
+                                       item.metadata?.deliverable_id || 
+                                       item.metadata?.business_entity_id;
         
-        const deliverableMenuItem = formatForAPI({
-          _id: deliverable._id,
-          title: deliverable.name,
-          description: deliverable.brief || '',
-          type: 'deliverable',
-          status: deliverable.status || 'draft',
-          parentId: null, // Will be set based on project mapping below
-          order: 0,
-          isCollapsed: false,
-          isCollapsible: false,
-          children: [],
-          metadata: {
-            deliverableId: deliverable._id.toString(),
-            deliverable_id: deliverable._id.toString(),
-            business_entity_id: deliverable._id.toString(),
-            project_id: deliverable.project ? deliverable.project.toString() : null,
-            format: deliverable.format,
-            due_date: deliverable.due_date,
-            priority: deliverable.priority
-          },
-          brief: deliverable.brief || '',
-          dueDate: deliverable.due_date,
-          priority: deliverable.priority || 'medium'
-        });
-        
-        // Find the parent project menu item
-        if (deliverable.project) {
-          const projectId = deliverable.project.toString();
-          // Find menu item with project_id in metadata
-          const parentProject = Array.from(itemMap.values()).find(item => 
-            item.type === 'project' && 
-            (item.metadata?.project_id === projectId || item.metadata?.business_entity_id === projectId)
-          );
-          
-          if (parentProject) {
-            deliverableMenuItem.parentId = parentProject._id;
-            parentProject.children.push(deliverableMenuItem);
-            console.log(`Added deliverable "${deliverable.name}" to project "${parentProject.title}"`);
+        if (referencedDeliverableId && !deliverableIds.has(referencedDeliverableId)) {
+          // Check if this item should be preserved
+          if (preserveItems.includes(item.title)) {
+            console.log(`🔒 Preserving orphaned menu item: ${item.title} (as requested)`);
           } else {
-            console.log(`No parent project found for deliverable "${deliverable.name}" with project ID ${projectId}`);
+            console.log(`🗑️ Found orphaned menu item: ${item.title} (references non-existent deliverable: ${referencedDeliverableId})`);
+            orphanedMenuItems.push(itemId);
           }
         }
-        
-        // Add to the itemMap so it's included in the hierarchy
-        itemMap.set(deliverableId, deliverableMenuItem);
-      } else {
-        console.log(`Menu item already exists for deliverable: ${deliverable.name}`);
       }
+    }
+    
+    // Remove orphaned menu items from itemMap (except preserved ones)
+    orphanedMenuItems.forEach(itemId => {
+      itemMap.delete(itemId);
+      console.log(`✅ Removed orphaned menu item: ${itemId}`);
     });
     
+    // Deduplicate menu items with the same title and deliverable ID (keep the first one)
+    const titleMap = new Map();
+    const duplicateItems = [];
+    
+    for (const [itemId, item] of itemMap.entries()) {
+      if (item.type === 'deliverable' && item.title) {
+        const deliverableId = item.metadata?.deliverableId || item.metadata?.deliverable_id || item.metadata?.business_entity_id;
+        const key = `${item.title}-${deliverableId}`;
+        
+        if (titleMap.has(key)) {
+          console.log(`🔄 Found duplicate menu item: "${item.title}" with deliverable ID ${deliverableId} (ID: ${itemId}), removing duplicate`);
+          duplicateItems.push(itemId);
+        } else {
+          titleMap.set(key, itemId);
+        }
+      }
+    }
+    
+    // Remove duplicate items from both itemMap and database
+    for (const itemId of duplicateItems) {
+      itemMap.delete(itemId);
+      console.log(`✅ Removed duplicate menu item from display: ${itemId}`);
+      
+      // Also delete from database
+      try {
+        await MenuItemModel.findByIdAndDelete(itemId);
+        console.log(`🗑️ Deleted duplicate menu item from database: ${itemId}`);
+      } catch (dbError) {
+        console.error(`❌ Failed to delete duplicate menu item from database: ${itemId}`, dbError);
+      }
+    }
+    
+    // No auto-generation - only use existing menu items from database
+    console.log(`Skipping auto-generation - using only existing menu items from database`);
+    
     // Third pass: build the hierarchy for all menu items (including auto-generated ones)
-    allItems.forEach(item => {
-      const itemWithId = itemMap.get(item._id.toString());
+    // Process all items in the itemMap, not just the original allItems
+    const processedItems = new Set();
+    Array.from(itemMap.values()).forEach(item => {
+      if (processedItems.has(item._id.toString())) {
+        console.log(`Skipping duplicate item: ${item.title} (${item._id})`);
+        return;
+      }
+      processedItems.add(item._id.toString());
       
       if (item.parentId) {
         const parent = itemMap.get(item.parentId.toString());
         if (parent) {
-          parent.children.push(itemWithId);
+          parent.children.push(item);
+        } else {
+          // If parent not found by ID, try to find by project_id in metadata
+          if (item.metadata?.project_id) {
+            const projectParent = Array.from(itemMap.values()).find(p => 
+              p.type === 'project' && 
+              (p.metadata?.project_id === item.metadata.project_id || 
+               p.metadata?.business_entity_id === item.metadata.project_id)
+            );
+            if (projectParent) {
+              console.log(`Found parent by project_id for ${item.title}: ${projectParent.title}`);
+              projectParent.children.push(item);
+            } else {
+              console.log(`No parent found for ${item.title} with project_id ${item.metadata.project_id}`);
+            }
+          } else {
+            console.log(`No parent found for ${item.title} with parentId ${item.parentId}`);
+          }
         }
       } else {
-        rootItems.push(itemWithId);
+        rootItems.push(item);
       }
     });
     
@@ -146,7 +172,7 @@ export async function POST(request) {
     // Handle missing title for projects (fallback)
     let finalTitle = itemData.title;
     if (!finalTitle && itemData.type === 'project') {
-      finalTitle = itemData.name || 'Untitled Project';
+      finalTitle = itemData.name;
       console.log('🔧 Menu API: Using project name as title:', finalTitle);
     }
     

@@ -95,7 +95,7 @@ export default function DeliverableDetailsView({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Deliverable type</label>
             <input
               type="text"
               value="Recommendation"

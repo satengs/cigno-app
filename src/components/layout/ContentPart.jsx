@@ -901,7 +901,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
       
       const fetchDeliverableData = async () => {
-        const deliverableId = selectedItem._id || selectedItem.id;
+        // Extract the correct deliverable ID from metadata (same pattern as saveDeliverable)
+        const deliverableId = selectedItem?.metadata?.deliverableId || 
+                             selectedItem?.metadata?.deliverable_id || 
+                             selectedItem?.metadata?.business_entity_id || 
+                             selectedItem?._id || 
+                             selectedItem?.id;
         if (!deliverableId) return;
         
         try {
@@ -1650,7 +1655,14 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
     if (window.confirm('Are you sure you want to delete this deliverable?')) {
       try {
-        const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
+        // Extract the correct deliverable ID from metadata
+        const deliverableId = selectedItem?.metadata?.deliverableId || 
+                             selectedItem?.metadata?.deliverable_id || 
+                             selectedItem?.metadata?.business_entity_id || 
+                             selectedItem?._id || 
+                             selectedItem?.id;
+        
+        const response = await fetch(`/api/deliverables/${deliverableId}`, {
           method: 'DELETE',
         });
 
@@ -1813,8 +1825,87 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     }));
   };
 
+  const handleRefreshBrief = async () => {
+    if (!selectedItem) {
+      console.error('No deliverable selected to refresh');
+      return;
+    }
+
+    try {
+      console.log('🔄 [REFRESH BRIEF] Starting brief refresh...');
+      
+      // Extract the correct deliverable ID from metadata
+      const deliverableId = selectedItem?.metadata?.deliverableId || 
+                           selectedItem?.metadata?.deliverable_id || 
+                           selectedItem?.metadata?.business_entity_id || 
+                           selectedItem?._id || 
+                           selectedItem?.id;
+
+      if (!deliverableId) {
+        console.error('❌ No deliverable ID found for refresh');
+        alert('Cannot refresh brief: Missing deliverable ID');
+        return;
+      }
+
+      // Store current brief data
+      const currentBrief = formData.brief;
+      const currentQuality = formData.brief_quality;
+      const currentStrengths = formData.brief_strengths;
+      const currentImprovements = formData.brief_improvements;
+
+      console.log('🔄 [REFRESH BRIEF] Current brief data:', {
+        brief: currentBrief,
+        quality: currentQuality,
+        strengths: currentStrengths,
+        improvements: currentImprovements
+      });
+
+      // Temporarily clear the brief
+      setFormData(prev => ({
+        ...prev,
+        brief: '',
+        brief_quality: null,
+        brief_strengths: [],
+        brief_improvements: []
+      }));
+
+      // Wait a moment to ensure state update
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Reinsert the same data
+      setFormData(prev => ({
+        ...prev,
+        brief: currentBrief,
+        brief_quality: currentQuality,
+        brief_strengths: currentStrengths || [],
+        brief_improvements: currentImprovements || []
+      }));
+
+      console.log('✅ [REFRESH BRIEF] Brief refreshed successfully');
+
+      // Optionally save to database to ensure consistency
+      const saveResult = await saveDeliverable({ silent: true });
+      if (saveResult) {
+        console.log('✅ [REFRESH BRIEF] Brief saved to database');
+      } else {
+        console.warn('⚠️ [REFRESH BRIEF] Failed to save brief to database');
+      }
+
+    } catch (error) {
+      console.error('❌ [REFRESH BRIEF] Error refreshing brief:', error);
+      alert('Error refreshing brief: ' + error.message);
+    }
+  };
+
   const saveDeliverable = async ({ silent = false } = {}) => {
-    if (!selectedItem?._id) {
+    // Extract the correct deliverable ID from metadata
+    const deliverableId = selectedItem?.metadata?.deliverableId || 
+                         selectedItem?.metadata?.deliverable_id || 
+                         selectedItem?.metadata?.business_entity_id || 
+                         selectedItem?._id || 
+                         selectedItem?.id;
+    
+    if (!deliverableId) {
       console.error('No deliverable ID to save');
       if (!silent) {
         alert('No deliverable selected to save.');
@@ -1839,8 +1930,23 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         project_id: selectedItem.project_id,
         metadata: selectedItem.metadata
       });
+      console.log('💾 [SAVE START] Extracted deliverable ID:', deliverableId);
+      console.log('💾 [SAVE START] SelectedItem._id (menu item ID):', selectedItem._id);
 
-      const projectId = selectedItem.project || selectedItem.project_id || selectedItem.metadata?.project_id || selectedItem.metadata?.projectId;
+      const projectId = selectedItem.project || 
+                       selectedItem.project_id || 
+                       selectedItem.metadata?.project_id || 
+                       selectedItem.metadata?.projectId ||
+                       selectedItem.parentId; // Also check parentId for project reference
+
+      console.log('💾 [SAVE START] Project ID extraction:', {
+        'selectedItem.project': selectedItem.project,
+        'selectedItem.project_id': selectedItem.project_id,
+        'selectedItem.metadata?.project_id': selectedItem.metadata?.project_id,
+        'selectedItem.metadata?.projectId': selectedItem.metadata?.projectId,
+        'selectedItem.parentId': selectedItem.parentId,
+        'final projectId': projectId
+      });
 
       if (!projectId) {
         console.error('❌ Missing required project ID');
@@ -1898,7 +2004,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       console.log('💾 [SAVE API] Brief quality in payload:', payload.brief_quality);
       console.log('💾 [SAVE API] formData.brief_quality before save:', formData.brief_quality);
 
-      const response = await fetch(`/api/deliverables/${selectedItem._id}`, {
+      const response = await fetch(`/api/deliverables/${deliverableId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -2016,11 +2122,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     console.log('📥 ========== END RESULT ==========');
     console.log('');
     
-    const deliverableId = selectedItem?.metadata?.deliverableId 
-      || selectedItem?.metadata?.deliverable_id 
-      || selectedItem?.metadata?.business_entity_id 
-      || selectedItem?._id 
-      || selectedItem?.id;
+    // Extract the correct deliverable ID from metadata (same pattern as saveDeliverable)
+    const deliverableId = selectedItem?.metadata?.deliverableId || 
+                         selectedItem?.metadata?.deliverable_id || 
+                         selectedItem?.metadata?.business_entity_id || 
+                         selectedItem?._id || 
+                         selectedItem?.id;
 
     if (!deliverableId) {
       console.error('❌ No deliverable ID');
@@ -3262,7 +3369,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
         {/* Remove Section Confirmation */}
         {sectionToRemove && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-50 bg-opacity-50 backdrop-blur-sm" style={{ backgroundColor: '#000000e0' }}>
             <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
               <div className="border-b border-gray-200 px-6 py-4">
                 <h3 className="text-lg font-semibold text-gray-900">Remove Section</h3>
@@ -3291,7 +3398,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
         {/* Reset Storyline Confirmation */}
         {showResetConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" style={{ backgroundColor: '#000000e0' }}>
             <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
               <div className="border-b border-gray-200 px-6 py-4">
                 <h3 className="text-lg font-semibold text-gray-900">Reset Storyline</h3>

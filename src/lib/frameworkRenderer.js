@@ -716,12 +716,86 @@ function generateChartsFromSlideContent(slideContent, framework, sectionIndex) {
       }
       break;
       
+    case 'strategic_options':
+    case 'cfa_demo_strategic':
+      if (slideContent.ecosystem_components) {
+        // Create ecosystem components chart
+        charts.push({
+          id: `chart_${sectionIndex + 1}_ecosystem`,
+          title: 'Ecosystem Components',
+          type: 'ecosystem',
+          config: {
+            data: convertEcosystemComponentsToChartData(slideContent),
+            generated: true
+          }
+        });
+      }
+      
+      if (slideContent.visual_structure) {
+        // Create visual structure chart
+        charts.push({
+          id: `chart_${sectionIndex + 1}_structure`,
+          title: 'Ecosystem Structure',
+          type: 'circular',
+          config: {
+            data: convertVisualStructureToChartData(slideContent.visual_structure),
+            generated: true
+          }
+        });
+      }
+      break;
+      
     default:
       // Generic chart generation for other frameworks
       break;
   }
   
   return charts;
+}
+
+/**
+ * Convert ecosystem components to chart format
+ */
+function convertEcosystemComponentsToChartData(slideContent) {
+  if (!slideContent.ecosystem_components) return null;
+  
+  const components = slideContent.ecosystem_components.map(component => ({
+    name: component.component_name || component.name,
+    description: component.description,
+    addressesGap: component.addresses_gap,
+    implementation: component.implementation,
+    id: component.component_id || component.id
+  }));
+  
+  return {
+    labels: components.map(c => c.name),
+    datasets: [{
+      label: 'Ecosystem Components',
+      data: components.map((_, index) => index + 1),
+      backgroundColor: components.map((_, index) => 
+        `hsl(${(index * 51) % 360}, 70%, 60%)`
+      ),
+      borderColor: components.map((_, index) => 
+        `hsl(${(index * 51) % 360}, 70%, 40%)`
+      ),
+      borderWidth: 2
+    }],
+    componentDetails: components
+  };
+}
+
+/**
+ * Convert visual structure to chart format
+ */
+function convertVisualStructureToChartData(visualStructure) {
+  if (!visualStructure) return null;
+  
+  return {
+    center: visualStructure.center || 'Client',
+    lifecycleStages: visualStructure.lifecycle_stages || [],
+    format: visualStructure.format || 'Circular ecosystem diagram',
+    partnershipsNote: visualStructure.partnerships_note
+  };
 }
 
 /**

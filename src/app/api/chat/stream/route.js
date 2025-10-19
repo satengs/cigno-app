@@ -11,7 +11,7 @@ const chatService = new ChatService();
 const backendProvider = new BackendProvider({
   backendUrl: 'https://ai.vave.ch',
   endpoint: '/api/chat/send-streaming',
-  timeout: 30000
+  timeout: 10000
 });
 
 async function initializeAIProvider() {

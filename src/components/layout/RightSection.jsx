@@ -119,6 +119,21 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     }
   }, [expandedSections.aiAssistant]);
 
+  // Auto-open chat for projects only, keep closed for deliverables by default
+  useEffect(() => {
+    if (selectedItem?.type === 'project') {
+      setExpandedSections(prev => ({
+        ...prev,
+        aiAssistant: true
+      }));
+    } else if (selectedItem?.type === 'deliverable') {
+      setExpandedSections(prev => ({
+        ...prev,
+        aiAssistant: false
+      }));
+    }
+  }, [selectedItem?.type]);
+
   // Note: AI assistant is not auto-opened, user must manually click to expand it
 
   // Fetch documents when a deliverable is selected
@@ -185,12 +200,17 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     scrollToBottom();
   }, [messages]);
 
-  // Fetch current user from database on component mount and reset chat history
+  // Debug: Monitor message state changes
   useEffect(() => {
-    // Reset all chat history on page load
-    chatContextManager.clearAllChatHistory();
-    console.log('🔄 Reset all chat history on page load');
-    
+    console.log('📊 Messages state updated:', {
+      messageCount: messages.length,
+      currentChatContext: currentChatContext?.projectName || 'None',
+      lastMessage: messages[messages.length - 1]?.content?.substring(0, 50) || 'None'
+    });
+  }, [messages, currentChatContext]);
+
+  // Fetch current user from database on component mount
+  useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
         const response = await fetch('/api/users');
@@ -219,20 +239,40 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
       return;
     }
 
-    // Only switch chat context when a PROJECT is directly selected
-    if (selectedItem.type === 'project') {
-      console.log(`🔀 Switching to project chat: ${selectedItem.name}`);
+    // Switch chat context for projects and deliverables
+    if (selectedItem.type === 'project' || selectedItem.type === 'deliverable') {
+      console.log(`🔀 Switching to project chat: ${selectedItem.name} (Type: ${selectedItem.type})`);
+      console.log(`🔍 Selected item details:`, {
+        id: selectedItem.id,
+        projectId: selectedItem.projectId,
+        name: selectedItem.name,
+        title: selectedItem.title
+      });
       
-      // Switch to project chat context
-      const chatContext = chatContextManager.switchToProject(selectedItem, currentUser._id);
+      // Use the new context consistency method
+      const chatContext = chatContextManager.ensureContextConsistency(selectedItem, currentUser._id);
       
       if (chatContext) {
         setCurrentChatContext(chatContext);
         setMessages(chatContext.messages || []);
-        console.log(`💬 Loaded ${chatContext.messages?.length || 0} messages for project: ${selectedItem.name}`);
+        console.log(`💬 Loaded ${chatContext.messages?.length || 0} messages for project: ${chatContext.projectName}`);
+        
+        console.log(`🔄 Chat context key: ${currentUser._id}_${chatContext.projectId}`);
+        
+        // Log if this is a deliverable context
+        if (chatContext.currentDeliverable) {
+          console.log(`📄 Deliverable context: ${chatContext.currentDeliverable.name} under project ${chatContext.projectName}`);
+        } else {
+          console.log(`📁 Project context: ${chatContext.projectName}`);
+        }
+        
+        // Debug: List all contexts
+        chatContextManager.listAllContexts();
+      } else {
+        console.warn('❌ Failed to create or load chat context');
       }
     }
-    // For other item types (deliverables, clients), keep the current chat context
+    // For other item types (clients), keep the current chat context
     // Don't switch or clear the chat - maintain the current project's chat
   }, [selectedItem, currentUser]);
 
@@ -335,12 +375,12 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
       timestamp: Date.now()
     };
 
-    // Add message to current chat context
+    // Add message to UI immediately
+    setMessages(prev => [...prev, userMessage]);
+    
+    // Save to context if available
     if (currentChatContext) {
-      chatContextManager.addMessageToCurrentChat(userMessage);
-      setMessages(chatContextManager.getCurrentMessages());
-    } else {
-      setMessages(prev => [...prev, userMessage]);
+      currentChatContext.messages.push(userMessage);
     }
     
     const currentInputValue = inputValue;
@@ -348,27 +388,113 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
     setIsLoading(true);
 
     try {
-      // Simple AI response for now
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the simple chat API with project context
+      // For deliverables, use the parent project ID for consistent history
+      const projectId = currentChatContext?.projectId || 
+        (selectedItem?.type === 'deliverable' ? selectedItem?.projectId : selectedItem?.id) || 
+        'default';
+      const userId = currentUser?._id || 'cigno-user';
+      const threadId = `${projectId}_${userId}`; // Remove timestamp to maintain consistent thread
       
-      const aiResponse = {
-        id: Date.now() + 1,
-        type: 'assistant',
-        content: `I understand you're asking about "${currentInputValue}". I'm here to help with your project!`,
-        timestamp: Date.now()
+      // Prepare comprehensive project context
+      const projectContext = {
+        projectId: projectId,
+        projectName: currentChatContext?.projectName || 
+          (selectedItem?.type === 'deliverable' ? selectedItem?.projectName : selectedItem?.title) || 
+          'Current Project',
+        type: selectedItem?.type === 'deliverable' ? 'project' : (selectedItem?.type || 'project'),
+        status: selectedItem?.status || 'active',
+        description: selectedItem?.description || selectedItem?.summary,
+        client: selectedItem?.client || selectedItem?.clientName,
+        industry: 'Financial Services',
+        region: 'EMEA',
+        priority: selectedItem?.priority || 'high',
+        dueDate: selectedItem?.dueDate,
+        deliverables: selectedItem?.deliverables || [],
+        team: selectedItem?.team || [],
+        stakeholders: selectedItem?.stakeholders || [],
+        userId: userId,
+        userRole: 'consultant',
+        userExpertise: 'EMEA Financial Services',
+        organization: 'Cigno Platform',
+        // Include current deliverable info if applicable
+        currentDeliverable: selectedItem?.type === 'deliverable' ? {
+          id: selectedItem.id,
+          name: selectedItem.name || selectedItem.title,
+          type: selectedItem.type
+        } : null
       };
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: currentInputValue,
+          userId: userId,
+          threadId: threadId,
+          ...projectContext
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Handle chat API response
+      const data = await response.json();
       
-      if (currentChatContext) {
-        chatContextManager.addMessageToCurrentChat(aiResponse, {
-          provider: 'simple-ai',
-          responseTime: 1000
-        });
-        setMessages(chatContextManager.getCurrentMessages());
-      } else {
+      if (data.ok && data.data) {
+        const { messages, conversation } = data.data;
+        
+        // Get the last assistant message from the conversation
+        const lastMessage = messages && messages.length > 0 
+          ? messages[messages.length - 1] 
+          : null;
+        
+        const assistantMessage = lastMessage?.content || 'I received your message and I\'m here to help!';
+        
+        // Add AI response to chat
+        const aiResponse = {
+          id: Date.now() + 1,
+          type: 'assistant',
+          content: assistantMessage,
+          timestamp: Date.now(),
+          isStreaming: false
+        };
+        
+        // Add AI response to UI immediately
         setMessages(prev => [...prev, aiResponse]);
+        
+        // Save to context if available
+        if (currentChatContext) {
+          currentChatContext.messages.push(aiResponse);
+        }
+        
+        console.log('✅ Chat message sent successfully:', assistantMessage);
+      } else {
+        throw new Error(data.error || 'Invalid response from chat API');
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Add error message
+      const errorResponse = {
+        id: Date.now() + 1,
+        type: 'assistant',
+        content: `Sorry, I encountered an error: ${error.message}`,
+        timestamp: Date.now(),
+        isError: true
+      };
+      
+      // Add error message to UI immediately
+      setMessages(prev => [...prev, errorResponse]);
+      
+      // Save to context if available
+      if (currentChatContext) {
+        currentChatContext.messages.push(errorResponse);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1075,12 +1201,36 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           <div 
             className="flex flex-col border-t"
             style={{ 
-              height: 'calc(100vh - 200px)',
+              height: selectedItem?.type === 'project' ? 'calc(100vh - 60px)' : 'calc(100vh - 200px)',
               borderColor: 'var(--border-primary)'
             }}
           >
             {/* Messages - Scrollable Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Show hello message if no messages */}
+              {messages.length === 0 && (
+                <div className="flex justify-start">
+                  <div className="max-w-xs lg:max-w-md px-4 py-2 rounded-lg" style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-primary)'
+                  }}>
+                    <div className="flex items-start space-x-2">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-1" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                        <Bot className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm">
+                          Hello! I'm here to help you with the "{selectedItem?.name || selectedItem?.title || 'this project'}" project. What would you like to work on today?
+                        </p>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                          {formatTimestamp(Date.now())}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {messages.map((message) => {
                 // Handle narrative messages differently
                 if (message.role === 'narrative') {
@@ -1117,9 +1267,17 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
                           </div>
                         )}
                         <div className="flex-1">
-                          <p className="text-sm">{message.content}</p>
+                          <p className="text-sm">
+                            {message.content}
+                            {message.isStreaming && (
+                              <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1"></span>
+                            )}
+                          </p>
                           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                             {formatTimestamp(message.timestamp)}
+                            {message.isStreaming && (
+                              <span className="ml-2 text-blue-500">Streaming...</span>
+                            )}
                           </p>
                         </div>
                         {message.type === 'user' && (
@@ -1156,16 +1314,17 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
                     onChange={handleTextareaChange}
                     onKeyPress={handleKeyPress}
                     placeholder="Ask me about EMEA Financial Services consulting..."
-                    className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none placeholder-gray-500"
-                    rows={1}
+                    className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none placeholder-gray-500 placeholder:text-sm"
+                    rows={3}
                     style={{ 
-                      minHeight: '44px', 
+                      minHeight: '80px', 
                       maxHeight: '120px',
                       backgroundColor: '#ffffff',
                       color: '#1f2937',
                       border: '1px solid #d1d5db',
-                      height: '44px',
-                      overflow: 'hidden'
+                      height: '80px',
+                      overflow: 'hidden',
+                      fontSize: '14px'
                     }}
                   />
                 </div>

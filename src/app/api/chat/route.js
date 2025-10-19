@@ -12,8 +12,9 @@ import {
 
 const chatService = new ChatService();
 const backendProvider = new BackendProvider({
-  backendUrl: 'http://localhost:3000',
-  endpoint: '/api/chat/send', // Updated to match your backend documentation
+  backendUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
+  endpoint: '/api/chat/send-streaming',
+  apiKey: process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
   timeout: 30000
 });
 const openAIProvider = new OpenAIProvider(); // Keep as fallback
@@ -41,9 +42,14 @@ async function initializeAIProvider() {
       console.log('🔄 Backend provider set in ChatService');
     } else {
       console.log('⚠️ Backend provider failed, falling back to OpenAI provider');
-      await openAIProvider.initialize();
-      chatService.setAIProvider(openAIProvider);
-      console.log('🔄 OpenAI provider set in ChatService');
+      try {
+        await openAIProvider.initialize();
+        chatService.setAIProvider(openAIProvider);
+        console.log('🔄 OpenAI provider set in ChatService');
+      } catch (openAIError) {
+        console.log('⚠️ OpenAI provider also failed, using mock responses');
+        chatService.setAIProvider(null);
+      }
     }
     
     isInitialized = true;

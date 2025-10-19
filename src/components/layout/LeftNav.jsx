@@ -702,13 +702,21 @@ const mapProjectStatusToMenu = (status) => {
     }
   };
 
-  const handleRemoveItem = (itemType, itemId, itemTitle) => {
+  const handleRemoveItem = (itemType, itemId, itemTitle, menuItemId = null) => {
     console.log('🗑️ LeftNav: Starting remove item process...');
     console.log('📝 Remove item data:', {
       type: itemType,
       id: itemId,
-      title: itemTitle
+      title: itemTitle,
+      menuItemId: menuItemId
     });
+    
+    // Check if this item should never be deleted
+    const protectedItems = ['New Pension Strategy for UBS Switzerland'];
+    if (protectedItems.includes(itemTitle)) {
+      alert(`"${itemTitle}" cannot be deleted as it is a protected item.`);
+      return;
+    }
     
     // Show appropriate confirmation dialog based on item type
     let confirmMessage = '';
@@ -726,14 +734,14 @@ const mapProjectStatusToMenu = (status) => {
         confirmMessage = `Are you sure you want to remove "${itemTitle}"?\n\nThis action cannot be undone.`;
     }
 
-    setPendingDelete({ type: itemType, id: itemId, title: itemTitle, message: confirmMessage });
+    setPendingDelete({ type: itemType, id: itemId, title: itemTitle, message: confirmMessage, menuItemId: menuItemId });
     setShowConfirm(true);
   };
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
 
-    const { type, id, title } = pendingDelete;
+    const { type, id, title, menuItemId } = pendingDelete;
     
     try {
       console.log('🗑️ Removing item of type:', type, 'with ID:', id);
@@ -769,25 +777,46 @@ const mapProjectStatusToMenu = (status) => {
           headers: Object.fromEntries(response.headers.entries())
         });
         
-        let errorMessage = `Failed to remove ${type}`;
-        try {
-          const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorMessage;
+        // If it's a deliverable and we got a 404, try to delete the menu item directly
+        if (type === 'deliverable' && response.status === 404 && menuItemId) {
+          console.log('🔄 Deliverable not found, attempting to delete menu item directly:', menuItemId);
+          
+          const menuResponse = await fetch('/api/menu', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ id: menuItemId })
+          });
+
+          if (menuResponse.ok) {
+            console.log('✅ Orphaned menu item deleted successfully');
           } else {
-            const errorText = await response.text();
-            console.error('Non-JSON error response:', errorText.substring(0, 200));
+            console.error('❌ Failed to delete orphaned menu item:', menuResponse.status);
+            const menuError = await menuResponse.json();
+            throw new Error(`Failed to delete orphaned menu item: ${menuError.error || 'Unknown error'}`);
+          }
+        } else {
+          let errorMessage = `Failed to remove ${type}`;
+          try {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorMessage;
+            } else {
+              const errorText = await response.text();
+              console.error('Non-JSON error response:', errorText.substring(0, 200));
+              errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+            }
+          } catch (parseError) {
+            console.error('Error parsing error response:', parseError);
             errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
           }
-        } catch (parseError) {
-          console.error('Error parsing error response:', parseError);
-          errorMessage = `${type} removal failed: ${response.status} ${response.statusText}`;
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
+      } else {
+        console.log('✅ Item removed successfully');
       }
-
-      console.log('✅ Item removed successfully');
 
       // Clear selection if the removed item was selected
       if (selectedNavItem && idsEqual(selectedNavItem, { id, _id: id })) {
@@ -1473,7 +1502,7 @@ const mapProjectStatusToMenu = (status) => {
                                                       }}
                                                     >
                                                       <div className="flex items-center space-x-2 flex-1">
-                                                        <FileText className="h-3.5 w-3.5" style={{ color: 'var(--text-secondary)' }} />
+                                                        <FileText className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
                                                         <span className="text-xs font-normal" style={{ color: 'var(--text-primary)' }}>{deliverable.title}</span>
                                                       </div>
                                                       <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `deliverable-${deliverable._id || deliverable.id}` ? 'opacity-100' : 'opacity-0'}`}>
@@ -1542,15 +1571,19 @@ const mapProjectStatusToMenu = (status) => {
                                                                   // Extract business entity ID from metadata for proper deletion
                                                                   const businessEntityId = deliverable.metadata?.deliverableId || 
                                                                                           deliverable.metadata?.business_entity_id || 
-                                                                                          deliverable.metadata?.deliverable_id || 
-                                                                                          deliverable._id || 
-                                                                                          deliverable.id;
+                                                                                          deliverable.metadata?.deliverable_id;
+                                                                  
+                                                                  if (!businessEntityId) {
+                                                                    console.error('❌ No business entity ID found for deliverable:', deliverable);
+                                                                    alert('Cannot delete deliverable: Missing deliverable ID');
+                                                                    return;
+                                                                  }
                                                                   console.log('🔧 LeftNav: Extracting business entity ID for deliverable deletion:', {
                                                                     menuItemId: deliverable._id || deliverable.id,
                                                                     businessEntityId: businessEntityId,
                                                                     metadata: deliverable.metadata
                                                                   });
-                                                                  handleRemoveItem('deliverable', businessEntityId, deliverable.title);
+                                                                  handleRemoveItem('deliverable', businessEntityId, deliverable.title, deliverable._id || deliverable.id);
                                                                 }}
                                                                 className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
                                                                 style={{ color: 'var(--text-danger)' }}

@@ -116,12 +116,51 @@ export default class BackendProvider extends AIProvider {
   async callBackendAPI(userMessage, messages = []) {
     const sendUrl = `${this.backendUrl}${this.endpoint}`;
     
-    // Prepare request payload according to your backend documentation
+    // Extract project information from messages
+    const projectInfo = messages.find(msg => msg.projectId) || messages[0] || {};
+    
+    // Prepare request payload with full project context
     const payload = {
       message: userMessage,
       userId: 'cigno-platform-user',
       chatId: `chat_${Date.now()}`,
-      enableNarratives: true
+      enableNarratives: true,
+      projectContext: {
+        projectId: projectInfo.projectId || 'default',
+        projectName: projectInfo.projectName || projectInfo.title || 'Current Project',
+        context: 'EMEA Financial Services Consulting',
+        // Full project information
+        projectDetails: {
+          id: projectInfo.projectId || projectInfo.id,
+          name: projectInfo.projectName || projectInfo.title,
+          type: projectInfo.type || 'consulting',
+          status: projectInfo.status || 'active',
+          description: projectInfo.description || projectInfo.summary,
+          client: projectInfo.client || projectInfo.clientName,
+          industry: projectInfo.industry || 'Financial Services',
+          region: projectInfo.region || 'EMEA',
+          priority: projectInfo.priority || 'high',
+          dueDate: projectInfo.dueDate,
+          deliverables: projectInfo.deliverables || [],
+          team: projectInfo.team || [],
+          stakeholders: projectInfo.stakeholders || []
+        },
+        // User context
+        userContext: {
+          userId: projectInfo.userId || 'cigno-user',
+          role: projectInfo.userRole || 'consultant',
+          expertise: projectInfo.userExpertise || 'EMEA Financial Services',
+          organization: 'Cigno Platform'
+        },
+        // Platform context
+        platformContext: {
+          name: 'Cigno Platform',
+          mission: 'Helping consultants delivering high value services',
+          focus: 'EMEA Financial Services Consulting',
+          targetIndustries: ['Wealth Management', 'Investment Banking', 'Retail Banking', 'Insurance'],
+          capabilities: ['Strategic Analysis', 'Market Research', 'Regulatory Compliance', 'Deliverable Creation']
+        }
+      }
     };
     
     // Add attachments if there are previous messages (conversation context)
@@ -142,8 +181,11 @@ export default class BackendProvider extends AIProvider {
       ];
     }
 
+    const apiKey = this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae';
+    console.log('🔑 Using API key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'none');
+    
     const headers = {
-      'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
+      'X-API-Key': apiKey,
       'Content-Type': 'application/json'
     };
 
@@ -151,7 +193,7 @@ export default class BackendProvider extends AIProvider {
       console.log(`🔄 Calling backend API: ${sendUrl}`);
       console.log('📤 Request payload:', JSON.stringify(payload, null, 2));
 
-      // Step 1: Send message to get requestId
+      // Call the streaming endpoint directly
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -169,21 +211,83 @@ export default class BackendProvider extends AIProvider {
         throw new Error(`Backend send API error (${sendResponse.status}): ${errorText}`);
       }
 
-      let sendData;
-      try {
-        sendData = await sendResponse.json();
-        console.log('📥 Send response:', sendData);
-      } catch (parseError) {
-        console.error('❌ Failed to parse backend response as JSON:', parseError.message);
-        throw new Error(`Backend returned invalid JSON response: ${parseError.message}`);
+      // Handle streaming response
+      const reader = sendResponse.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      let buffer = '';
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonData = line.slice(6).trim();
+              if (!jsonData) continue;
+              
+              try {
+                const data = JSON.parse(jsonData);
+                
+                if (data.type === 'complete' && data.data && data.data.content) {
+                  fullResponse = data.data.content;
+                  console.log('✅ Received complete response:', fullResponse);
+                  return fullResponse;
+                } else if (data.content && data.role === 'assistant') {
+                  // Handle streaming chunks - accumulate content
+                  fullResponse = data.content;
+                  console.log('📝 Streaming response chunk:', data.content);
+                } else if (data.type === 'narrative' && data.content) {
+                  // Handle narrative chunks
+                  console.log('📖 Narrative:', data.content);
+                }
+              } catch (parseError) {
+                console.warn('Failed to parse SSE data:', parseError.message);
+                console.warn('Problematic JSON:', jsonData.substring(0, 100) + '...');
+                console.warn('JSON length:', jsonData.length);
+                // Continue processing other lines - don't fail the entire request
+              }
+            }
+          }
+        }
+        
+        // Process any remaining buffer
+        if (buffer.trim()) {
+          const lines = buffer.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonData = line.slice(6).trim();
+              if (!jsonData) continue;
+              
+              try {
+                const data = JSON.parse(jsonData);
+                if (data.type === 'complete' && data.data && data.data.content) {
+                  fullResponse = data.data.content;
+                  console.log('✅ Received complete response from buffer:', fullResponse);
+                  return fullResponse;
+                }
+              } catch (parseError) {
+                console.warn('Failed to parse final buffer data:', parseError.message);
+              }
+            }
+          }
+        }
       }
 
-      if (!sendData.requestId) {
-        throw new Error('Backend did not return requestId');
+      if (fullResponse) {
+        return fullResponse;
+      } else {
+        console.log('⚠️ No complete response found in streaming data');
+        throw new Error('No response received from backend');
       }
-
-      // Step 2: Poll for the actual response
-      return await this.pollForResponse(sendData.requestId);
 
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -211,7 +315,7 @@ export default class BackendProvider extends AIProvider {
       try {
         const statusResponse = await fetch(statusUrl, {
           headers: {
-            'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
+            'X-API-Key': this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
             'Content-Type': 'application/json'
           }
         });
@@ -401,9 +505,9 @@ export default class BackendProvider extends AIProvider {
     try {
       console.log('🔍 Testing backend connection...');
       
-      // Test the API verification endpoint from your documentation
-      const verifyUrl = `${this.backendUrl}/api/verify`;
-      console.log(`   API verification URL: ${verifyUrl}`);
+      // Test the health endpoint
+      const verifyUrl = `${this.backendUrl}/health`;
+      console.log(`   Health check URL: ${verifyUrl}`);
       
       // Add timeout for connection test
       const controller = new AbortController();
@@ -412,7 +516,6 @@ export default class BackendProvider extends AIProvider {
       const verifyResponse = await fetch(verifyUrl, {
         method: 'GET',
         headers: {
-          'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
           'Content-Type': 'application/json'
         },
         signal: controller.signal
@@ -422,11 +525,11 @@ export default class BackendProvider extends AIProvider {
 
       if (verifyResponse.ok) {
         const verifyData = await verifyResponse.json();
-        if (verifyData.valid) {
-          console.log('✅ Backend API verification passed');
+        if (verifyData.status === 'ok') {
+          console.log('✅ Backend health check passed');
           return true;
         } else {
-          console.log('❌ API key is not valid');
+          console.log('❌ Backend health check failed');
           return false;
         }
       }
@@ -438,7 +541,7 @@ export default class BackendProvider extends AIProvider {
       const testResponse = await fetch(`${this.backendUrl}${this.endpoint}`, {
         method: 'POST',
         headers: {
-          'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
+          'X-API-Key': this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

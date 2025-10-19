@@ -50,7 +50,7 @@ const DeliverableDetail = ({ deliverable, onClose, onEdit, onDelete }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-20 overflow-y-auto h-full w-full z-50" style={{ backgroundColor: '#000000e0' }}>
       <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
