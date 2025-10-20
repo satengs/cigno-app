@@ -10,7 +10,11 @@ const parseJsonIfString = (value) => {
   if (!trimmed) return null;
 
   try {
-    return JSON.parse(trimmed);
+    const parsed = tryParseJson(trimmed);
+    if (parsed !== null) {
+      return parsed;
+    }
+    throw new Error('Unable to parse JSON string');
   } catch (error) {
     console.log('⚠️ Failed to parse JSON string:', trimmed.substring(0, 60));
     return trimmed;
@@ -116,6 +120,64 @@ const normalizeKeyValuePairs = (value) => {
   }
 
   return [];
+};
+
+const sanitizeJsonString = (input) => {
+  if (typeof input !== 'string') return input;
+  let result = '';
+  let inString = false;
+  let isEscaped = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+
+    if (isEscaped) {
+      result += char;
+      isEscaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      result += char;
+      isEscaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+
+    if (inString && (char === '\n' || char === '\r')) {
+      result += '\\n';
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+};
+
+const tryParseJson = (text) => {
+  if (typeof text !== 'string') return null;
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    console.log('⚠️ Initial JSON parse failed:', error.message);
+    const sanitized = sanitizeJsonString(text);
+    if (sanitized !== text) {
+      try {
+        return JSON.parse(sanitized);
+      } catch (sanitizedError) {
+        console.log('⚠️ Sanitized JSON parse also failed:', sanitizedError.message);
+      }
+    }
+  }
+
+  return null;
 };
 
 // Framework-specific render configurations based on CFA-DEMO markdown files
@@ -1409,7 +1471,10 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
     console.log('Response content (first 500 chars):', agentResult.response.substring(0, 500));
     
     try {
-      const responseData = JSON.parse(agentResult.response);
+      const responseData = tryParseJson(agentResult.response);
+      if (!responseData) {
+        throw new Error('Unable to parse JSON response from AI agent');
+      }
       console.log('✅ Successfully parsed JSON response');
       console.log('Parsed Data Keys:', Object.keys(responseData));
       
@@ -1490,7 +1555,7 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
         const jsonMatch = agentResult.response.match(/```json\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
           try {
-            extractedData = JSON.parse(jsonMatch[1]);
+            extractedData = tryParseJson(jsonMatch[1]);
             console.log('✅ Extracted JSON from markdown code block');
           } catch (extractError) {
             console.log('❌ Failed to parse extracted JSON');
@@ -1502,7 +1567,7 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
           const jsonObjectMatch = agentResult.response.match(/\{[\s\S]*"slide_content"[\s\S]*\}/);
           if (jsonObjectMatch) {
             try {
-              extractedData = JSON.parse(jsonObjectMatch[0]);
+              extractedData = tryParseJson(jsonObjectMatch[0]);
               console.log('✅ Extracted JSON object from text');
             } catch (extractError) {
               console.log('❌ Failed to parse extracted JSON object');
@@ -1641,7 +1706,7 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
     if ((rawDescription.startsWith('{') && rawDescription.endsWith('}')) ||
         (rawDescription.startsWith('[') && rawDescription.endsWith(']'))) {
       try {
-        const parsedDescription = JSON.parse(rawDescription);
+        const parsedDescription = tryParseJson(rawDescription);
         const slideFromDescription = parsedDescription.slide_content || parsedDescription.slideContent;
         if (slideFromDescription && typeof slideFromDescription === 'object') {
           parsedData.slideContent = slideFromDescription;
