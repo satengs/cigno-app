@@ -17,27 +17,27 @@ const STRATEGIC_CONTENT_CHECKS = [
   {
     name: 'Market sizing',
     pattern: /market sizing|size of the market|total addressable market|tam|sam|som/i,
-    improvement: 'Quantify the market size, growth, and value pools to anchor the commercial opportunity.'
+    improvement: 'Include market sizing analysis to quantify the opportunity.'
   },
   {
     name: 'Competitive analysis',
     pattern: /competitive|competitor|benchmark|landscape|peer set/i,
-    improvement: 'Benchmark incumbents and disruptors to pinpoint UBS’s differentiation gaps.'
+    improvement: 'Add competitive landscape analysis to understand market positioning.'
   },
   {
     name: 'Capability assessment',
     pattern: /capabilit|operating model|internal strength|delivery model/i,
-    improvement: 'Assess UBS’s current capabilities and enablers to surface structural execution gaps.'
+    improvement: 'Include capability assessment to identify internal strengths and gaps.'
   },
   {
     name: 'Gap analysis',
     pattern: /gap analysis|capability gap|versus|delta vs|performance gap/i,
-    improvement: 'Highlight the critical gaps versus market leaders and what needs to change.'
+    improvement: 'Add gap analysis to highlight areas for improvement.'
   },
   {
     name: 'Strategic options',
     pattern: /strategic option|scenario|buy vs build|partner|acquisition|roadmap|transformation/i,
-    improvement: 'Lay out the strategic moves (build, partner, buy) and the roadmap or phasing required.'
+    improvement: 'Include strategic options and implementation roadmap.'
   }
 ];
 
@@ -98,7 +98,7 @@ function deriveBriefInsights(rawBrief) {
   if (wordCount === 0) {
     return {
       strengths,
-      improvements: ['Draft the brief so it provides context, objectives, and required outputs.'],
+      improvements: ['Add content to the brief to enable analysis.'],
       suggestions,
       summary: 'Brief is empty – add content before scoring.',
       score: 0
@@ -106,13 +106,13 @@ function deriveBriefInsights(rawBrief) {
   }
 
   if (wordCount < 180) {
-    improvements.push('Expand the brief beyond ~180 words so the team has adequate context.');
+    improvements.push('Expand the brief to provide more context and detail.');
     score -= 1.5;
   } else if (wordCount > 900) {
-    suggestions.push('Tighten the draft to under ~900 words so executives can scan it quickly.');
+    suggestions.push('Consider tightening the brief for better readability.');
     score -= 1;
   } else if (wordCount >= 300 && wordCount <= 600) {
-    strengths.push('Balanced length gives enough colour without overwhelming the reader.');
+    strengths.push('Balanced length provides adequate detail without overwhelming the reader.');
     score += 1;
   } else {
     score += 0.25;
@@ -122,7 +122,7 @@ function deriveBriefInsights(rawBrief) {
     strengths.push('References objectives or success metrics.');
     score += 0.8;
   } else {
-    improvements.push('Define the concrete objectives and how success will be measured.');
+    improvements.push('Define clear objectives and success metrics.');
     score -= 0.8;
   }
 
@@ -130,7 +130,7 @@ function deriveBriefInsights(rawBrief) {
     strengths.push('Identifies the audience or stakeholder focus.');
     score += 0.6;
   } else {
-    improvements.push('Clarify the target stakeholders so the storyline and tone can be tailored.');
+    improvements.push('Clarify the target stakeholders and audience.');
     score -= 0.6;
   }
 
@@ -139,7 +139,7 @@ function deriveBriefInsights(rawBrief) {
     strengths.push('Specifies the geography or market focus.');
     score += 0.6;
   } else {
-    improvements.push('Anchor the strategy to a specific geography or market (e.g., Switzerland) and note regulatory context.');
+    improvements.push('Specify the target geography or market focus.');
     score -= 0.6;
   }
 
@@ -154,10 +154,10 @@ function deriveBriefInsights(rawBrief) {
   });
 
   if (OUTCOME_KEYWORDS.test(lower)) {
-    strengths.push('Includes the “so what” — roadmap, sequencing, or tangible actions.');
+    strengths.push('Includes the "so what" — roadmap, sequencing, or tangible actions.');
     score += 0.8;
   } else {
-    improvements.push('Spell out the “so what”: a roadmap, sequencing, or the tactical/strategic moves expected.');
+    improvements.push('Include clear outcomes, roadmap, or next steps.');
     score -= 0.8;
   }
 
@@ -343,11 +343,14 @@ export async function scoreBriefWithAgent({
       ?? payload?.action_items
     );
 
+    // Prioritize AI agent response over hardcoded fallbacks
+    const hasAIResponse = strengths.length > 0 || improvements.length > 0 || suggestions.length > 0;
+    
     const normalizedResult = {
       qualityScore: normalizedScore ?? heuristicInsights.score,
-      strengths: mergeUnique([...strengths, ...heuristicInsights.strengths]),
-      improvements: mergeUnique([...improvements, ...heuristicInsights.improvements]),
-      suggestions: mergeUnique([...suggestions, ...heuristicInsights.suggestions]),
+      strengths: hasAIResponse ? mergeUnique(strengths) : mergeUnique([...strengths, ...heuristicInsights.strengths]),
+      improvements: hasAIResponse ? mergeUnique(improvements) : mergeUnique([...improvements, ...heuristicInsights.improvements]),
+      suggestions: hasAIResponse ? mergeUnique(suggestions) : mergeUnique([...suggestions, ...heuristicInsights.suggestions]),
       summary: payload?.summary || payload?.notes || heuristicInsights.summary
     };
 
@@ -382,7 +385,7 @@ export async function scoreBriefWithAgent({
         strengths: heuristicInsights.strengths,
         improvements: heuristicInsights.improvements,
         suggestions: heuristicInsights.suggestions,
-        summary: `Automated scoring unavailable: ${error.message || 'please retry.'}`
+        summary: `Brief analysis completed with basic checks. AI scoring unavailable: ${error.message || 'please retry.'}`
       },
       fallbackReason: error.message
     };

@@ -12,32 +12,85 @@ export class CFADemoOrchestrator {
     this.fallbacks = new CFADemoFallbacks();
     
     this.agents = {
-      '68f229005e8b5435150c2991': { 
+      // Phase 0: Initial frameworks (no dependencies)
+      'market_sizing': { 
         name: 'Market Sizing', 
-        dependencies: [],
-        phase: 0,
-        parallel: true
+        dependencies: ['brief_scorer'],
+        phase: 1,
+        parallel: false,
+        framework: 'market_sizing'
       },
-      '68f22dc0330210e8b8f60a43': { 
+      
+      // Phase 1: Market sizing dependent
+      'competitive_landscape': { 
         name: 'Competitive Landscape', 
-        dependencies: [],
-        phase: 0,
-        parallel: true
+        dependencies: ['market_sizing'],
+        phase: 2,
+        parallel: false,
+        framework: 'competitive_landscape'
       },
-      '68f22f36330210e8b8f60a51': { 
-        name: 'Capability Benchmark', 
-        dependencies: ['68f22dc0330210e8b8f60a43'],
-        phase: 1
+      
+      // Phase 2: Market + Competitive dependent
+      'key_industry_trends': { 
+        name: 'Key Industry Trends', 
+        dependencies: ['market_sizing', 'competitive_landscape'],
+        phase: 3,
+        parallel: false,
+        framework: 'key_industry_trends'
       },
-      '68f23ae07e8d5848f940482d': { 
+      
+      // Phase 3: Market + Competitive + Industry dependent
+      'capabilities_assessment': { 
+        name: 'Capabilities Assessment', 
+        dependencies: ['market_sizing', 'competitive_landscape', 'key_industry_trends'],
+        phase: 4,
+        parallel: false,
+        framework: 'capabilities_assessment'
+      },
+      
+      // Phase 4: Market + Competitive + Capabilities dependent
+      'competitor_deep_dive': { 
+        name: 'Competitor Deep Dive', 
+        dependencies: ['market_sizing', 'competitive_landscape', 'capabilities_assessment'],
+        phase: 5,
+        parallel: false,
+        framework: 'competitor_deep_dive'
+      },
+      
+      // Phase 5: Capabilities + Competitor + Industry dependent
+      'strategic_options': { 
         name: 'Strategic Options', 
-        dependencies: ['68f229005e8b5435150c2991', '68f22dc0330210e8b8f60a43', '68f22f36330210e8b8f60a51'],
-        phase: 2
+        dependencies: ['capabilities_assessment', 'competitor_deep_dive', 'key_industry_trends'],
+        phase: 6,
+        parallel: false,
+        framework: 'strategic_options'
       },
-      '68f23be77e8d5848f9404847': { 
-        name: 'Partnership Strategy', 
-        dependencies: ['68f23ae07e8d5848f940482d'],
-        phase: 3
+      
+      // Phase 6: Strategic options dependent
+      'deep_dive_strategic_option': { 
+        name: 'Deep Dive Strategic Option', 
+        dependencies: ['strategic_options'],
+        phase: 7,
+        parallel: false,
+        framework: 'deep_dive_strategic_option'
+      },
+      
+      // Phase 7: Capabilities + Strategic dependent
+      'buy_vs_build': { 
+        name: 'Buy vs Build', 
+        dependencies: ['capabilities_assessment', 'strategic_options'],
+        phase: 8,
+        parallel: false,
+        framework: 'buy_vs_build'
+      },
+      
+      // Phase 8: Buy vs Build + Strategic + Deep dive dependent
+      'product_roadmap': { 
+        name: 'Product Roadmap', 
+        dependencies: ['buy_vs_build', 'strategic_options', 'deep_dive_strategic_option'],
+        phase: 9,
+        parallel: false,
+        framework: 'product_roadmap'
       }
     };
     
@@ -47,25 +100,21 @@ export class CFADemoOrchestrator {
 
   async execute(projectInput) {
     this.startTime = Date.now();
-    console.log('🚀 Starting CFA-DEMO orchestration...');
+    console.log('🚀 Starting Framework orchestration...');
     console.log('📊 Project Input:', JSON.stringify(projectInput, null, 2));
-    console.log('🔧 Agent IDs configured:', Object.keys(this.agents));
+    console.log('🔧 Agents configured:', Object.keys(this.agents));
     
     try {
-      // Phase 1: Parallel execution (Market Sizing + Competitive Landscape)
-      console.log('📈 === PHASE 1: PARALLEL EXECUTION ===');
-      const phase1Results = await this.executePhase1Parallel(projectInput);
-      
-      // Phase 2: Sequential execution with dependencies
-      console.log('📈 === PHASE 2: SEQUENTIAL EXECUTION ===');
-      const phase2Results = await this.executePhase2Sequential(phase1Results, projectInput);
+      // Execute frameworks in dependency order
+      console.log('📈 === EXECUTING FRAMEWORKS IN DEPENDENCY ORDER ===');
+      const results = await this.executeFrameworksInOrder(projectInput);
       
       // Consolidate and return results
       console.log('📈 === CONSOLIDATING RESULTS ===');
-      const storyline = await this.consolidateResults(phase2Results);
+      const storyline = await this.consolidateResults(results);
       
       const totalDuration = Date.now() - this.startTime;
-      console.log(`✅ CFA-DEMO orchestration completed in ${totalDuration}ms`);
+      console.log(`✅ Framework orchestration completed in ${totalDuration}ms`);
       
       return {
         success: true,
@@ -76,118 +125,138 @@ export class CFADemoOrchestrator {
       };
       
     } catch (error) {
-      console.error('❌ CFA-DEMO orchestration failed:', error);
+      console.error('❌ Framework orchestration failed:', error);
       return this.handleOrchestrationError(error);
     }
   }
 
-  async executePhase1Parallel(projectInput) {
-    console.log('📊 Executing Phase 1: Market Sizing + Competitive Landscape (Parallel)');
+  async executeFrameworksInOrder(projectInput) {
+    console.log('📊 Executing frameworks in dependency order...');
     
-    // Start tracking Market Sizing (phase 0)
-    this.progressTracker.updateProgress(0, 'starting');
+    const results = {};
+    const completedFrameworks = new Set();
     
-    const marketSizingInput = this.transformer.buildMarketSizingInput(projectInput);
-    const competitiveInput = this.transformer.buildCompetitiveLandscapeInput(projectInput);
+    // Get frameworks sorted by phase
+    const frameworksByPhase = this.getFrameworksByPhase();
+    
+    for (const phase of Object.keys(frameworksByPhase).sort((a, b) => parseInt(a) - parseInt(b))) {
+      const frameworks = frameworksByPhase[phase];
+      console.log(`📈 === PHASE ${phase}: ${frameworks.map(f => f.name).join(', ')} ===`);
+      
+      // Check if all dependencies are met for this phase
+      const readyFrameworks = frameworks.filter(framework => 
+        framework.dependencies.every(dep => completedFrameworks.has(dep))
+      );
+      
+      if (readyFrameworks.length === 0) {
+        console.warn(`⚠️ No frameworks ready for phase ${phase} - skipping`);
+        continue;
+      }
+      
+      // Execute ready frameworks (parallel if multiple, sequential if single)
+      if (readyFrameworks.length === 1) {
+        const framework = readyFrameworks[0];
+        console.log(`🔄 Executing ${framework.name} (sequential)`);
+        const result = await this.executeFramework(framework, projectInput, results);
+        results[framework.framework] = result;
+        completedFrameworks.add(framework.framework);
+      } else {
+        console.log(`⚡ Executing ${readyFrameworks.length} frameworks in parallel`);
+        const promises = readyFrameworks.map(framework => 
+          this.executeFramework(framework, projectInput, results)
+            .then(result => ({ framework: framework.framework, result }))
+        );
+        
+        const frameworkResults = await Promise.allSettled(promises);
+        
+        frameworkResults.forEach((promiseResult, index) => {
+          if (promiseResult.status === 'fulfilled') {
+            const { framework, result } = promiseResult.value;
+            results[framework] = result;
+            completedFrameworks.add(framework);
+          } else {
+            console.error(`❌ Framework ${readyFrameworks[index].name} failed:`, promiseResult.reason);
+            // Use fallback for failed framework
+            const fallbackResult = this.fallbacks.getFallbackData(readyFrameworks[index].framework);
+            results[readyFrameworks[index].framework] = fallbackResult;
+            completedFrameworks.add(readyFrameworks[index].framework);
+          }
+        });
+      }
+    }
+    
+    return results;
+  }
+
+  getFrameworksByPhase() {
+    const frameworksByPhase = {};
+    
+    Object.values(this.agents).forEach(agent => {
+      if (!frameworksByPhase[agent.phase]) {
+        frameworksByPhase[agent.phase] = [];
+      }
+      frameworksByPhase[agent.phase].push(agent);
+    });
+    
+    return frameworksByPhase;
+  }
+
+  async executeFramework(framework, projectInput, completedResults) {
+    console.log(`🤖 Executing ${framework.name} (${framework.framework})`);
     
     try {
-      const [marketResult, competitiveResult] = await Promise.allSettled([
-        this.executeAgentWithFallback('68f229005e8b5435150c2991', marketSizingInput),
-        this.executeAgentWithFallback('68f22dc0330210e8b8f60a43', competitiveInput)
-      ]);
-
-      // Handle results (success or fallback)
-      const marketData = marketResult.status === 'fulfilled' 
-        ? marketResult.value 
-        : this.fallbacks.getMarketSizingFallback();
-        
-      const competitiveData = competitiveResult.status === 'fulfilled' 
-        ? competitiveResult.value 
-        : this.fallbacks.getCompetitiveLandscapeFallback();
-
-      this.results.set('68f229005e8b5435150c2991', marketData);
-      this.results.set('68f22dc0330210e8b8f60a43', competitiveData);
+      // Build input with dependencies
+      const dependencyData = {};
+      framework.dependencies.forEach(dep => {
+        if (completedResults[dep]) {
+          dependencyData[dep] = completedResults[dep];
+        }
+      });
       
-      // Complete Market Sizing (phase 0)
-      this.progressTracker.updateProgress(0, 'completed');
-      // Complete Competitive Analysis (phase 1)  
-      this.progressTracker.updateProgress(1, 'completed');
+      // Get agent ID for this framework
+      const agentId = this.getAgentIdForFramework(framework.framework);
       
-      return { marketData, competitiveData };
+      if (!agentId) {
+        throw new Error(`No agent ID configured for framework: ${framework.framework}`);
+      }
+      
+      // Build framework-specific input
+      const input = this.transformer.buildFrameworkInput(
+        framework.framework, 
+        projectInput,
+        dependencyData
+      );
+      
+      // Execute agent
+      const result = await this.executeAgentWithFallback(agentId, input);
+      
+      // Store result
+      this.results.set(agentId, result);
+      
+      console.log(`✅ ${framework.name} completed successfully`);
+      return result;
       
     } catch (error) {
-      console.error('❌ Phase 1 failed:', error);
-      throw new Error(`Phase 1 execution failed: ${error.message}`);
+      console.error(`❌ ${framework.name} failed:`, error);
+      throw error;
     }
   }
 
-  async executePhase2Sequential(phase1Results, projectInput) {
-    console.log('🔄 Executing Phase 2: Sequential agents with dependencies');
+  getAgentIdForFramework(framework) {
+    const frameworkAgentMapping = {
+      'brief_scorer': process.env.AI_BRIEF_SCORER_AGENT_ID || '68f4f36ddfc921b68ec3eded', // taxonomy
+      'market_sizing': process.env.AI_MARKET_SIZING_AGENT_ID || '68f3a191dfc921b68ec3e83a',
+      'competitive_landscape': process.env.AI_COMPETITIVE_LANDSCAPE_AGENT_ID || '68f3a9a5dfc921b68ec3e959',
+      'key_industry_trends': process.env.AI_KEY_INDUSTRY_TRENDS_AGENT_ID || '68f3f71fdfc921b68ec3ea8d',
+      'capabilities_assessment': process.env.AI_CAPABILITIES_ASSESSMENT_AGENT_ID || '68f3f817dfc921b68ec3ea8e',
+      'competitor_deep_dive': process.env.AI_COMPETITOR_DEEP_DIVE_AGENT_ID || '68f4a393dfc921b68ec3ec36',
+      'strategic_options': process.env.AI_STRATEGIC_OPTIONS_AGENT_ID || '68f4a655dfc921b68ec3ec37',
+      'deep_dive_strategic_option': process.env.AI_DEEP_DIVE_STRATEGIC_OPTION_AGENT_ID || '68f4a8dfdfc921b68ec3ec38',
+      'buy_vs_build': process.env.AI_BUY_VS_BUILD_AGENT_ID || '68f4ae2fdfc921b68ec3ec39',
+      'product_roadmap': process.env.AI_PRODUCT_ROADMAP_AGENT_ID || '68f4b112dfc921b68ec3ec3a'
+    };
     
-    try {
-      // CFA-DEMO-3: Capability Benchmark (requires CFA-DEMO-2)
-      this.progressTracker.updateProgress(2, 'starting');
-      
-      const capabilityInput = this.transformer.buildCapabilityBenchmarkInput(
-        projectInput,
-        { competitive_landscape: phase1Results.competitiveData }
-      );
-      
-      const capabilityResult = await this.executeAgentWithFallback(
-        '68f22f36330210e8b8f60a51', 
-        capabilityInput
-      );
-      
-      this.results.set('68f22f36330210e8b8f60a51', capabilityResult);
-      this.progressTracker.updateProgress(2, 'completed');
-      
-      // CFA-DEMO-4: Strategic Options (requires CFA-DEMO-1, 2, 3)
-      this.progressTracker.updateProgress(3, 'starting');
-      
-      const strategicInput = this.transformer.buildStrategicOptionsInput(
-        projectInput,
-        {
-          market_sizing: phase1Results.marketData,
-          competitive_landscape: phase1Results.competitiveData,
-          capability_benchmark: capabilityResult
-        }
-      );
-      
-      const strategicResult = await this.executeAgentWithFallback(
-        '68f23ae07e8d5848f940482d',
-        strategicInput
-      );
-      
-      this.results.set('68f23ae07e8d5848f940482d', strategicResult);
-      this.progressTracker.updateProgress(3, 'completed');
-      
-      // CFA-DEMO-5: Partnership Strategy (requires CFA-DEMO-4)
-      this.progressTracker.updateProgress(4, 'starting');
-      
-      const partnershipInput = this.transformer.buildPartnershipInput(
-        projectInput,
-        { strategic_options: strategicResult }
-      );
-      
-      const partnershipResult = await this.executeAgentWithFallback(
-        '68f23be77e8d5848f9404847',
-        partnershipInput
-      );
-      
-      this.results.set('68f23be77e8d5848f9404847', partnershipResult);
-      this.progressTracker.updateProgress(4, 'completed');
-      
-      return {
-        ...phase1Results,
-        capabilityResult,
-        strategicResult,
-        partnershipResult
-      };
-      
-    } catch (error) {
-      console.error('❌ Phase 2 failed:', error);
-      throw new Error(`Phase 2 execution failed: ${error.message}`);
-    }
+    return frameworkAgentMapping[framework];
   }
 
   async executeAgentWithFallback(agentId, input, maxRetries = 2) {
@@ -218,51 +287,56 @@ export class CFADemoOrchestrator {
   }
 
   async consolidateResults(results) {
-    console.log('📋 Consolidating CFA-DEMO results into storyline...');
+    console.log('📋 Consolidating framework results into storyline...');
     
     const sections = [];
     
-    // Convert each agent result to a storyline section
-    const agentOrder = [
-      '68f229005e8b5435150c2991',
-      '68f22dc0330210e8b8f60a43', 
-      '68f22f36330210e8b8f60a51',
-      '68f23ae07e8d5848f940482d',
-      '68f23be77e8d5848f9404847'
+    // Convert each framework result to a storyline section
+    const frameworkOrder = [
+      'brief_scorer',
+      'market_sizing',
+      'competitive_landscape',
+      'key_industry_trends',
+      'capabilities_assessment',
+      'competitor_deep_dive',
+      'strategic_options',
+      'deep_dive_strategic_option',
+      'buy_vs_build',
+      'product_roadmap'
     ];
     
-    agentOrder.forEach((agentId, index) => {
-      const agentResult = this.results.get(agentId);
-      const agentName = this.agents[agentId].name;
+    frameworkOrder.forEach((framework, index) => {
+      const frameworkResult = results[framework];
+      const agentConfig = Object.values(this.agents).find(a => a.framework === framework);
       
-      if (agentResult) {
+      if (frameworkResult && agentConfig) {
         sections.push({
-          id: `cfa-demo-${index + 1}`,
-          title: agentResult.slide_content?.title || `${agentName} Analysis`,
-          description: `Strategic analysis: ${agentName}`,
+          id: `framework-${index + 1}`,
+          title: frameworkResult.slide_content?.title || `${agentConfig.name} Analysis`,
+          description: `Strategic analysis: ${agentConfig.name}`,
           order: index + 1,
           status: 'final',
-          framework: this.getFrameworkForAgent(agentId),
-          insights: agentResult.insights || [],
-          sources: agentResult.citations || [],
-          chartData: this.transformer.extractChartData(agentResult),
-          keyPoints: this.transformer.extractKeyPoints(agentResult),
+          framework: framework,
+          insights: frameworkResult.insights || [],
+          sources: frameworkResult.citations || [],
+          chartData: this.transformer.extractChartData(frameworkResult),
+          keyPoints: this.transformer.extractKeyPoints(frameworkResult),
           generated_at: new Date(),
-          source: 'cfa-demo-agent',
-          agentId
+          source: 'framework-agent',
+          agentId: this.getAgentIdForFramework(framework)
         });
       }
     });
     
     return {
-      title: 'UBS Switzerland Pension Strategy Analysis',
-      executiveSummary: 'Comprehensive strategic analysis of UBS Switzerland\'s position in the pension market, including market sizing, competitive dynamics, capability assessment, strategic options, and partnership opportunities.',
-      presentationFlow: 'Five-slide strategic narrative covering market opportunity, competitive threats, internal capabilities, recommended strategy, and implementation partnerships.',
+      title: 'Strategic Analysis Framework',
+      executiveSummary: 'Comprehensive strategic analysis covering market sizing, competitive landscape, industry trends, capabilities assessment, strategic options, and implementation roadmap.',
+      presentationFlow: 'Multi-phase strategic narrative covering market opportunity, competitive dynamics, internal capabilities, recommended strategy, and implementation plan.',
       sections,
       totalSections: sections.length,
       estimatedDuration: sections.length * 3, // 3 minutes per section
       generatedAt: new Date(),
-      generationSource: 'cfa-demo',
+      generationSource: 'framework-orchestrator',
       status: 'draft'
     };
   }

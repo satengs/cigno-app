@@ -118,6 +118,7 @@ export default function DeliverableStorylineView({
           onToggleLock={onToggleLock}
           onRemoveSection={onRemoveSection}
           onRegenerateSection={onRegenerateSection}
+          viewMode="storyline"
         />
       </div>
 

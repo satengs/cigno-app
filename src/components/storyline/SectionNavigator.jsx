@@ -22,6 +22,85 @@ const ChartPreview = dynamic(() => import('./ChartPreview'), {
   loading: () => <div className="p-4 text-center text-gray-500">Loading chart...</div>
 });
 
+// Helper function to render section description for storyline view
+const renderSectionDescription = (section) => {
+  if (!section) return null;
+
+  // For framework sections, render the framework content
+  if (section.framework && section.slideContent && Object.keys(section.slideContent).length > 0) {
+    const rendered = renderFrameworkContent(
+      section.framework, 
+      section.slideContent, 
+      section.keyPoints || [], 
+      section.citations || []
+    );
+    
+    return (
+      <div className="framework-content overflow-hidden">
+        <div 
+          className="prose prose-sm prose-slate max-w-none overflow-x-auto"
+          dangerouslySetInnerHTML={{ __html: rendered.html }}
+        />
+      </div>
+    );
+  }
+
+  // For non-framework sections, render basic content
+  return (
+    <div className="space-y-4">
+      {section.description && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Description</h4>
+          <p className="text-sm text-gray-600">{section.description}</p>
+        </div>
+      )}
+      
+      {section.keyPoints && section.keyPoints.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Key Points</h4>
+          <ul className="space-y-1">
+            {section.keyPoints.map((point, index) => (
+              <li key={index} className="text-sm text-gray-600 flex items-start">
+                <span className="text-blue-500 mr-2">•</span>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
+      {section.insights && section.insights.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Key Insights</h4>
+          <ul className="space-y-1">
+            {section.insights.map((insight, index) => (
+              <li key={index} className="text-sm text-gray-600 flex items-start">
+                <span className="text-blue-500 mr-2">•</span>
+                {insight}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
+      {section.citations && section.citations.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Sources</h4>
+          <ul className="space-y-1">
+            {section.citations.map((citation, index) => (
+              <li key={index} className="text-sm text-gray-600 flex items-start">
+                <span className="text-gray-400 mr-2">•</span>
+                {typeof citation === 'string' ? citation : citation.source || citation}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// This function is moved down to be redefined inline for proper viewMode checking
 
 const STATUS_BADGE_STYLES = {
   final: 'bg-green-100 text-green-800 border border-green-200',
@@ -39,12 +118,14 @@ export default function SectionNavigator({
   onStatusChange,
   onToggleLock,
   onRemoveSection,
-  onRegenerateSection
+  onRegenerateSection,
+  viewMode = 'storyline' // 'storyline' | 'layout'
 }) {
   const [expandedSectionId, setExpandedSectionId] = useState(null);
   const [chartDrafts, setChartDrafts] = useState({});
   const [chartErrors, setChartErrors] = useState({});
 
+  // Calculate data source statistics
   // Removed auto-expansion based on currentSectionIndex
   // useEffect(() => {
   //   setExpandedSectionId(sections[currentSectionIndex]?.id);
@@ -115,29 +196,28 @@ export default function SectionNavigator({
     });
   }, [onUpdateSection]);
 
-  // Render framework-specific visual component
-
-  const renderChartPreview = (section) => {
-    // Only render on client side
-    if (typeof window === 'undefined') {
+  // Render section description for storyline view (text only, no charts)
+  const renderSectionDescription = (section) => {
+    // Only render descriptions in storyline view
+    if (viewMode !== 'storyline') {
       return null;
     }
     
-    // Don't render charts for error/failed sections - just return null
+    // Don't render descriptions for error/failed sections
     if (section.error || section.status === 'error' || section.source === 'error-fallback') {
       return null;
     }
     
-    // Don't render charts for loading sections
+    // Show loading state for loading sections
     if (section.isLoading) {
       return (
         <div className="mt-3 space-y-3">
           <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-            {section.generationStatus === 'waiting' ? 'Waiting for Content...' : 'Generating Charts...'}
+            {section.generationStatus === 'waiting' ? 'Waiting for Content...' : 'Generating Content...'}
           </p>
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
             <p className="text-sm text-gray-500">
-              {section.generationStatus === 'waiting' ? 'Waiting to generate chart data...' : 'Chart data is being generated...'}
+              {section.generationStatus === 'waiting' ? 'Waiting to generate content...' : 'Content is being generated...'}
             </p>
             {section.phaseName && (
               <p className="text-xs text-blue-600 font-medium mt-2">
@@ -149,48 +229,254 @@ export default function SectionNavigator({
       );
     }
     
-    // For framework sections, use FrameworkRenderer
-    if (section.framework) {
-      const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
-      
-      if (!hasRealChartData) {
-        return null;
-      }
-      
+    const slideContent = section.slideContent && Object.keys(section.slideContent || {}).length > 0
+      ? section.slideContent
+      : section.sectionContent?.slideContent && Object.keys(section.sectionContent.slideContent || {}).length > 0
+        ? section.sectionContent.slideContent
+        : null;
+
+    const displayInsights = Array.isArray(section.insights) && section.insights.length > 0
+      ? section.insights
+      : Array.isArray(section.sectionContent?.insights)
+        ? section.sectionContent.insights
+        : [];
+
+    const displayCitations = Array.isArray(section.citations) && section.citations.length > 0
+      ? section.citations
+      : Array.isArray(section.sectionContent?.citations)
+        ? section.sectionContent.citations
+        : [];
+
+    // Render framework-specific content using dynamic renderer (text only)
+    if (slideContent) {
       return (
-        <div className="mt-3 space-y-3">
-          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-            {getFrameworkSchema(section.framework).title}
-          </p>
-          <FrameworkRenderer 
-            framework={section.framework} 
-            data={section.chartData || section.charts[0]?.config?.data}
-            insights={section.keyPoints || section.insights}
-            takeaway={section.takeaway}
-          />
+        <div className="mt-3 space-y-4">
+          <div className="framework-content overflow-hidden">
+            <div className="prose prose-sm prose-slate max-w-none overflow-x-auto">
+              {(() => {
+                const rendered = renderFrameworkContent(
+                  section.framework, 
+                  slideContent, 
+                  section.keyPoints || displayInsights, 
+                  displayCitations
+                );
+                return (
+                  <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                );
+              })()}
+            </div>
+          </div>
+          
+          {/* Insights - only render if they exist from AI agent */}
+          {displayInsights.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Key Insights</p>
+              <ul className="space-y-1">
+                {displayInsights.map((insight, index) => (
+                  <li key={index} className="text-sm text-gray-700 flex items-start">
+                    <span className="text-gray-400 mr-2">•</span>
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {/* Citations - only render if they exist from AI agent */}
+          {displayCitations.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Sources</p>
+              <ul className="space-y-1">
+                {displayCitations.map((citation, index) => (
+                  <li key={index} className="text-xs text-gray-500 flex items-start">
+                    <span className="text-gray-400 mr-2">•</span>
+                    <span>{typeof citation === 'string' ? citation : citation.source || citation}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       );
     }
     
-    // For non-framework sections, render existing charts
-    const charts = section.charts || [];
-    if (!charts.length) return null;
+    // Fallback: only render insights and citations if no slideContent
+    const hasContent = displayInsights.length > 0 || displayCitations.length > 0;
+    
+    if (!hasContent) {
+      return null;
+    }
     
     return (
       <div className="mt-3 space-y-3">
-        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-          Charts
-        </p>
-        <div className="grid gap-3 md:grid-cols-2">
-          {charts.map((chart) => {
-            if (!chart || !chart.id) return null;
-            return (
-              <div key={chart.id}>
-                <ChartPreview chart={chart} />
-              </div>
-            );
-          })}
+        {/* Insights - only render if they exist from AI agent */}
+        {displayInsights.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Key Insights</p>
+            <ul className="space-y-1">
+              {displayInsights.map((insight, index) => (
+                <li key={index} className="text-sm text-gray-700 flex items-start">
+                  <span className="text-gray-400 mr-2">•</span>
+                  <span>{insight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {/* Citations - only render if they exist from AI agent */}
+        {displayCitations.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Sources</p>
+            <ul className="space-y-1">
+              {displayCitations.map((citation, index) => (
+                <li key={index} className="text-xs text-gray-500 flex items-start">
+                  <span className="text-gray-400 mr-2">•</span>
+                  <span>{typeof citation === 'string' ? citation : citation.source || citation}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render layout view content (text + charts)
+  const renderChartPreview = (section) => {
+    // Only render in layout view
+    if (viewMode !== 'layout') {
+      return null;
+    }
+    
+    // Only render on client side
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    
+    // Don't render for error/failed sections
+    if (section.error || section.status === 'error' || section.source === 'error-fallback') {
+      return null;
+    }
+    
+    // Show loading state for loading sections
+    if (section.isLoading) {
+      return (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+            {section.generationStatus === 'waiting' ? 'Waiting for Content...' : 'Generating Content...'}
+          </p>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
+            <p className="text-sm text-gray-500">
+              {section.generationStatus === 'waiting' ? 'Waiting to generate content...' : 'Content is being generated...'}
+            </p>
+            {section.phaseName && (
+              <p className="text-xs text-blue-600 font-medium mt-2">
+                {section.phaseName}
+              </p>
+            )}
+          </div>
         </div>
+      );
+    }
+    
+    const slideContent = section.slideContent && Object.keys(section.slideContent || {}).length > 0
+      ? section.slideContent
+      : section.sectionContent?.slideContent && Object.keys(section.sectionContent.slideContent || {}).length > 0
+        ? section.sectionContent.slideContent
+        : null;
+
+    const displayInsights = Array.isArray(section.insights) && section.insights.length > 0
+      ? section.insights
+      : Array.isArray(section.sectionContent?.insights)
+        ? section.sectionContent.insights
+        : [];
+
+    const displayCitations = Array.isArray(section.citations) && section.citations.length > 0
+      ? section.citations
+      : Array.isArray(section.sectionContent?.citations)
+        ? section.sectionContent.citations
+        : [];
+
+    const charts = Array.isArray(section.charts) && section.charts.length > 0
+      ? section.charts
+      : Array.isArray(section.sectionContent?.charts)
+        ? section.sectionContent.charts
+        : [];
+
+    const hasContent = slideContent || displayInsights.length > 0 || displayCitations.length > 0 || charts.length > 0;
+    
+    if (!hasContent) {
+      return null;
+    }
+    
+    return (
+      <div className="mt-3 space-y-4">
+        {/* Render framework-specific content using dynamic renderer */}
+        {slideContent && (
+          <div className="framework-content overflow-hidden">
+            <div className="prose prose-sm prose-slate max-w-none overflow-x-auto">
+              {(() => {
+                const rendered = renderFrameworkContent(
+                  section.framework, 
+                  slideContent, 
+                  section.keyPoints || displayInsights, 
+                  displayCitations
+                );
+                return (
+                  <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                );
+              })()}
+            </div>
+          </div>
+        )}
+        
+        {/* Render insights if available */}
+        {displayInsights.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Key Insights</p>
+            <ul className="space-y-1">
+              {displayInsights.map((insight, index) => (
+                <li key={index} className="text-sm text-gray-700 flex items-start">
+                  <span className="text-gray-400 mr-2">•</span>
+                  <span>{insight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {/* Render citations if available */}
+        {displayCitations.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Sources</p>
+            <ul className="space-y-1">
+              {displayCitations.map((citation, index) => (
+                <li key={index} className="text-xs text-gray-500 flex items-start">
+                  <span className="text-gray-400 mr-2">•</span>
+                  <span>{typeof citation === 'string' ? citation : citation.source || citation}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {/* Render charts if available */}
+        {charts.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">Charts</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {charts.map((chart) => {
+                if (!chart || !chart.id) return null;
+                return (
+                  <div key={chart.id}>
+                    <ChartPreview chart={chart} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -298,6 +584,16 @@ export default function SectionNavigator({
         const isLocked = !!section.locked;
         const statusClass = statusBadgeClasses[section.status] || statusBadgeClasses.not_started;
         const isCurrentSection = index === currentSectionIndex;
+        const displayTitle = section.sectionContent?.title
+          || section.slideContent?.title
+          || section.title
+          || `Section ${index + 1}`;
+        const frameworkBadgeClass = (() => {
+          if (!section.framework) return '';
+          if (section.source === 'fallback-data' || section.source === 'error-fallback') return 'bg-red-50 text-red-700 border border-red-200';
+          if (section.source && section.source.includes('regenerated')) return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+          return 'bg-green-50 text-green-700 border border-green-200';
+        })();
 
         return (
           <div
@@ -335,15 +631,15 @@ export default function SectionNavigator({
                 </div>
                 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <h3 className="text-base font-semibold text-gray-900 truncate">
-                      {section.title || `Section ${index + 1}`}
+                  <div className="flex items-start space-x-2 mb-1">
+                    <h3 className="text-base font-semibold text-gray-900 break-words leading-tight">
+                      {displayTitle}
                     </h3>
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>
                       {(section.status || 'draft').replace('_', ' ')}
                     </span>
                     {section.framework && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${frameworkBadgeClass}`}>
                         {section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </span>
                     )}
@@ -442,9 +738,9 @@ export default function SectionNavigator({
             </div>
 
             {isExpanded && (
-              <div className="border-t border-gray-100 bg-gray-50/50">
-                <div className="p-5 space-y-5">
-                  <div className="grid gap-5 md:grid-cols-2">
+              <div className="border-t border-gray-100 bg-gray-50/50 overflow-hidden">
+                <div className="p-5 space-y-5 overflow-hidden">
+                  <div className="grid gap-5 md:grid-cols-2 overflow-hidden">
 
                     {/* Only render title if it exists in response */}
                     {section.title && (
@@ -453,122 +749,16 @@ export default function SectionNavigator({
                     </div>
                     )}
 
-                    {/* Render framework-specific content using dynamic renderer */}
-                    {section.slideContent && Object.keys(section.slideContent).length > 0 && (
+                    {/* Render section content based on view mode */}
                     <div className="md:col-span-2">
-                        {(() => {
-                          const rendered = renderFrameworkContent(
-                            section.framework, 
-                            section.slideContent, 
-                            section.keyPoints || [], 
-                            section.citations || []
-                          );
-                          
-                          return (
-                            <div className="framework-content">
-                              <div 
-                                className="prose prose-sm prose-slate max-w-none"
-                                dangerouslySetInnerHTML={{ __html: rendered.html }}
-                              />
-                            </div>
-                          );
-                        })()}
+                      {/* Render section description for storyline view */}
+                      {renderSectionDescription(section)}
+                      
+                      {/* Render charts for layout view */}
+                      {renderChartPreview(section)}
                     </div>
-                    )}
 
-                    {/* Render insights if available */}
-                    {section.keyPoints && section.keyPoints.length > 0 && (
-                    <div className="md:col-span-2">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">Key Insights</h4>
-                        <ul className="text-sm text-gray-600 space-y-1">
-                            {section.keyPoints.map((insight, index) => (
-                                <li key={index} className="flex items-start">
-                                    <span className="text-blue-500 mr-2">•</span>
-                                    {insight}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                    )}
-
-                    {/* Render citations if available */}
-                    {section.citations && section.citations.length > 0 && (
-                    <div className="md:col-span-2">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">Sources</h4>
-                        <ul className="text-xs text-gray-500 space-y-1">
-                            {section.citations.map((citation, index) => (
-                                <li key={index} className="flex items-start">
-                                    <span className="text-gray-400 mr-2">•</span>
-                                    {typeof citation === 'string' ? citation : citation.source || citation}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                    )}
-
-                    {/* Render framework-specific visualization */}
-                    {section.framework && (
-                      <div className="md:col-span-2">
-                        {(() => {
-                          // Check if we have real data from AI agent
-                          const hasRealChartData = section.chartData || (section.charts && section.charts.length > 0 && section.charts[0]?.config?.data);
-                          
-                          if (!hasRealChartData) {
-                            return null;
-                          }
-                          
-                          // Render charts directly using ChartPreview for framework sections
-                          const charts = section.charts || [];
-                          
-                          // For market_sizing, display charts in a 2x3 grid like the example
-                          if (section.framework === 'market_sizing' && charts.length > 1) {
-                            return (
-                              <div className="mt-3 space-y-3">
-                                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                                  Market Size Analysis
-                                </p>
-                                <div className="grid grid-cols-2 gap-4">
-                                  {charts.map((chart) => {
-                                    if (!chart || !chart.id) return null;
-                                    return (
-                                      <div key={chart.id} className="bg-white rounded-lg border p-3">
-                                        <h4 className="text-sm font-medium text-gray-800 mb-2 text-center">
-                                          {chart.title}
-                                        </h4>
-                                        <div>
-                                          <ChartPreview chart={chart} />
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          }
-                          
-                          // Default grid layout for other frameworks
-                          return (
-                            <div className="mt-3 space-y-3">
-                              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                                Charts
-                              </p>
-                              <div className="grid gap-3 md:grid-cols-2">
-                                {charts.map((chart) => {
-                                  if (!chart || !chart.id) return null;
-                                  return (
-                                    <div key={chart.id}>
-                                      <ChartPreview chart={chart} />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* Hide old chart configuration for framework sections */}
+                    {/* Chart configuration for non-framework sections */}
                     {!section.framework && (section.charts || []).length > 0 && (
                       <div className="md:col-span-2 space-y-5">
                         <p className="text-sm font-medium text-gray-700">Chart Configuration</p>

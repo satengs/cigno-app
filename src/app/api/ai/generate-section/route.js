@@ -1,26 +1,44 @@
 import { NextResponse } from 'next/server';
 import { parseSectionResponse } from '../../../../lib/frameworkRenderer';
 
-// Framework to Agent ID mapping - Updated to use correct CFA-DEMO agent IDs
+// Framework to Agent ID mapping - Updated with new dependency structure and actual agent IDs
 const FRAMEWORK_AGENT_MAPPING = {
-  // CFA-DEMO Agents (matching orchestrator)
-  'market_sizing': process.env.AI_MARKET_SIZING_AGENT_ID || '68f229005e8b5435150c2991',
-  'competitive_landscape': process.env.AI_COMPETITIVE_LANDSCAPE_AGENT_ID || '68f22dc0330210e8b8f60a43',
-  'capability_benchmark': process.env.AI_CAPABILITY_BENCHMARK_AGENT_ID || '68f22f36330210e8b8f60a51',
-  'strategic_options': process.env.AI_STRATEGIC_OPTIONS_AGENT_ID || '68f23ae07e8d5848f940482d',
-  'partnerships': process.env.AI_PARTNERSHIPS_AGENT_ID || '68f23be77e8d5848f9404847',
+  // Phase 1: Market sizing (no dependencies)
+  'market_sizing': process.env.AI_MARKET_SIZING_AGENT_ID || '68f3a191dfc921b68ec3e83a',
   
-  // Legacy/Other framework agents (keep for backward compatibility)
-  // 'competition_analysis': process.env.AI_COMPETITION_ANALYSIS_AGENT_ID || '68f22dc0330210e8b8f60a43',
-  // 'competitor_deep_dive': process.env.AI_COMPETITOR_DEEP_DIVE_AGENT_ID || '68f17ad9d9092e63f8d3edf8',
-  // 'client_segments': process.env.AI_CLIENT_SEGMENTS_AGENT_ID || 'default_agent_id',
-  // 'product_landscape': process.env.AI_PRODUCT_LANDSCAPE_AGENT_ID || 'default_agent_id',
-  // 'capability_assessment': process.env.AI_CAPABILITY_ASSESSMENT_AGENT_ID || '68f22f36330210e8b8f60a51',
-  // 'gap_analysis': process.env.AI_GAP_ANALYSIS_AGENT_ID || '68f1825bd9092e63f8d3ee17',
-  // 'industry_trends': process.env.AI_INDUSTRY_TRENDS_AGENT_ID || '68f17297d9092e63f8d3edf6',
-  // 'recommendations': process.env.AI_RECOMMENDATIONS_AGENT_ID || 'default_agent_id',
-  // 'buy_vs_build': process.env.AI_BUY_VS_BUILD_AGENT_ID || '68f1803cd9092e63f8d3ee15',
-  // 'product_roadmap': process.env.AI_PRODUCT_ROADMAP_AGENT_ID || '68f18100d9092e63f8d3ee16'
+  // Phase 2: Market + Competitive dependent
+  'competitive_landscape': process.env.AI_COMPETITIVE_LANDSCAPE_AGENT_ID || '68f3a9a5dfc921b68ec3e959',
+  
+  // Phase 3: Market + Competitive + Industry dependent
+  'key_industry_trends': process.env.AI_KEY_INDUSTRY_TRENDS_AGENT_ID || '68f3f71fdfc921b68ec3ea8d',
+  
+  // Phase 4: Market + Competitive + Industry + Capabilities dependent
+  'capabilities_assessment': process.env.AI_CAPABILITIES_ASSESSMENT_AGENT_ID || '68f3f817dfc921b68ec3ea8e',
+  
+  // Phase 5: Market + Competitive + Capabilities dependent
+  'competitor_deep_dive': process.env.AI_COMPETITOR_DEEP_DIVE_AGENT_ID || '68f4a393dfc921b68ec3ec36',
+  
+  // Phase 6: Capabilities + Competitor + Industry dependent
+  'strategic_options': process.env.AI_STRATEGIC_OPTIONS_AGENT_ID || '68f4a655dfc921b68ec3ec37',
+  
+  // Phase 7: Strategic options dependent
+  'deep_dive_strategic_option': process.env.AI_DEEP_DIVE_STRATEGIC_OPTION_AGENT_ID || '68f4a8dfdfc921b68ec3ec38',
+  
+  // Phase 8: Capabilities + Strategic dependent
+  'buy_vs_build': process.env.AI_BUY_VS_BUILD_AGENT_ID || '68f4ae2fdfc921b68ec3ec39',
+  
+  // Phase 9: Buy vs Build + Strategic + Deep dive dependent
+  'product_roadmap': process.env.AI_PRODUCT_ROADMAP_AGENT_ID || '68f4b112dfc921b68ec3ec3a',
+  
+  // Legacy frameworks (keep for backward compatibility)
+  'capability_benchmark': process.env.AI_CAPABILITY_BENCHMARK_AGENT_ID || '68f22f36330210e8b8f60a51',
+  'partnerships': process.env.AI_PARTNERSHIPS_AGENT_ID || '68f23be77e8d5848f9404847',
+  'competition_analysis': process.env.AI_COMPETITION_ANALYSIS_AGENT_ID || '68f22dc0330210e8b8f60a43',
+  'client_segments': process.env.AI_CLIENT_SEGMENTS_AGENT_ID || 'default_agent_id',
+  'product_landscape': process.env.AI_PRODUCT_LANDSCAPE_AGENT_ID || 'default_agent_id',
+  'gap_analysis': process.env.AI_GAP_ANALYSIS_AGENT_ID || '68f1825bd9092e63f8d3ee17',
+  'industry_trends': process.env.AI_INDUSTRY_TRENDS_AGENT_ID || '68f17297d9092e63f8d3edf6',
+  'recommendations': process.env.AI_RECOMMENDATIONS_AGENT_ID || 'default_agent_id'
 };
 
 export async function POST(request) {
@@ -84,8 +102,13 @@ export async function POST(request) {
         },
         deliverable: {
           brief: briefContent || deliverableData.brief || 'Strategic analysis and recommendations',
+          brief_quality: deliverableData.brief_quality || null,
+          brief_strengths: deliverableData.brief_strengths || [],
+          brief_improvements: deliverableData.brief_improvements || [],
           type: deliverableData.type || 'Strategy Presentation',
-          audience: deliverableData.audience || ['Business Stakeholders']
+          audience: deliverableData.audience || ['Business Stakeholders'],
+          title: deliverableData.title || deliverableData.name || 'Strategic Analysis',
+          industry: deliverableData.industry || []
         },
         client: {
           name: clientData.name || 'UBS',
@@ -94,76 +117,19 @@ export async function POST(request) {
         }
       };
 
-      if (framework === 'market_sizing') {
-        // Phase 1: Market Sizing (no dependencies)
-        agentPayload = {
-          message: `Analyze the market size for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          project_context: baseContext.project,
-          deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client,
-          format: 'json',
-          output_format: 'json'
-        };
-      } else if (framework === 'competitive_landscape') {
-        // Phase 1: Competitive Landscape (no dependencies)
-        agentPayload = {
-          message: `Analyze the competitive landscape for ${baseContext.client.name || 'the client'}'s ${baseContext.deliverable.brief || 'strategic initiative'} in ${baseContext.project.geography}. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          project_context: baseContext.project,
-          deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client,
-          format: 'json',
-          output_format: 'json'
-        };
-      } else if (framework === 'capability_benchmark') {
-        // Phase 2: Capability Benchmark (depends on competitive_landscape)
-        agentPayload = {
-          message: `Conduct a capability benchmark for ${baseContext.client.name || 'the client'} against competitors, using insights from the competitive landscape analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          project_context: baseContext.project,
-          deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client,
-          competitive_landscape_data: dependencies.competitive_landscape || null,
-          format: 'json',
-          output_format: 'json'
-        };
-      } else if (framework === 'strategic_options') {
-        // Phase 3: Strategic Options (depends on market_sizing, competitive_landscape, capability_benchmark)
-        agentPayload = {
-          message: `Develop strategic options for ${baseContext.client.name || 'the client'} based on market sizing, competitive landscape, and capability analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          project_context: baseContext.project,
-          deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client,
-          market_sizing_data: dependencies.market_sizing || null,
-          competitive_landscape_data: dependencies.competitive_landscape || null,
-          capability_benchmark_data: dependencies.capability_benchmark || null,
-          format: 'json',
-          output_format: 'json'
-        };
-      } else if (framework === 'partnerships') {
-        // Phase 4: Partnership Strategy (depends on strategic_options)
-        agentPayload = {
-          message: `Develop partnership strategy for ${baseContext.client.name || 'the client'} based on strategic options analysis. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          project_context: baseContext.project,
-          deliverable_context: baseContext.deliverable,
-          client_context: baseContext.client,
-          strategic_options_data: dependencies.strategic_options || null,
-          format: 'json',
-          output_format: 'json'
-        };
-      } else {
-        // Fallback for unsupported frameworks
-        agentPayload = {
-          message: `Generate comprehensive section content for ${framework} framework. Return ONLY valid JSON format with the structure: {"slide_content": {...}, "insights": [...], "citations": [...]}`,
-          context: {
-            framework,
-            projectData,
-            deliverableData,
-            clientData,
-            dependencies
-          },
-          format: 'json',
-          output_format: 'json'
-        };
-      }
+      // Build agent payload - stringify all data into message field
+      const payloadData = {
+        project_context: baseContext.project,
+        deliverable_context: baseContext.deliverable,
+        client_context: baseContext.client,
+        dependencies: dependencies,
+        format: 'json',
+        output_format: 'json'
+      };
+      
+      agentPayload = {
+        message: JSON.stringify(payloadData)
+      };
       
       console.log(`📊 Built agent payload for ${framework}:`, JSON.stringify(agentPayload, null, 2));
     } catch (error) {
@@ -187,23 +153,47 @@ export async function POST(request) {
 
     try {
       // Call the specific agent for this framework
+      console.log(`🚀 ===== CALLING EXTERNAL AI AGENT =====`);
+      console.log(`🌐 URL: ${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`);
+      console.log(`🔑 API Key: ${AI_CONFIG.apiKey ? 'Present' : 'Missing'}`);
+      console.log(`📦 Payload:`, JSON.stringify(agentPayload, null, 2));
+      
+      // Add timeout and better error handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000); // 30 second timeout
+      
       const response = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': AI_CONFIG.apiKey
         },
-        body: JSON.stringify(agentPayload)
+        body: JSON.stringify(agentPayload),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+
+      console.log(`📊 Response Status: ${response.status} ${response.statusText}`);
+      console.log(`📋 Response Headers:`, Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ Section generation failed for ${framework}:`, errorText);
+        console.error(`❌ ===== EXTERNAL API FAILED =====`);
+        console.error(`Status: ${response.status} ${response.statusText}`);
+        console.error(`Error Response:`, errorText);
+        console.error(`❌ ===== END EXTERNAL API ERROR =====`);
         
         // Use fallback data when agent calls fail
-        console.log(`🔄 Using fallback data for ${framework} due to agent failure`);
+        console.log(`🔄 ===== USING FALLBACK DATA =====`);
+        console.log(`Framework: ${framework}`);
+        console.log(`Reason: External API failed with status ${response.status}`);
+        console.log(`Error: ${errorText}`);
+        
         const fallbackJson = generateFallbackContent(framework, errorText);
         const fallbackData = JSON.parse(fallbackJson);
+        
+        console.log(`📊 Fallback Data Generated:`, JSON.stringify(fallbackData, null, 2));
         
         // Parse fallback data using the same parser
         const sectionData = parseSectionResponse({
@@ -211,6 +201,9 @@ export async function POST(request) {
           success: true,
           source: 'fallback-data'
         }, framework, sectionIndex);
+        
+        console.log(`📦 Parsed Fallback Section Data:`, JSON.stringify(sectionData, null, 2));
+        console.log(`🔄 ===== END FALLBACK DATA =====`);
         
         return NextResponse.json({
           success: true,
@@ -228,6 +221,7 @@ export async function POST(request) {
       console.log('🤖 ========== RAW AI AGENT RESPONSE START ==========');
       console.log(`Framework: ${framework}`);
       console.log(`Agent ID: ${agentId}`);
+      console.log(`✅ EXTERNAL API SUCCESS - Using actual AI response`);
       try {
         console.log('Raw Response JSON:', JSON.stringify(agentResult, null, 2));
       } catch (stringifyError) {
@@ -295,6 +289,50 @@ export async function POST(request) {
 
     } catch (agentError) {
       console.error(`❌ Section generation agent error for ${framework}:`, agentError);
+      
+      // Check if it's a network/timeout error
+      if (agentError.name === 'AbortError') {
+        console.error(`⏰ Request timeout for ${framework} - using fallback data`);
+        
+        // Use fallback data for timeout errors
+        const fallbackJson = generateFallbackContent(framework, 'Request timeout');
+        const fallbackData = JSON.parse(fallbackJson);
+        const sectionData = parseSectionResponse({
+          response: fallbackJson,
+          success: true,
+          source: 'fallback-data'
+        }, framework, sectionIndex);
+        
+        return NextResponse.json({
+          success: true,
+          source: 'fallback-data',
+          framework,
+          agentId: 'timeout-fallback',
+          data: sectionData
+        });
+      }
+      
+      // Check if it's a network connection error
+      if (agentError.code === 'ECONNREFUSED' || agentError.code === 'ENOTFOUND' || agentError.message.includes('fetch')) {
+        console.error(`🌐 Network error for ${framework} - using fallback data`);
+        
+        // Use fallback data for network errors
+        const fallbackJson = generateFallbackContent(framework, `Network error: ${agentError.message}`);
+        const fallbackData = JSON.parse(fallbackJson);
+        const sectionData = parseSectionResponse({
+          response: fallbackJson,
+          success: true,
+          source: 'fallback-data'
+        }, framework, sectionIndex);
+        
+        return NextResponse.json({
+          success: true,
+          source: 'fallback-data',
+          framework,
+          agentId: 'network-fallback',
+          data: sectionData
+        });
+      }
       
       return NextResponse.json(
         {

@@ -31,7 +31,16 @@ import chatContextManager from '../../lib/chat/ChatContextManager';
 import documentService, { KNOWLEDGE_BASE_IDS } from '../../lib/services/DocumentService';
 import DocumentCard from '../ui/DocumentCard';
 
-export default function RightSection({ isModalOpen = false, selectedItem = null, showLayoutOptions = false, selectedLayout = 'title-2-columns', onLayoutChange, storyline = null, onApplyLayoutToAll }) {
+export default function RightSection({
+  isModalOpen = false,
+  selectedItem = null,
+  showLayoutOptions = false,
+  selectedLayout = 'default',
+  onLayoutChange,
+  storyline = null,
+  onApplyLayoutToAll,
+  availableLayouts = ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']
+}) {
   // State for collapsible sections - chat closed by default
   const [expandedSections, setExpandedSections] = useState({
     layoutOptions: true, // Default to expanded
@@ -578,10 +587,26 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
   // Layout options data
   const LAYOUT_OPTIONS = [
     {
+      id: 'default',
+      name: 'Default (Recommended)',
+      description: 'Automatically uses the best layout for this section type',
+      recommended: true,
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="flex items-center justify-center p-1 h-12">
+            <div className="w-6 h-6 rounded border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--text-primary)' }}>
+              <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>★</span>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'title-2-columns',
       name: 'Title + 2 Columns',
       description: 'Header with two equal content columns',
-      recommended: true,
+      recommended: false,
       preview: (
         <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
           <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -730,27 +755,39 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           
           {expandedSections.layoutOptions && (
             <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
-              {LAYOUT_OPTIONS.map((layout) => (
-                <div
+              {LAYOUT_OPTIONS.map((layout) => {
+                const isEnabled = availableLayouts.includes(layout.id);
+                const isSelected = selectedLayout === layout.id;
+
+                return (
+                  <div
                   key={layout.id}
-                  onClick={() => onLayoutChange && onLayoutChange(layout.id)}
-                  className={`relative p-3 border rounded-lg cursor-pointer transition-all ${
-                    selectedLayout === layout.id
-                      ? 'shadow-sm'
-                      : 'hover:shadow-sm'
+                  onClick={() => {
+                    if (!isEnabled) return;
+                    onLayoutChange && onLayoutChange(layout.id);
+                  }}
+                  title={!isEnabled ? `${layout.name} is not available for the current section type` : layout.name}
+                  className={`relative p-3 border rounded-lg transition-all ${
+                    isEnabled
+                      ? 'cursor-pointer'
+                      : 'cursor-not-allowed opacity-50'
+                  } ${
+                    isSelected ? 'shadow-sm' : isEnabled ? 'hover:shadow-sm' : ''
                   }`}
                   style={{
-                    borderColor: selectedLayout === layout.id ? 'var(--text-primary)' : 'var(--border-primary)',
+                    borderColor: isSelected ? 'var(--text-primary)' : 'var(--border-primary)',
                     backgroundColor: 'var(--bg-primary)'
                   }}
                   onMouseEnter={(e) => {
-                    if (selectedLayout !== layout.id) {
-                      e.target.style.borderColor = 'var(--border-secondary)';
+                    if (!isEnabled) return;
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-secondary)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (selectedLayout !== layout.id) {
-                      e.target.style.borderColor = 'var(--border-primary)';
+                    if (!isEnabled) return;
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-primary)';
                     }
                   }}
                 >
@@ -770,29 +807,45 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
                         <h3 className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                           {layout.name}
                         </h3>
-                        {selectedLayout === layout.id && (
+                        {isSelected && (
                           <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-primary)' }} />
                         )}
                       </div>
                       <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
                         {layout.description}
                       </p>
+                      {!isEnabled && (
+                        <p className="text-xs mt-1 text-red-500 font-medium">
+                          Not available for current section type
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               
               {/* Apply to All Slides Button */}
               <div className="pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
                 <button
-                  onClick={() => onApplyLayoutToAll && onApplyLayoutToAll(selectedLayout)}
-                  className="w-full px-4 py-2 text-white text-sm font-medium rounded transition-colors"
+                  onClick={() => {
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    onApplyLayoutToAll && onApplyLayoutToAll(selectedLayout);
+                  }}
+                  disabled={!availableLayouts.includes(selectedLayout)}
+                  className={`w-full px-4 py-2 text-white text-sm font-medium rounded transition-colors ${
+                    availableLayouts.includes(selectedLayout)
+                      ? ''
+                      : 'opacity-50 cursor-not-allowed'
+                  }`}
                   style={{ backgroundColor: 'var(--text-primary)' }}
                   onMouseEnter={(e) => {
-                    e.target.style.opacity = '0.9';
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    e.currentTarget.style.opacity = '0.9';
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.opacity = '1';
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    e.currentTarget.style.opacity = '1';
                   }}
                   title={`Apply ${LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.name || selectedLayout} to all slides`}
                 >

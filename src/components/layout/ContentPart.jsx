@@ -23,6 +23,108 @@ import {
 } from '../../lib/storyline/regenerationUtils';
 import { parseMarkdownWithCharts, deriveSectionMetadata } from '../../lib/markdown/markdownParser';
 
+const DELIVERABLE_TYPES = [
+  'Recommendation',
+  'Workshop Document',
+  'Presentation',
+  'Report',
+  'Strategy',
+  'Analysis',
+  'Design',
+  'Code',
+  'Documentation',
+  'Dashboard',
+  'API',
+  'Brief',
+  'Storyline',
+  'Other'
+];
+
+const ALL_LAYOUT_IDS = ['title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow'];
+
+// Framework dependencies mapping - from your provided structure
+// Note: brief_scorer is not part of pipeline, it's just deliverable data
+const FRAMEWORK_DEPENDENCIES = {
+  // Map framework IDs to their dependencies (excluding brief_scorer as it's deliverable data)
+  'market_sizing': [],  // No dependencies, starts the chain
+  'competitive_landscape': ['market_sizing'],
+  'key_industry_trends': ['market_sizing', 'competitive_landscape'],
+  'capabilities_assessment': ['market_sizing', 'competitive_landscape', 'key_industry_trends'],
+  'competitor_deep_dive': ['market_sizing', 'competitive_landscape', 'capabilities_assessment'],
+  'strategic_options': ['capabilities_assessment', 'competitor_deep_dive', 'key_industry_trends'],
+  'deep_dive_strategic_option': ['strategic_options'],
+  'buy_vs_build': ['capabilities_assessment', 'strategic_options'],
+  'product_roadmap': ['buy_vs_build', 'strategic_options', 'deep_dive_strategic_option']
+};
+
+// Function to build dependency data for AI agent calls
+const buildDependencyData = (currentFramework, storylineSections) => {
+  if (!currentFramework || !storylineSections) {
+    console.log(`❌ buildDependencyData: Missing currentFramework (${currentFramework}) or storylineSections (${storylineSections})`);
+    return {};
+  }
+
+  const dependencies = {};
+  const frameworkDeps = FRAMEWORK_DEPENDENCIES[currentFramework] || [];
+  
+  console.log(`🔗 Building dependencies for ${currentFramework}:`, frameworkDeps);
+  console.log(`📊 Available storyline sections:`, storylineSections.map(s => ({ framework: s.framework, status: s.status, hasContent: !!s.sectionContent })));
+  
+  frameworkDeps.forEach(depFramework => {
+    const depSection = storylineSections.find(s => s.framework === depFramework);
+    if (depSection) {
+      console.log(`🔍 Found dependency section for ${depFramework}:`, {
+        title: depSection.title,
+        status: depSection.status,
+        hasSectionContent: !!depSection.sectionContent,
+        hasSlideContent: !!(depSection.sectionContent?.slideContent || depSection.slideContent),
+        insightsCount: (depSection.insights || []).length,
+        chartsCount: (depSection.charts || []).length
+      });
+      
+      // Include comprehensive dependency data
+      dependencies[depFramework] = {
+        framework: depFramework,
+        title: depSection.title,
+        description: depSection.description,
+        slide_content: depSection.sectionContent?.slideContent || depSection.slideContent || {},
+        insights: depSection.insights || [],
+        key_points: depSection.keyPoints || [],
+        charts: depSection.charts || [],
+        chart_data: depSection.chartData || depSection.sectionContent?.chartData || null,
+        citations: depSection.citations || depSection.sources || [],
+        takeaway: depSection.takeaway || '',
+        status: depSection.status || 'draft',
+        generated_at: depSection.generatedAt || depSection.created_at
+      };
+      
+      console.log(`✅ Added dependency data for ${depFramework}:`, {
+        hasSlideContent: !!dependencies[depFramework].slide_content,
+        insightsCount: dependencies[depFramework].insights.length,
+        chartsCount: dependencies[depFramework].charts.length,
+        citationsCount: dependencies[depFramework].citations.length
+      });
+    } else {
+      console.warn(`⚠️ Missing dependency: ${depFramework} not found in storyline sections`);
+    }
+  });
+  
+  console.log(`🔗 Total dependencies built for ${currentFramework}:`, Object.keys(dependencies));
+  
+  // Debug: Show dependency chain completeness
+  if (frameworkDeps.length > 0) {
+    const foundDeps = Object.keys(dependencies);
+    const missingDeps = frameworkDeps.filter(dep => !foundDeps.includes(dep));
+    if (missingDeps.length > 0) {
+      console.warn(`⚠️ Missing dependencies for ${currentFramework}:`, missingDeps);
+    } else {
+      console.log(`✅ All dependencies found for ${currentFramework}`);
+    }
+  }
+  
+  return dependencies;
+};
+
 const EMPTY_PROJECT_CONTEXT = {
   id: null,
   name: '',
@@ -178,7 +280,29 @@ const cloneToPlainObject = (value, fallback = null) => {
 };
 
 
-export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted, onDeliverableNavigate, refreshFromDatabase, onViewChange, selectedLayout, onStorylineChange }) {
+export default function ContentPart({
+  selectedItem,
+  onItemSelect,
+  onItemDeleted,
+  onDeliverableNavigate,
+  refreshFromDatabase,
+  onViewChange,
+  selectedLayout,
+  onStorylineChange,
+  onLayoutChange,
+  onLayoutOptionsChange
+}) {
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'content-part-cursor-style';
+    let styleEl = document.getElementById(styleId);
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      styleEl.textContent = '.content-part button:not(:disabled){cursor:pointer;}';
+      document.head.appendChild(styleEl);
+    }
+  }, []);
   const [formData, setFormData] = useState({
     name: '',
     audience: [],
@@ -224,6 +348,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       setCurrentView('detailed');
     }
   }, [generatedStoryline, currentView]);
+
+  const safeOnLayoutChange = useMemo(() => onLayoutChange || (() => {}), [onLayoutChange]);
+  const safeOnLayoutOptionsChange = useMemo(() => onLayoutOptionsChange || (() => {}), [onLayoutOptionsChange]);
+
+  useEffect(() => {
+    if (currentView !== 'layout') {
+      safeOnLayoutOptionsChange(ALL_LAYOUT_IDS);
+    }
+  }, [currentView, safeOnLayoutOptionsChange]);
 
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
@@ -293,7 +426,34 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const result = await response.json();
-      console.log(`✅ ${framework} section generated:`, result);
+      
+      // Log external API response before conversion
+      console.log(`🔍 ===== EXTERNAL API RESPONSE FOR ${framework.toUpperCase()} =====`);
+      console.log(`📊 Raw API Response:`, JSON.stringify(result, null, 2));
+      console.log(`📋 Response Structure:`, {
+        hasData: !!result.data,
+        hasSuccess: 'success' in result,
+        hasError: 'error' in result,
+        dataKeys: result.data ? Object.keys(result.data) : 'No data',
+        resultKeys: Object.keys(result)
+      });
+      
+      if (result.data) {
+        console.log(`📊 Data Content:`, JSON.stringify(result.data, null, 2));
+        console.log(`📋 Data Structure:`, {
+          hasSlideContent: !!result.data.slide_content,
+          hasInsights: !!result.data.insights,
+          hasCitations: !!result.data.citations,
+          hasCharts: !!result.data.charts,
+          hasTakeaway: !!result.data.takeaway,
+          slideContentKeys: result.data.slide_content ? Object.keys(result.data.slide_content) : 'No slide_content',
+          insightsLength: result.data.insights ? result.data.insights.length : 0,
+          citationsLength: result.data.citations ? result.data.citations.length : 0,
+          chartsLength: result.data.charts ? result.data.charts.length : 0
+        });
+      }
+      
+      console.log(`✅ ${framework} section generated successfully`);
 
       // Update section with completed content
       setGeneratedStoryline(prev => {
@@ -303,12 +463,25 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           const sectionData = result.data || result;
           const frameworkName = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
           
+          // Log data conversion process
+          console.log(`🔧 ===== DATA CONVERSION FOR ${framework.toUpperCase()} =====`);
+          console.log(`📊 Section Data (before conversion):`, JSON.stringify(sectionData, null, 2));
+          
           // Use only the JSON response content - no additional formatting
           const slideContent = sectionData.slide_content || {};
           const insights = sectionData.insights || [];
           const citations = sectionData.citations || [];
+          
+          console.log(`📋 Extracted Values:`, {
+            slideContent: slideContent,
+            insights: insights,
+            citations: citations,
+            takeaway: sectionData.takeaway || '',
+            notes: sectionData.notes || '',
+            charts: sectionData.charts || []
+          });
 
-          updatedSections[sectionIndex] = {
+          const convertedSection = {
             ...updatedSections[sectionIndex],
             ...sectionData,
             id: updatedSections[sectionIndex].id, // Preserve original section ID
@@ -326,6 +499,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             html: '', // No HTML - only JSON content
             phaseName: updatedSections[sectionIndex].phaseName?.replace(' (In Progress)', ' (Completed)') || 'Completed'
           };
+          
+          console.log(`📊 Converted Section (after conversion):`, JSON.stringify(convertedSection, null, 2));
+          console.log(`✅ Data conversion completed for ${framework}`);
+
+          updatedSections[sectionIndex] = convertedSection;
         }
         return { ...prev, sections: updatedSections };
       });
@@ -391,6 +569,110 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   const [sectionToRemove, setSectionToRemove] = useState(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isTestingBrief, setIsTestingBrief] = useState(false);
+
+  const resolveProjectIdForDeliverable = useCallback(() => {
+    const metadata = selectedItem?.metadata || {};
+    return getIdString(
+      selectedItem?.project ||
+      selectedItem?.project_id ||
+      metadata.project_id ||
+      metadata.projectId ||
+      projectContext?.id ||
+      selectedItem?.parentProjectId ||
+      selectedItem?.parentId ||
+      metadata.business_entity_id
+    );
+  }, [selectedItem, projectContext]);
+
+  const createDeliverableForStoryline = useCallback(async () => {
+    const projectId = resolveProjectIdForDeliverable();
+    if (!projectId) {
+      throw new Error('Unable to determine the associated project. Please open this deliverable from a project before saving the storyline.');
+    }
+
+    const listOrEmpty = (value, fallback) => {
+      if (Array.isArray(value) && value.length) return value;
+      if (Array.isArray(fallback) && fallback.length) return fallback;
+      if (value) return [value];
+      if (fallback) return [fallback];
+      return [];
+    };
+
+    const mapDeliverableType = () => {
+      if (DELIVERABLE_TYPES.includes(formData.type)) return formData.type;
+      const metadataType = selectedItem?.metadata?.deliverable_type;
+      if (metadataType && DELIVERABLE_TYPES.includes(metadataType)) return metadataType;
+      return 'Presentation';
+    };
+
+    const mapStatus = () => {
+      const status = (selectedItem?.status || '').toLowerCase();
+      const allowed = ['draft', 'in_review', 'approved', 'in_progress', 'completed', 'delivered', 'rejected'];
+      return allowed.includes(status) ? status : 'draft';
+    };
+
+    const mapPriority = () => {
+      const priority = (selectedItem?.priority || '').toLowerCase();
+      const allowed = ['low', 'medium', 'high', 'critical'];
+      return allowed.includes(priority) ? priority : 'medium';
+    };
+
+    const determineDueDate = () => {
+      const due = formData.due_date || selectedItem?.due_date;
+      if (!due) return undefined;
+      const parsed = new Date(due);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    };
+
+    const toNumericOrNull = (value, fallback) => {
+      const primary = Number(value);
+      if (Number.isFinite(primary)) return Number(primary.toFixed(1));
+      const secondary = Number(fallback);
+      return Number.isFinite(secondary) ? Number(secondary.toFixed(1)) : null;
+    };
+
+    const deliverablePayload = {
+      name: formData.name || selectedItem?.title || selectedItem?.name || 'Strategy Deliverable',
+      type: mapDeliverableType(),
+      status: mapStatus(),
+      priority: mapPriority(),
+      description: formData.brief || selectedItem?.brief || '',
+      project: projectId,
+      due_date: determineDueDate(),
+      estimated_hours: Number.isFinite(Number(selectedItem?.estimated_hours)) ? Number(selectedItem.estimated_hours) : 0,
+      notes: selectedItem?.notes || '',
+      brief_quality: toNumericOrNull(formData.brief_quality, selectedItem?.brief_quality),
+      brief_strengths: listOrEmpty(formData.brief_strengths, selectedItem?.brief_strengths),
+      brief_improvements: listOrEmpty(formData.brief_improvements, selectedItem?.brief_improvements)
+    };
+
+    const response = await fetch('/api/deliverables', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(deliverablePayload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      try {
+        const parsed = JSON.parse(errorText);
+        throw new Error(parsed.error || `Failed to create deliverable (${response.status})`);
+      } catch (parseError) {
+        throw new Error(errorText || `Failed to create deliverable (${response.status})`);
+      }
+    }
+
+    const result = await response.json();
+    const createdDeliverable = result?.data?.deliverable || result?.deliverable || result;
+
+    if (!createdDeliverable || !(createdDeliverable._id || createdDeliverable.id)) {
+      throw new Error('Deliverable creation did not return a valid identifier.');
+    }
+
+    return createdDeliverable;
+  }, [formData.brief, formData.brief_improvements, formData.brief_quality, formData.brief_strengths, formData.due_date, formData.name, formData.type, resolveProjectIdForDeliverable, selectedItem]);
 
   const composeProjectSummary = useCallback((info = {}) => {
     const lines = [
@@ -1173,6 +1455,9 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         status: 'draft'
       });
       
+      // Build dependency data for this framework
+      const dependencies = buildDependencyData(section.framework, generatedStoryline?.sections || []);
+      
       // Call the section generation API
       const response = await fetch('/api/ai/generate-section', {
         method: 'POST',
@@ -1183,6 +1468,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           framework: section.framework,
           sectionId: section.id,
           sectionIndex: section.order - 1, // Convert to 0-based index
+          dependencies, // Add dependency data
           deliverableData: {
             brief: formData.brief,
             brief_quality: formData.brief_quality,
@@ -1260,72 +1546,192 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       }
 
       const sectionCount = sanitizedStoryline.sections?.length || 0;
+      console.log('🔍 Sanitized storyline sections count:', sectionCount);
+
+      const ALLOWED_PRESENTATION_STYLES = ['consulting', 'academic', 'sales', 'technical', 'strategic'];
+      const ALLOWED_COMPLEXITY = ['beginner', 'intermediate', 'advanced', 'expert'];
+
+      const normalizedObjectives = Array.isArray(sanitizedStoryline.objectives)
+        ? sanitizedStoryline.objectives.filter(Boolean).join('; ')
+        : typeof sanitizedStoryline.objectives === 'string'
+          ? sanitizedStoryline.objectives
+          : '';
+
+      const normalizedPresentationStyle = ALLOWED_PRESENTATION_STYLES.includes(sanitizedStoryline.presentationStyle)
+        ? sanitizedStoryline.presentationStyle
+        : 'consulting';
+
+      const normalizedComplexity = ALLOWED_COMPLEXITY.includes(sanitizedStoryline.complexity)
+        ? sanitizedStoryline.complexity
+        : 'intermediate';
 
       const payload = {
-        title: sanitizedStoryline.title
-          || `Strategic Analysis - ${sectionCount} Framework${sectionCount === 1 ? '' : 's'}`,
-        executiveSummary: sanitizedStoryline.executiveSummary,
-        presentationFlow: sanitizedStoryline.presentationFlow,
-        callToAction: sanitizedStoryline.callToAction,
-        topic: sanitizedStoryline.topic,
-        industry: sanitizedStoryline.industry,
-        audience: sanitizedStoryline.audience,
-        objectives: sanitizedStoryline.objectives,
-        presentationStyle: sanitizedStoryline.presentationStyle,
-        complexity: sanitizedStoryline.complexity,
-        status: sanitizedStoryline.status || generatedStoryline.status,
+        title: sanitizedStoryline.title || `Strategic Analysis - ${sectionCount} Framework${sectionCount === 1 ? '' : 's'}`,
+        executiveSummary: sanitizedStoryline.executiveSummary || '',
+        presentationFlow: sanitizedStoryline.presentationFlow || '',
+        callToAction: sanitizedStoryline.callToAction || '',
+        topic: sanitizedStoryline.topic || '',
+        industry: sanitizedStoryline.industry || '',
+        audience: sanitizedStoryline.audience || [],
+        objectives: normalizedObjectives,
+        presentationStyle: normalizedPresentationStyle,
+        complexity: normalizedComplexity,
+        status: sanitizedStoryline.status || 'draft',
         sections: sanitizedStoryline.sections || []
       };
 
-      let response;
-      
-      if (generatedStoryline._id) {
-        // Update existing storyline
-        console.log('🔄 Updating existing storyline:', generatedStoryline._id);
-        response = await fetch(`/api/storylines/${generatedStoryline._id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-      } else {
-        // Create new storyline - need deliverable ID
-        const deliverableId = getIdString(selectedItem?._id || selectedItem?.id || selectedItem?.metadata?.deliverableId);
-        if (!deliverableId) {
-          throw new Error('No deliverable ID found to create storyline');
+      console.log('🔍 Payload prepared:', {
+        title: payload.title,
+        sectionCount: payload.sections.length,
+        hasDeliverableId: !!selectedItem?._id
+      });
+
+      const isExistingStoryline = !!generatedStoryline._id;
+      let deliverableIdForPayload = payload.deliverable;
+
+      const executeSave = async () => {
+        if (isExistingStoryline) {
+          console.log('🔄 Updating existing storyline:', generatedStoryline._id);
+          return fetch(`/api/storylines/${generatedStoryline._id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
         }
-        
-        console.log('➕ Creating new storyline for deliverable:', deliverableId);
-        payload.deliverable = deliverableId;
-        
-        console.log('🔍 Creating storyline with payload:', JSON.stringify(payload, null, 2));
-        response = await fetch('/api/storylines', {
+
+        const requestBody = JSON.stringify({
+          ...payload,
+          deliverable: deliverableIdForPayload
+        });
+
+        console.log('➕ Creating storyline for deliverable:', deliverableIdForPayload);
+        console.log('🔍 Creating storyline with payload:', requestBody);
+
+        return fetch('/api/storylines', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(payload)
+          body: requestBody
         });
+      };
+
+      // Ensure we have a deliverable ID before first attempt when creating new storyline
+      if (!isExistingStoryline) {
+        deliverableIdForPayload = deliverableIdForPayload
+          || getIdString(
+            selectedItem?.metadata?.deliverableId ||
+            selectedItem?.metadata?.deliverable_id ||
+            selectedItem?._id ||
+            selectedItem?.id ||
+            generatedStoryline?.deliverable
+          );
+
+        if (!deliverableIdForPayload) {
+          const createdDeliverable = await createDeliverableForStoryline();
+          const resolvedProjectId = createdDeliverable.project || resolveProjectIdForDeliverable();
+          deliverableIdForPayload = getIdString(createdDeliverable);
+          payload.deliverable = deliverableIdForPayload;
+          setGeneratedStoryline(prev => prev ? { ...prev, deliverable: deliverableIdForPayload } : prev);
+
+          if (onItemSelect && selectedItem) {
+            onItemSelect({
+              ...selectedItem,
+              type: 'deliverable',
+              _id: deliverableIdForPayload,
+              id: deliverableIdForPayload,
+              metadata: {
+                ...(selectedItem.metadata || {}),
+                deliverableId: deliverableIdForPayload,
+                deliverable_id: deliverableIdForPayload,
+                project_id: resolvedProjectId,
+                projectId: resolvedProjectId
+              }
+            });
+          }
+        } else {
+          payload.deliverable = deliverableIdForPayload;
+        }
       }
 
+      let response = await executeSave();
+
+      if (!response.ok && !isExistingStoryline && response.status === 404) {
+        console.warn('⚠️ Deliverable not found when saving storyline. Attempting to create deliverable automatically.');
+        const createdDeliverable = await createDeliverableForStoryline();
+        const resolvedProjectId = createdDeliverable.project || resolveProjectIdForDeliverable();
+        deliverableIdForPayload = getIdString(createdDeliverable);
+        if (!deliverableIdForPayload) {
+          throw new Error('Deliverable creation succeeded but no identifier was returned.');
+        }
+
+        payload.deliverable = deliverableIdForPayload;
+        setGeneratedStoryline(prev => prev ? { ...prev, deliverable: deliverableIdForPayload } : prev);
+
+        if (onItemSelect && selectedItem) {
+          onItemSelect({
+            ...selectedItem,
+            type: 'deliverable',
+            _id: deliverableIdForPayload,
+            id: deliverableIdForPayload,
+            metadata: {
+              ...(selectedItem.metadata || {}),
+              deliverableId: deliverableIdForPayload,
+              deliverable_id: deliverableIdForPayload,
+              project_id: resolvedProjectId,
+              projectId: resolvedProjectId
+            }
+          });
+        }
+
+        response = await executeSave();
+      }
+
+      console.log('🔍 Response status:', response.status);
+      console.log('🔍 Response ok:', response.ok);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to save storyline');
+        const errorText = await response.text();
+        console.error('❌ Response error text:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (parseError) {
+          errorData = { error: errorText || 'Unknown error occurred' };
+        }
+        
+        throw new Error(errorData.error || `Failed to save storyline (${response.status})`);
       }
 
       const result = await response.json();
+      console.log('✅ Storyline saved successfully:', result);
+      
       const updatedStoryline = result.data || result.storyline || result;
-      setGeneratedStoryline({
+      
+      // Update the storyline state with the saved data
+      setGeneratedStoryline(prev => ({
+        ...prev,
         ...updatedStoryline,
-        sections: (updatedStoryline.sections || []).map((section, index) =>
+        _id: updatedStoryline._id || prev._id,
+        deliverable: updatedStoryline.deliverable || deliverableIdForPayload || prev.deliverable,
+        isLocalOnly: false,
+        sections: (updatedStoryline.sections || prev.sections || []).map((section, index) =>
           normalizeSectionForState(section, index)
         )
-      });
+      }));
+      
       setStorylineDirty(false);
+      
+      // Show success message
+      alert('Storyline saved successfully!');
+      
     } catch (error) {
       console.error('❌ Error saving storyline:', error);
-      alert(error.message || 'Failed to save storyline changes.');
+      console.error('❌ Error stack:', error.stack);
+      alert(`Failed to save storyline: ${error.message}`);
     } finally {
       setIsSavingStoryline(false);
     }
@@ -2216,7 +2622,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
 
   const handleGenerateStoryline = async () => {
-    console.log('🚀 ===== CFA-DEMO STORYLINE GENERATION STARTED =====');
+    console.log('🚀 ===== ENHANCED FRAMEWORK STORYLINE GENERATION STARTED =====');
     console.log('📊 Selected item:', selectedItem);
     console.log('🔍 Item type:', selectedItem?.type);
     
@@ -2230,7 +2636,6 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       console.log('⚠️ Storyline generation already in progress, ignoring duplicate call');
       return;
     }
-
 
     setIsGeneratingStoryline(true);
     
@@ -2276,13 +2681,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       
       if (!projectId || projectId === 'default-project-id') {
         console.warn('⚠️ No valid project ID found, using fallback values for testing');
-        // Don't throw error, just use fallback values
       }
 
-      // Create CFA-DEMO sections with proper phase-based status
-      const cfaDemoSections = [
+      // Create ENHANCED sections with 9 frameworks (brief_scorer is internal, not part of storyline)
+      const enhancedSections = [
         {
-          id: 'cfa-demo-1',
+          id: 'framework-1',
           title: 'Market Sizing Analysis',
           description: 'Comprehensive market size assessment and growth projections',
           framework: 'market_sizing',
@@ -2299,7 +2703,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           html: ''
         },
         {
-          id: 'cfa-demo-2', 
+          id: 'framework-2', 
           title: 'Competitive Landscape Analysis',
           description: 'Strategic assessment of market competitors and positioning',
           framework: 'competitive_landscape',
@@ -2307,8 +2711,8 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           isLoading: false,
           generationStatus: 'waiting',
           order: 2,
-          phase: 1,
-          phaseName: 'Phase 1: Market Analysis (Waiting)',
+          phase: 2,
+          phaseName: 'Phase 2: Competitive Analysis (Waiting)',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2316,16 +2720,16 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           html: ''
         },
         {
-          id: 'cfa-demo-3',
-          title: 'Capability Benchmark Analysis', 
-          description: 'Evaluation of organizational capabilities and competencies',
-          framework: 'capability_benchmark',
-                  status: 'draft',
+          id: 'framework-3',
+          title: 'Key Industry Trends Analysis', 
+          description: 'Analysis of key industry trends and their implications',
+          framework: 'key_industry_trends',
+          status: 'draft',
           isLoading: false,
           generationStatus: 'waiting',
           order: 3,
-          phase: 2,
-          phaseName: 'Phase 2: Capability Assessment (Waiting)',
+          phase: 3,
+          phaseName: 'Phase 3: Industry Trends (Waiting)',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2333,16 +2737,16 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           html: ''
         },
         {
-          id: 'cfa-demo-4',
-          title: 'Strategic Options Analysis',
-          description: 'Evaluation of strategic alternatives and decision framework',
-          framework: 'strategic_options', 
-                      status: 'draft',
+          id: 'framework-4',
+          title: 'Capabilities Assessment',
+          description: 'Evaluation of organizational capabilities and competencies',
+          framework: 'capabilities_assessment',
+          status: 'draft',
           isLoading: false,
           generationStatus: 'waiting',
           order: 4,
-          phase: 3,
-          phaseName: 'Phase 3: Strategic Planning (Waiting)',
+          phase: 4,
+          phaseName: 'Phase 4: Capabilities Assessment (Waiting)',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2350,16 +2754,84 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           html: ''
         },
         {
-          id: 'cfa-demo-5',
-          title: 'Partnership Strategy Analysis',
-          description: 'Strategic partnership opportunities and implementation roadmap',
-          framework: 'partnerships',
-          status: 'draft', 
+          id: 'framework-5',
+          title: 'Competitor Deep Dive Analysis',
+          description: 'Detailed analysis of best-in-class competitors',
+          framework: 'competitor_deep_dive',
+          status: 'draft',
           isLoading: false,
           generationStatus: 'waiting',
           order: 5,
-          phase: 4,
-          phaseName: 'Phase 4: Partnership Strategy (Waiting)',
+          phase: 5,
+          phaseName: 'Phase 5: Competitor Deep Dive (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'framework-6',
+          title: 'Strategic Options Analysis',
+          description: 'Evaluation of strategic alternatives and decision framework',
+          framework: 'strategic_options',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 6,
+          phase: 6,
+          phaseName: 'Phase 6: Strategic Options (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'framework-7',
+          title: 'Deep Dive Strategic Option',
+          description: 'Detailed analysis of chosen strategic option',
+          framework: 'deep_dive_strategic_option',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 7,
+          phase: 7,
+          phaseName: 'Phase 7: Strategic Deep Dive (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'framework-8',
+          title: 'Buy vs Build Analysis',
+          description: 'Analysis of sourcing vs development options',
+          framework: 'buy_vs_build',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 8,
+          phase: 8,
+          phaseName: 'Phase 8: Buy vs Build (Waiting)',
+          keyPoints: [],
+          takeaway: '',
+          charts: [],
+          markdown: '',
+          html: ''
+        },
+        {
+          id: 'framework-9',
+          title: 'Product Roadmap',
+          description: 'Strategic product roadmap and implementation plan',
+          framework: 'product_roadmap',
+          status: 'draft',
+          isLoading: false,
+          generationStatus: 'waiting',
+          order: 9,
+          phase: 9,
+          phaseName: 'Phase 9: Product Roadmap (Waiting)',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2370,15 +2842,15 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
       // Create initial storyline with waiting sections
       const initialStoryline = {
-        title: 'UBS Switzerland Pension Strategy Analysis',
-        sections: cfaDemoSections,
+        title: 'Strategic Analysis Framework',
+        sections: enhancedSections,
         executiveSummary: '',
         presentationFlow: '',
         callToAction: '',
-        totalSections: 5,
-        estimatedDuration: 15,
+        totalSections: 9,
+        estimatedDuration: 30,
         generatedAt: new Date().toISOString(),
-        source: 'cfa-demo-orchestrator',
+        source: 'enhanced-framework-orchestrator',
         currentPhase: 0,
         phaseStatus: 'initializing'
       };
@@ -2399,77 +2871,264 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       // Prepare context data for all framework calls with fallback values
       const contextData = {
         projectId: projectId || 'default-project-id',
-        projectName: formData?.name || selectedItem?.projectName || 'UBS Pension Strategy',
-        clientName: selectedItem?.client?.name || 'UBS',
+        projectName: formData?.name || selectedItem?.projectName || 'Strategic Analysis',
+        clientName: selectedItem?.client?.name || 'Client',
         industry: metadata?.industry || 'financial-services',
-        projectDescription: formData?.brief || deliverableData?.brief || 'Strategic analysis for UBS pension strategy',
+        projectDescription: formData?.brief || deliverableData?.brief || 'Strategic analysis and recommendations',
         deliverableId: deliverableId || 'default-deliverable-id',
-        deliverableName: deliverableData?.name || formData?.name || 'UBS Pension Strategy',
+        deliverableName: deliverableData?.name || formData?.name || 'Strategic Analysis',
         deliverableBrief: deliverableData?.brief || formData?.brief || 'Strategic analysis and recommendations',
-        geography: 'Switzerland'
+        geography: 'Global'
       };
       
       console.log('📋 Context Data prepared:', contextData);
       
-      // Start CFA-DEMO generation with individual framework calls
-      console.log('🎭 Starting CFA-DEMO generation with individual framework calls...');
+      // Generate section content function
+      const generateSectionContent = async (framework, dependencies, sectionIndex, contextData) => {
+        try {
+          console.log(`🔄 Generating content for ${framework}...`);
+
+          // Mark section as in-progress so the UI shows generating status
+          setGeneratedStoryline(prev => {
+            if (!prev) return prev;
+            const updatedSections = prev.sections.map(section => {
+              if (section.framework !== framework) {
+                return section;
+              }
+
+              const nextPhaseName = section.phaseName
+                ? section.phaseName.replace(' (Waiting)', ' (In Progress)')
+                : 'Generating...';
+
+              return {
+                ...section,
+                isLoading: true,
+                generationStatus: 'in_progress',
+                phaseName: nextPhaseName
+              };
+            });
+
+            return { ...prev, sections: updatedSections };
+          });
+          
+          // Build dependency data for this framework (use current storyline state)
+          const dependencies = buildDependencyData(framework, generatedStoryline?.sections || []);
+          
+          // Call the generate-section API
+          const response = await fetch('/api/ai/generate-section', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              framework,
+              sectionId: `framework-${sectionIndex + 1}`,
+              sectionIndex,
+              dependencies, // Add dependency data
+              deliverableData: {
+                brief: contextData.projectDescription,
+                brief_quality: formData.brief_quality,
+                title: contextData.deliverableName,
+                type: formData.type,
+                industry: contextData.industry,
+                audience: formData.audience,
+                objectives: formData.objectives
+              },
+              projectData: {
+                name: contextData.projectName,
+                description: contextData.projectDescription,
+                industry: contextData.industry
+              },
+              clientData: {
+                name: contextData.clientName,
+                industry: contextData.industry
+              }
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to generate section: ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          if (!result.success) {
+            throw new Error(result.error || 'Section generation failed');
+          }
+
+          // Log the raw agent response for debugging purposes
+          if (result.rawAgentResponse) {
+            try {
+              console.log(`🧠 Raw agent response for ${framework}:`, JSON.stringify(result.rawAgentResponse, null, 2));
+            } catch (rawLogError) {
+              console.log(`🧠 Raw agent response for ${framework} (non-serializable):`, result.rawAgentResponse);
+            }
+          }
+
+          if (result.source === 'fallback-data') {
+            console.warn(`⚠️ ${framework} used fallback content`, {
+              aiReturnedPlainText: result.aiReturnedPlainText,
+              aiExplicitlyFailed: result.aiExplicitlyFailed,
+              sectionIndex,
+              framework
+            });
+          }
+
+          // Update the section with the generated content
+          const sectionData = result.data;
+          console.log(`✅ Generated content for ${framework}:`, sectionData);
+          
+          // Update the storyline with the new section data
+          setGeneratedStoryline(prev => {
+            if (!prev) return null;
+            const updatedSections = prev.sections.map(section => {
+              if (section.framework === framework) {
+                const computedTitle = sectionData?.sectionContent?.title
+                  || sectionData?.slideContent?.title
+                  || sectionData?.title
+                  || section.title;
+                return {
+                  ...section,
+                  ...sectionData,
+                  title: computedTitle,
+                  isLoading: false,
+                  generationStatus: 'completed',
+                  status: 'draft',
+                  phaseName: section.phaseName?.replace(' (Waiting)', ' (Completed)') || 'Completed',
+                  source: result.source || 'framework-agent',
+                  debugInfo: {
+                    rawAgentResponse: result.rawAgentResponse || null,
+                    fallback: result.source === 'fallback-data',
+                    aiReturnedPlainText: result.aiReturnedPlainText ?? null,
+                    aiExplicitlyFailed: result.aiExplicitlyFailed ?? null,
+                    agentId: result.agentId,
+                    framework,
+                    sectionIndex,
+                    timestamp: new Date().toISOString()
+                  }
+                };
+              }
+              return section;
+            });
+            return { ...prev, sections: updatedSections };
+          });
+          
+          return sectionData;
+        } catch (error) {
+          console.error(`❌ Error generating content for ${framework}:`, error);
+          
+          // Update section with error state
+          setGeneratedStoryline(prev => {
+            if (!prev) return null;
+            const updatedSections = prev.sections.map(section => {
+              if (section.framework === framework) {
+                return {
+                  ...section,
+                  isLoading: false,
+                  generationStatus: 'error',
+                  status: 'error',
+                  error: error.message,
+                  source: 'error-fallback'
+                };
+              }
+              return section;
+            });
+            return { ...prev, sections: updatedSections };
+          });
+          
+          throw error;
+        }
+      };
       
-      // Phase 1: Parallel execution (Market Sizing + Competitive Landscape)
-      console.log('📊 === PHASE 1: PARALLEL EXECUTION ===');
-      const phase1Promises = [];
+      // Start ENHANCED generation with improved dependency logic
+      console.log('🎭 Starting ENHANCED framework generation with improved dependencies...');
       
-      // Market Sizing (index 0)
-      console.log('🏗️ Creating Market Sizing promise...');
+      // Phase 1: Market Sizing (no dependencies)
+      console.log('📊 === PHASE 1: MARKET SIZING ===');
       const marketSizingPromise = generateSectionContent('market_sizing', {}, 0, contextData);
-      phase1Promises.push(marketSizingPromise);
-      console.log('✅ Market Sizing promise created and pushed');
+      const marketResult = await marketSizingPromise;
       
-      // Competitive Landscape (index 1) 
-      console.log('🏗️ Creating Competitive Landscape promise...');
-      const competitiveLandscapePromise = generateSectionContent('competitive_landscape', {}, 1, contextData);
-      phase1Promises.push(competitiveLandscapePromise);
-      console.log('✅ Competitive Landscape promise created and pushed');
+      // Phase 2: Competitive Landscape (depends on market_sizing)
+      console.log('📊 === PHASE 2: COMPETITIVE LANDSCAPE ===');
+      const competitiveLandscapePromise = generateSectionContent('competitive_landscape', { market_sizing: marketResult }, 1, contextData);
+      const competitiveResult = await competitiveLandscapePromise;
       
-      console.log('⚡ Executing 2 Phase 1 promises in parallel...');
-      console.log('📋 Phase1Promises array length:', phase1Promises.length);
-      const phase1Results = await Promise.allSettled(phase1Promises);
+      // Phase 3: Key Industry Trends (depends on market_sizing + competitive_landscape)
+      console.log('📊 === PHASE 3: KEY INDUSTRY TRENDS ===');
+      const keyTrendsPromise = generateSectionContent('key_industry_trends', { 
+        market_sizing: marketResult, 
+        competitive_landscape: competitiveResult 
+      }, 2, contextData);
+      const trendsResult = await keyTrendsPromise;
       
-      // Phase 2: Capability Benchmark (depends on Competitive Landscape)
-      console.log('📊 === PHASE 2: CAPABILITY BENCHMARK ===');
-      const competitiveResult = phase1Results[1].status === 'fulfilled' ? phase1Results[1].value : null;
-      const capabilityBenchmarkPromise = generateSectionContent('capability_benchmark', { competitive_landscape: competitiveResult }, 2, contextData);
-      const capabilityResult = await capabilityBenchmarkPromise;
-      
-      // Phase 3: Strategic Options (depends on Market Sizing, Competitive Landscape, Capability Benchmark)
-      console.log('📊 === PHASE 3: STRATEGIC OPTIONS ===');
-      const marketResult = phase1Results[0].status === 'fulfilled' ? phase1Results[0].value : null;
-      const strategicOptionsPromise = generateSectionContent('strategic_options', {
-        market_sizing: marketResult,
+      // Phase 4: Capabilities Assessment (depends on market_sizing + competitive_landscape + key_industry_trends)
+      console.log('📊 === PHASE 4: CAPABILITIES ASSESSMENT ===');
+      const capabilitiesPromise = generateSectionContent('capabilities_assessment', { 
+        market_sizing: marketResult, 
         competitive_landscape: competitiveResult,
-        capability_benchmark: capabilityResult
+        key_industry_trends: trendsResult
       }, 3, contextData);
+      const capabilitiesResult = await capabilitiesPromise;
+      
+      // Phase 5: Competitor Deep Dive (depends on market_sizing + competitive_landscape + capabilities_assessment)
+      console.log('📊 === PHASE 5: COMPETITOR DEEP DIVE ===');
+      const competitorDeepDivePromise = generateSectionContent('competitor_deep_dive', { 
+        market_sizing: marketResult, 
+        competitive_landscape: competitiveResult,
+        capabilities_assessment: capabilitiesResult
+      }, 4, contextData);
+      const competitorResult = await competitorDeepDivePromise;
+      
+      // Phase 6: Strategic Options (depends on capabilities_assessment + competitor_deep_dive + key_industry_trends)
+      console.log('📊 === PHASE 6: STRATEGIC OPTIONS ===');
+      const strategicOptionsPromise = generateSectionContent('strategic_options', {
+        capabilities_assessment: capabilitiesResult,
+        competitor_deep_dive: competitorResult,
+        key_industry_trends: trendsResult
+      }, 5, contextData);
       const strategicResult = await strategicOptionsPromise;
       
-      // Phase 4: Partnership Strategy (depends on Strategic Options)
-      console.log('📊 === PHASE 4: PARTNERSHIP STRATEGY ===');
-      const partnershipPromise = generateSectionContent('partnerships', { strategic_options: strategicResult }, 4, contextData);
-      const partnershipResult = await partnershipPromise;
+      // Phase 7: Deep Dive Strategic Option (depends on strategic_options)
+      console.log('📊 === PHASE 7: DEEP DIVE STRATEGIC OPTION ===');
+      const deepDivePromise = generateSectionContent('deep_dive_strategic_option', { 
+        strategic_options: strategicResult 
+      }, 6, contextData);
+      const deepDiveResult = await deepDivePromise;
       
-      console.log('✅ All CFA-DEMO sections completed');
+      // Phase 8: Buy vs Build (depends on capabilities_assessment + strategic_options)
+      console.log('📊 === PHASE 8: BUY VS BUILD ===');
+      const buyVsBuildPromise = generateSectionContent('buy_vs_build', { 
+        capabilities_assessment: capabilitiesResult,
+        strategic_options: strategicResult
+      }, 7, contextData);
+      const buyVsBuildResult = await buyVsBuildPromise;
       
-      // Update storyline with final completion status
+      // Phase 9: Product Roadmap (depends on buy_vs_build + strategic_options + deep_dive_strategic_option)
+      console.log('📊 === PHASE 9: PRODUCT ROADMAP ===');
+      const productRoadmapPromise = generateSectionContent('product_roadmap', { 
+        buy_vs_build: buyVsBuildResult,
+        strategic_options: strategicResult,
+        deep_dive_strategic_option: deepDiveResult
+      }, 8, contextData);
+      const roadmapResult = await productRoadmapPromise;
+      
+      console.log('✅ All ENHANCED framework sections completed');
+      
+      // Update storyline with completion status (keep as draft, user will lock when ready)
       setGeneratedStoryline(prev => {
         if (!prev) return null;
         const updatedSections = prev.sections.map(section => ({
           ...section,
           isLoading: false,
           generationStatus: 'completed',
-          phaseName: section.phaseName?.replace(' (In Progress)', ' (Completed)') || 'Completed'
+          status: 'draft', // Keep as draft, user will lock when satisfied
+          phaseName: section.phaseName?.replace(' (Waiting)', ' (Completed)') || 'Completed'
         }));
         return { ...prev, sections: updatedSections };
       });
       
-              setStorylineDirty(true);
+      setStorylineDirty(true);
 
     } catch (error) {
       console.error('❌ Error generating storyline:', error);
@@ -2722,7 +3381,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
   // Handle different content types
   if (!selectedItem) {
     return (
-      <div className="flex-1 h-full flex items-center justify-center bg-gray-50">
+      <div className="flex-1 h-full flex items-center justify-center bg-gray-50 content-part">
         <div className="text-center text-gray-500">
           <p className="text-lg mb-2">Select an item from the menu</p>
           <p className="text-sm">Choose a client, project, or deliverable to view details</p>
@@ -2735,7 +3394,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     // Show loading state while fetching actual client data
     if (isLoadingActualData) {
       return (
-        <div className="flex-1 h-full flex items-center justify-center">
+        <div className="flex-1 h-full flex items-center justify-center content-part">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
             <p className="text-gray-600">Loading client data...</p>
@@ -2748,7 +3407,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     const clientToUse = actualClientData || selectedItem;
     
     return (
-      <div className="flex-1 h-full p-6 flex flex-col min-h-0">
+      <div className="flex-1 h-full p-6 flex flex-col min-h-0 content-part">
         <ClientDetailView 
           client={clientToUse}
           clientMenuItemId={selectedItem.id || selectedItem._id}
@@ -2818,7 +3477,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     // Show loading state while fetching actual project data
     if (isLoadingActualData) {
       return (
-        <div className="flex-1 h-full flex items-center justify-center">
+        <div className="flex-1 h-full flex items-center justify-center content-part">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
             <p className="text-gray-600">Loading project data...</p>
@@ -2981,7 +3640,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               <div className="flex items-center justify-between">
                 <button
                   type="button"
-                  className="flex items-center gap-2 text-sm font-semibold text-gray-900"
+                  className="flex items-center gap-2 text-sm font-semibold text-gray-900 cursor-pointer"
                   onClick={() => setIsDeliverablesOpen(prev => !prev)}
                   aria-expanded={isDeliverablesOpen}
                 >
@@ -3005,7 +3664,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                   <button
                     type="button"
                     onClick={() => handleAddDeliverable(selectedItem)}
-                    className="flex items-center justify-center h-6 w-6 rounded-sm border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+                    className="flex items-center justify-center h-6 w-6 rounded-sm border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors cursor-pointer"
                     title="Add deliverable"
                   >
                     <Plus className="h-3 w-3" />
@@ -3038,7 +3697,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                         >
                           <button
                             type="button"
-                            className="flex-1 text-left text-sm font-medium text-gray-900 hover:text-gray-600"
+                            className="flex-1 text-left text-sm font-medium text-gray-900 hover:text-gray-600 cursor-pointer"
                             onClick={() => {
                               const parentProjectId = deliverable.parentId || selectedItem?._id || selectedItem?.id;
                               const deliverablePayload = {
@@ -3070,7 +3729,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                           />
                           <button
                             type="button"
-                            className="text-gray-400 hover:text-gray-600"
+                            className="text-gray-400 hover:text-gray-600 cursor-pointer"
                             onClick={() => handleRemoveDeliverable(deliverableId)}
                             title="Remove deliverable"
                           >
@@ -3164,10 +3823,19 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     };
 
     const handleStorylineTabClick = async () => {
-      if (generatedStoryline) {
-        // If we already have a storyline in state, just switch to storyline view
+      // Check if we have a valid storyline first
+      const currentHasValidStoryline = generatedStoryline && 
+                                      generatedStoryline.sections && 
+                                      generatedStoryline.sections.length > 0;
+      
+      if (currentHasValidStoryline) {
+        // If we already have a valid storyline in state, just switch to storyline view
         console.log('🎯 Storyline tab clicked - using existing storyline in state');
         setCurrentView('storyline');
+      } else if (generatedStoryline) {
+        // We have a storyline but no sections - don't allow navigation
+        console.log('⚠️ Storyline exists but has no sections - staying on current view');
+        return;
       } else {
         // Only load from database if we don't have a storyline in state
         const deliverableId = selectedItem?.type === 'deliverable' 
@@ -3178,13 +3846,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           // Load existing storyline from database
           await loadExistingStoryline(deliverableId);
           
-          // Check again if we have a storyline after loading
+          // Check again if we have a valid storyline after loading
           const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
-          if (existingStoryline) {
-            console.log('✅ Found storyline, switching to storyline view');
+          if (existingStoryline && existingStoryline.sections && existingStoryline.sections.length > 0) {
+            console.log('✅ Found valid storyline, switching to storyline view');
             setCurrentView('storyline');
           } else {
-            console.log('❌ No storyline found, generating new one');
+            console.log('❌ No valid storyline found, generating new one');
             handleGenerateStoryline();
           }
         }
@@ -3192,8 +3860,17 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
     };
 
     const handleLayoutTabClick = async () => {
-      if (generatedStoryline) {
+      // Check if we have a valid storyline first
+      const currentHasValidStoryline = generatedStoryline && 
+                                      generatedStoryline.sections && 
+                                      generatedStoryline.sections.length > 0;
+      
+      if (currentHasValidStoryline) {
         setCurrentView('layout');
+      } else if (generatedStoryline) {
+        // We have a storyline but no sections - don't allow navigation
+        console.log('⚠️ Storyline exists but has no sections - staying on current view');
+        return;
       } else {
         // First try to load existing storyline from database
         const deliverableId = selectedItem?.type === 'deliverable' 
@@ -3201,7 +3878,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           : (selectedItem?._id || selectedItem?.id);
         if (deliverableId) {
           const existingStoryline = await loadExistingStorylineWithoutAutoSwitch(deliverableId);
-          if (existingStoryline) {
+          if (existingStoryline && existingStoryline.sections && existingStoryline.sections.length > 0) {
             setCurrentView('layout');
           } else {
             handleGenerateStoryline();
@@ -3269,9 +3946,11 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
                 console.log(`✅ Applied layout ${layoutId} to all ${generatedStoryline.sections?.length || 0} sections`);
               }
             }}
-          />
-        );
-      }
+          onLayoutChange={safeOnLayoutChange}
+          onSupportedLayoutsChange={safeOnLayoutOptionsChange}
+        />
+      );
+    }
 
       return (
         <DeliverableDetailsView
@@ -3299,8 +3978,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
       );
     })();
 
+    // Check if we have a valid storyline with sections
+    const hasValidStoryline = generatedStoryline && 
+                             generatedStoryline.sections && 
+                             generatedStoryline.sections.length > 0;
+
     return (
-      <div className="flex-1 flex flex-col h-full min-h-0" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="flex-1 flex flex-col h-full min-h-0 content-part" style={{ backgroundColor: 'var(--bg-primary)' }}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-4">
           <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -3309,7 +3993,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
           <div className="flex items-center gap-3">
             <button
               onClick={() => setCurrentView('detailed')}
-              className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+              className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors cursor-pointer ${
                 currentView === 'detailed'
                   ? 'border-gray-900 bg-gray-900 text-white'
                   : 'border-gray-200 bg-white text-gray-500 hover:text-gray-700'
@@ -3320,7 +4004,7 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
             </button>
             <button
               onClick={handleDelete}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:text-gray-700"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:text-gray-700 cursor-pointer"
               title="Delete deliverable"
             >
               <Trash2 className="h-4 w-4" />
@@ -3332,30 +4016,30 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
         <div className="px-6" style={{ borderBottom: '1px solid var(--border-primary)' }}>
           <div className="flex space-x-1">
             <button
-              onClick={generatedStoryline ? handleStorylineTabClick : undefined}
-              disabled={!generatedStoryline}
+              onClick={hasValidStoryline ? handleStorylineTabClick : undefined}
+              disabled={!hasValidStoryline}
               className={`px-4 py-2 rounded-t-sm font-medium transition-colors ${
-                !generatedStoryline ? 'cursor-not-allowed opacity-50' : ''
+                !hasValidStoryline ? 'cursor-not-allowed opacity-50' : ''
               }`}
               style={{
                 backgroundColor: currentView === 'storyline' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'storyline' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
-              title={!generatedStoryline ? 'Generate a storyline first to access this tab' : ''}
+              title={!hasValidStoryline ? 'Generate a storyline first to access this tab' : ''}
             >
               Storyline
             </button>
             <button
-              onClick={generatedStoryline ? handleLayoutTabClick : undefined}
-              disabled={!generatedStoryline}
+              onClick={hasValidStoryline ? handleLayoutTabClick : undefined}
+              disabled={!hasValidStoryline}
               className={`px-4 py-2 rounded-t-sm font-medium transition-colors ${
-                !generatedStoryline ? 'cursor-not-allowed opacity-50' : ''
+                !hasValidStoryline ? 'cursor-not-allowed opacity-50' : ''
               }`}
               style={{
                 backgroundColor: currentView === 'layout' ? 'var(--text-primary)' : 'var(--bg-secondary)',
                 color: currentView === 'layout' ? 'var(--bg-primary)' : 'var(--text-secondary)'
               }}
-              title={!generatedStoryline ? 'Generate a storyline first to access this tab' : ''}
+              title={!hasValidStoryline ? 'Generate a storyline first to access this tab' : ''}
             >
               Layout
             </button>
@@ -3381,13 +4065,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               <div className="flex justify-end space-x-3 border-t border-gray-200 px-6 py-3 bg-gray-50">
                 <button
                   onClick={cancelRemoveSection}
-                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmRemoveSection}
-                  className="rounded-sm bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  className="rounded-sm bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 cursor-pointer"
                 >
                   Remove Section
                 </button>
@@ -3410,13 +4094,13 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
               <div className="flex justify-end space-x-3 border-t border-gray-200 px-6 py-3 bg-gray-50">
                 <button
                   onClick={cancelResetStoryline}
-                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+                  className="rounded-sm border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmResetStoryline}
-                  className="rounded-sm bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-sm bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 cursor-pointer"
                 >
                   Remove Sections
                 </button>
@@ -3466,12 +4150,12 @@ export default function ContentPart({ selectedItem, onItemSelect, onItemDeleted,
 
   // Default fallback
   return (
-    <div className="flex-1 h-full flex items-center justify-center bg-gray-50">
+    <div className="flex-1 h-full flex items-center justify-center bg-gray-50 content-part">
       <div className="text-center text-gray-500">
         <p className="text-lg mb-2">Unsupported item type</p>
         <p className="text-sm">Item type: {selectedItem?.type}</p>
       </div>
-      
+
       {/* Unified Add Modal */}
       {showAddModal && (
         <UnifiedAddModal

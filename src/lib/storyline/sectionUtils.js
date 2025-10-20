@@ -1,4 +1,5 @@
 import { parseMarkdownWithCharts, deriveSectionMetadata } from '../markdown/markdownParser.js';
+import { parseSectionContent } from '../sectionContentParser.js';
 
 const DEFAULT_CONTENT_BLOCK_TYPE = 'Content Block';
 
@@ -29,6 +30,141 @@ const sanitizeStringArray = (items) => {
   return items
     .map(item => (typeof item === 'string' ? item.trim() : ''))
     .filter(Boolean);
+};
+
+const dedupeStrings = (items) => {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const mergeStringLists = (...sources) => {
+  const combined = sources.flatMap(source => {
+    if (!source) return [];
+    if (Array.isArray(source)) return source;
+    if (typeof source === 'string') return [source];
+    return [];
+  });
+
+  if (!combined.length) return [];
+
+  return dedupeStrings(sanitizeStringArray(combined));
+};
+
+const normalizeCitations = (citations) => {
+  if (!Array.isArray(citations)) return [];
+
+  const normalized = citations.map(citation => {
+    if (!citation) return '';
+    if (typeof citation === 'string') {
+      return citation.trim();
+    }
+
+    if (typeof citation === 'object') {
+      const parts = [citation.source, citation.title, citation.reference]
+        .map(part => (typeof part === 'string' ? part.trim() : ''))
+        .filter(Boolean);
+
+      if (citation.url && typeof citation.url === 'string') {
+        parts.push(citation.url.trim());
+      }
+
+      if (!parts.length) {
+        try {
+          return JSON.stringify(citation);
+        } catch (error) {
+          return String(citation);
+        }
+      }
+
+      return parts.join(' — ');
+    }
+
+    return String(citation).trim();
+  }).filter(Boolean);
+
+  return dedupeStrings(normalized);
+};
+
+const collectSectionContentCandidates = (section) => {
+  if (!section || typeof section !== 'object') return [];
+
+  const candidates = [];
+  const addCandidate = (value) => {
+    if (value === undefined || value === null) return;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+
+      const looksLikeJson = trimmed.startsWith('{')
+        || trimmed.startsWith('[')
+        || trimmed.includes('"slide_content"')
+        || trimmed.includes('"sectionContent"')
+        || trimmed.includes('"section_content"');
+
+      if (looksLikeJson) {
+        candidates.push(trimmed);
+      }
+      return;
+    }
+
+    if (typeof value === 'object' && Object.keys(value).length > 0) {
+      candidates.push(value);
+    }
+  };
+
+  addCandidate(section.sectionContent);
+  addCandidate(section.section_content);
+  addCandidate(section.section_content_json);
+  addCandidate(section.section_content_raw);
+  addCandidate(section.sectionData);
+  addCandidate(section.section_data);
+  addCandidate(section.rawSectionContent);
+  addCandidate(section.raw_section_content);
+  addCandidate(section.contentJson);
+  addCandidate(section.content_json);
+  addCandidate(section.generatedContent);
+  addCandidate(section.generated_content);
+
+  if (typeof section.content === 'string') {
+    addCandidate(section.content);
+  } else if (typeof section.content === 'object' && section.content) {
+    addCandidate(section.content);
+  }
+
+  return candidates;
+};
+
+const parseSectionContentIfAvailable = (section, framework = 'unknown') => {
+  const candidates = collectSectionContentCandidates(section);
+  if (!candidates.length) return null;
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = parseSectionContent(candidate, framework);
+      if (!parsed) {
+        continue;
+      }
+
+      const hasStructuredData = (parsed.slideContent && Object.keys(parsed.slideContent).length > 0)
+        || (Array.isArray(parsed.insights) && parsed.insights.length > 0)
+        || (Array.isArray(parsed.citations) && parsed.citations.length > 0)
+        || (Array.isArray(parsed.charts) && parsed.charts.length > 0);
+
+      if (hasStructuredData) {
+        return parsed;
+      }
+    } catch (error) {
+      console.warn('Failed to parse section content candidate', error);
+    }
+  }
+
+  return null;
 };
 
 export const mapContentTypeToBlock = (contentType = DEFAULT_CONTENT_BLOCK_TYPE) => {
@@ -164,18 +300,101 @@ export const generateSectionMarkdown = (sectionData = {}, fallbackTitle = '') =>
 
 export const createSectionRecord = (sectionData = {}, options = {}) => {
   const section = toPlainObject(sectionData);
+  const framework = section.framework || options.framework || options.defaultFramework || 'unknown';
+
+  if (!section.slideContent && section.slide_content) {
+    section.slideContent = section.slide_content;
+  } else if (section.slideContent && !section.slide_content) {
+    section.slide_content = section.slideContent;
+  }
+
+  const parsedSectionContent = parseSectionContentIfAvailable(section, framework);
+
+  if (parsedSectionContent) {
+    if (!section.sectionContent) {
+      section.sectionContent = parsedSectionContent;
+    }
+
+    if (!section.title && parsedSectionContent.title) {
+      section.title = parsedSectionContent.title;
+    }
+
+    if (!section.description && parsedSectionContent.description) {
+      section.description = parsedSectionContent.description;
+    }
+
+    if (!section.takeaway && parsedSectionContent.takeaway) {
+      section.takeaway = parsedSectionContent.takeaway;
+    }
+
+    if (!section.notes && parsedSectionContent.notes) {
+      section.notes = parsedSectionContent.notes;
+    }
+
+    if (!section.slideContent || !Object.keys(section.slideContent || {}).length) {
+      if (parsedSectionContent.slideContent && Object.keys(parsedSectionContent.slideContent).length) {
+        section.slideContent = parsedSectionContent.slideContent;
+        section.slide_content = parsedSectionContent.slideContent;
+      }
+    }
+
+    const mergedInsights = mergeStringLists(section.insights, parsedSectionContent.insights);
+    if (mergedInsights.length) {
+      section.insights = mergedInsights;
+    }
+
+    const mergedKeyPoints = mergeStringLists(section.keyPoints, parsedSectionContent.insights);
+    if (mergedKeyPoints.length) {
+      section.keyPoints = mergedKeyPoints;
+    }
+
+    const parsedCitationStrings = normalizeCitations(parsedSectionContent.citations);
+    if (parsedCitationStrings.length) {
+      section.sources = mergeStringLists(section.sources, parsedCitationStrings);
+      if (!section.citations) {
+        section.citations = parsedSectionContent.citations;
+      }
+    }
+
+    if (Array.isArray(parsedSectionContent.charts) && parsedSectionContent.charts.length) {
+      const existingCharts = Array.isArray(section.charts) ? [...section.charts] : [];
+      const existingIds = new Set(existingCharts.map(chart => chart?.id).filter(Boolean));
+
+      parsedSectionContent.charts.forEach(chart => {
+        if (!chart) return;
+        const chartId = chart.id || null;
+        if (chartId && existingIds.has(chartId)) return;
+        existingCharts.push(chart);
+        if (chartId) existingIds.add(chartId);
+      });
+
+      if (existingCharts.length) {
+        section.charts = existingCharts;
+      }
+    }
+
+    if (!section.chartData && parsedSectionContent.chartData) {
+      section.chartData = parsedSectionContent.chartData;
+    }
+  }
+
   const order = options.order ?? section.order ?? 0;
   const fallbackTitle = options.fallbackTitle || section.title || `Section ${order}`;
   const markdown = generateSectionMarkdown(section, fallbackTitle);
   const { html, charts: markdownCharts } = parseMarkdownWithCharts(markdown);
   const derived = deriveSectionMetadata(markdown);
-  
-  // Preserve existing charts from section data, or use markdown charts as fallback
-  const charts = section.charts && section.charts.length > 0 ? section.charts : markdownCharts;
 
-  const keyPointCandidates = sanitizeStringArray(
-    derived.keyPoints.length ? derived.keyPoints :
-      (section.keyPoints && section.keyPoints.length ? section.keyPoints : section.keyMessages)
+  const charts = section.charts && section.charts.length > 0
+    ? section.charts
+    : parsedSectionContent?.charts && parsedSectionContent.charts.length > 0
+      ? parsedSectionContent.charts
+      : markdownCharts;
+
+  const keyPointCandidates = mergeStringLists(
+    derived.keyPoints,
+    section.keyPoints,
+    section.keyMessages,
+    parsedSectionContent?.insights
   );
 
   const baseContentBlocks = cloneContentBlocks(section.contentBlocks);
@@ -189,19 +408,34 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
   }
 
   if (charts.length) {
-    contentBlocks = [
-      ...contentBlocks,
-      {
-        type: 'Data Visualization',
-        items: sanitizeStringArray(charts.map(chart => chart.title || chart.id))
-      }
-    ];
+    const chartTitles = sanitizeStringArray(
+      charts.map(chart => (chart?.title || chart?.id || '').toString())
+    );
+
+    if (chartTitles.length) {
+      contentBlocks = [
+        ...contentBlocks,
+        {
+          type: 'Data Visualization',
+          items: chartTitles
+        }
+      ];
+    }
   }
 
   const status = options.status || section.status || 'draft';
   const locked = options.locked ?? !!section.locked;
   const createdAt = section.created_at ? new Date(section.created_at) : (options.createdAt || new Date());
   const updatedAt = options.updatedAt || new Date();
+
+  const normalizedInsights = mergeStringLists(section.insights, section.keyInsights, parsedSectionContent?.insights);
+  const normalizedSources = mergeStringLists(section.sources, normalizeCitations(section.citations));
+
+  const rawSlides = Array.isArray(section.slides) && section.slides.length
+    ? section.slides
+    : Array.isArray(parsedSectionContent?.slideContent?.slides)
+      ? parsedSectionContent.slideContent.slides
+      : [];
 
   return {
     id: options.id || section.id || section._id || `section_${order}`,
@@ -215,21 +449,21 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     locked,
     lockedBy: locked ? section.lockedBy : undefined,
     lockedAt: locked ? (section.lockedAt ? new Date(section.lockedAt) : new Date()) : undefined,
-    framework: section.framework, // Preserve framework property
-    takeaway: section.takeaway || '', // Preserve takeaway property
-    notes: section.notes || '', // Preserve notes property
-    insights: sanitizeStringArray(section.insights || section.keyInsights),
-    sources: sanitizeStringArray(section.sources),
+    framework: section.framework,
+    takeaway: section.takeaway || '',
+    notes: section.notes || '',
+    insights: normalizedInsights,
+    sources: normalizedSources,
     layout: section.layout || options.layout,
     layoutAppliedAt: section.layoutAppliedAt
       ? new Date(section.layoutAppliedAt)
       : (section.layout_applied_at ? new Date(section.layout_applied_at) : undefined),
-    chartData: cloneMixedValue(section.chartData, null),
+    chartData: cloneMixedValue(section.chartData || parsedSectionContent?.chartData, null),
     source: section.source,
     generatedAt: section.generatedAt
       ? new Date(section.generatedAt)
       : (section.generated_at ? new Date(section.generated_at) : undefined),
-    slides: normalizeSlides(section.slides, section.layout || options.defaultLayout),
+    slides: normalizeSlides(rawSlides, section.layout || options.defaultLayout),
     slidesGeneratedAt: section.slidesGeneratedAt
       ? new Date(section.slidesGeneratedAt)
       : (section.slides_generated_at ? new Date(section.slides_generated_at) : undefined),
@@ -240,6 +474,9 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     markdown,
     html,
     charts: sanitizeCharts(charts),
+    sectionContent: section.sectionContent || parsedSectionContent || undefined,
+    slideContent: cloneMixedValue(section.slideContent || parsedSectionContent?.slideContent, {}),
+    citations: section.citations || parsedSectionContent?.citations || [],
     created_at: createdAt,
     updated_at: updatedAt
   };
