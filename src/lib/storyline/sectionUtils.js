@@ -25,6 +25,15 @@ const toPlainObject = (value) => {
   return {};
 };
 
+const looksLikeJsonString = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const starts = trimmed[0];
+  const ends = trimmed[trimmed.length - 1];
+  return (starts === '{' && ends === '}') || (starts === '[' && ends === ']');
+};
+
 const sanitizeStringArray = (items) => {
   if (!Array.isArray(items)) return [];
   return items
@@ -135,6 +144,14 @@ const collectSectionContentCandidates = (section) => {
     addCandidate(section.content);
   } else if (typeof section.content === 'object' && section.content) {
     addCandidate(section.content);
+  }
+
+  if (looksLikeJsonString(section.description)) {
+    addCandidate(section.description.trim());
+  }
+
+  if (looksLikeJsonString(section.notes)) {
+    addCandidate(section.notes.trim());
   }
 
   return candidates;
@@ -321,6 +338,10 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
 
     if (!section.description && parsedSectionContent.description) {
       section.description = parsedSectionContent.description;
+    }
+
+    if (looksLikeJsonString(section.description)) {
+      section.description = parsedSectionContent.description || '';
     }
 
     if (!section.takeaway && parsedSectionContent.takeaway) {

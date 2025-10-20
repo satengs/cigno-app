@@ -19,7 +19,7 @@ export const BackendConfig = {
   refreshToken: process.env.REFRESH_TOKEN || null,
   
   // Request configuration
-  timeout: parseInt(process.env.BACKEND_TIMEOUT) || 30000, // 30 seconds
+  timeout: parseInt(process.env.BACKEND_TIMEOUT) || 100000, // ~100 seconds default for slower AI responses
   retries: parseInt(process.env.BACKEND_RETRIES) || 2,
   
   // Request format options - adjust these based on your backend's expected format
@@ -72,7 +72,7 @@ export function getBackendConfig(environment = 'development') {
       return {
         ...baseConfig,
         baseUrl: process.env.BACKEND_URL || 'http://your-backend-service:3000',
-        timeout: 15000, // Shorter timeout in production
+        timeout: parseInt(process.env.BACKEND_TIMEOUT) || 100000,
         retries: 1
       };
       
@@ -80,14 +80,14 @@ export function getBackendConfig(environment = 'development') {
       return {
         ...baseConfig,
         baseUrl: process.env.BACKEND_URL || 'http://staging-backend:3000',
-        timeout: 20000
+        timeout: parseInt(process.env.BACKEND_TIMEOUT) || 100000
       };
       
     case 'development':
     default:
       return {
         ...baseConfig,
-        timeout: 30000, // Longer timeout for development
+        timeout: parseInt(process.env.BACKEND_TIMEOUT) || 100000,
         retries: 2,
         errorHandling: {
           ...baseConfig.errorHandling,

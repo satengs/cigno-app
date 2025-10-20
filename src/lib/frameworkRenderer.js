@@ -372,8 +372,13 @@ const FRAMEWORK_RENDERERS = {
       let html = '<div class="competitive-landscape-content">';
       
       // Handle both player_categories and competitive_landscape_table structures
-      const competitiveCategories = slideContent.player_categories || slideContent.competitive_landscape_table;
-      if (competitiveCategories && Array.isArray(competitiveCategories)) {
+      const competitiveCategories = normalizeObjectArray(
+        slideContent.player_categories || slideContent.competitive_landscape_table,
+        null,
+        ['category_name', 'competition_category', 'threat_level']
+      );
+
+      if (competitiveCategories.length) {
         html += '<div class="competitive-landscape-table mb-6">';
         html += '<h3 class="text-lg font-semibold mb-4">Competitive Landscape by Category</h3>';
         
@@ -391,24 +396,32 @@ const FRAMEWORK_RENDERERS = {
         html += '</thead>';
         html += '<tbody class="bg-white divide-y divide-gray-200">';
         
-        competitiveCategories.forEach((category, index) => {
-          const threatColor = category.threat_level === 'HIGH' ? 'text-red-600 bg-red-100' : 
-                            category.threat_level === 'MEDIUM-HIGH' ? 'text-orange-600 bg-orange-100' : 
-                            category.threat_level === 'MEDIUM' ? 'text-yellow-600 bg-yellow-100' : 
+        competitiveCategories.forEach((categoryRaw, index) => {
+          if (!categoryRaw) return;
+
+          const category = typeof categoryRaw === 'object'
+            ? categoryRaw
+            : { category_name: String(categoryRaw) };
+
+          const threatLevel = (category.threat_level || category.threat || '').toString().toUpperCase();
+          const threatColor = threatLevel === 'HIGH' ? 'text-red-600 bg-red-100' : 
+                            threatLevel === 'MEDIUM-HIGH' ? 'text-orange-600 bg-orange-100' : 
+                            threatLevel === 'MEDIUM' ? 'text-yellow-600 bg-yellow-100' : 
                             'text-green-600 bg-green-100';
           
           html += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
           
           // Category Name
-          html += `<td class="px-4 py-3 text-sm font-medium text-gray-900">${category.category_name || category.competition_category || 'N/A'}</td>`;
+          html += `<td class="px-4 py-3 text-sm font-medium text-gray-900">${category.category_name || category.competition_category || category.segment || category.name || 'N/A'}</td>`;
           
           // Business Model Today
-          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.business_model_today || category.business_model_definition || 'N/A'}</td>`;
+          const businessModel = category.business_model_today || category.business_model_definition || category.business_model || category.description;
+          html += `<td class="px-4 py-3 text-sm text-gray-700">${businessModel || 'N/A'}</td>`;
           
           // Threat Level
           html += `<td class="px-4 py-3 text-sm">`;
-          if (category.threat_level) {
-            html += `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${threatColor}">${category.threat_level}</span>`;
+          if (threatLevel) {
+            html += `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${threatColor}">${threatLevel}</span>`;
           } else {
             html += '<span class="text-gray-400">N/A</span>';
           }
@@ -416,9 +429,10 @@ const FRAMEWORK_RENDERERS = {
           
           // Key Players
           html += `<td class="px-4 py-3 text-sm text-gray-700">`;
-          if (category.key_players && category.key_players.length > 0) {
+          const keyPlayers = normalizeStringList(category.key_players || category.players || category.top_players);
+          if (keyPlayers.length > 0) {
             html += '<div class="flex flex-wrap gap-1">';
-            category.key_players.forEach(player => {
+            keyPlayers.forEach(player => {
               html += `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">${player}</span>`;
             });
             html += '</div>';
@@ -428,7 +442,7 @@ const FRAMEWORK_RENDERERS = {
           html += `</td>`;
           
           // Future Outlook
-          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.future_outlook || category.category_outlook || 'N/A'}</td>`;
+          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.future_outlook || category.category_outlook || category.outlook || 'N/A'}</td>`;
           
           html += `</tr>`;
         });
@@ -440,14 +454,19 @@ const FRAMEWORK_RENDERERS = {
       }
       
       // Additional details section for each category
-      const categoriesData = slideContent.competitive_landscape_table || slideContent.player_categories;
-      if (categoriesData && Array.isArray(categoriesData)) {
+      if (competitiveCategories.length) {
         html += '<div class="category-details mt-6">';
         html += '<h3 class="text-lg font-semibold mb-4">Detailed Category Analysis</h3>';
         
-        categoriesData.forEach((category, index) => {
+        competitiveCategories.forEach((categoryRaw, index) => {
+          if (!categoryRaw) return;
+
+          const category = typeof categoryRaw === 'object'
+            ? categoryRaw
+            : { competition_category: String(categoryRaw) };
+
           html += `<div class="category-detail mb-6 p-4 bg-gray-50 rounded-lg">`;
-          html += `<h4 class="font-medium text-gray-800 mb-3">${category.competition_category || 'Unknown Category'}</h4>`;
+          html += `<h4 class="font-medium text-gray-800 mb-3">${category.competition_category || category.category_name || category.segment || category.name || 'Unknown Category'}</h4>`;
           
           // Business Model Definition
           if (category.business_model_definition) {
@@ -473,7 +492,10 @@ const FRAMEWORK_RENDERERS = {
           }
           
           if (category.market_share_estimate) {
-            html += `<div><span class="font-medium text-gray-700">Market Share:</span> <span class="text-gray-600">${category.market_share_estimate}%</span></div>`;
+            const marketShareValue = typeof category.market_share_estimate === 'number'
+              ? `${category.market_share_estimate}%`
+              : category.market_share_estimate;
+            html += `<div><span class="font-medium text-gray-700">Market Share:</span> <span class="text-gray-600">${marketShareValue}</span></div>`;
           }
           
           if (category.typical_fee_level) {
@@ -1537,7 +1559,10 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
           // AI returned plain text but didn't fail - try to use what we can
           console.log('⚠️ AI returned plain text (not explicit failure). Using minimal data.');
           parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          parsedData.description = agentResult.response?.substring(0, 500) || 'No structured content returned';
+          const responseText = agentResult.response || '';
+          const trimmed = responseText.trim();
+          const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+          parsedData.description = looksLikeJson ? trimmed : responseText.substring(0, 500) || 'No structured content returned';
           parsedData.status = 'partial'; // Not a complete failure, but not ideal
           parsedData.notes = 'AI returned plain text without structured JSON. Content may be incomplete.';
         }
@@ -1609,6 +1634,31 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
   if (!Array.isArray(parsedData.charts)) {
     console.log('⚠️ Final validation: charts is not array, setting to empty array');
     parsedData.charts = [];
+  }
+
+  if ((!parsedData.slideContent || !Object.keys(parsedData.slideContent).length) && typeof parsedData.description === 'string') {
+    const rawDescription = parsedData.description.trim();
+    if ((rawDescription.startsWith('{') && rawDescription.endsWith('}')) ||
+        (rawDescription.startsWith('[') && rawDescription.endsWith(']'))) {
+      try {
+        const parsedDescription = JSON.parse(rawDescription);
+        const slideFromDescription = parsedDescription.slide_content || parsedDescription.slideContent;
+        if (slideFromDescription && typeof slideFromDescription === 'object') {
+          parsedData.slideContent = slideFromDescription;
+          parsedData.insights = parsedData.insights?.length ? parsedData.insights : parsedDescription.insights || parsedDescription.key_insights || [];
+          parsedData.citations = parsedData.citations?.length ? parsedData.citations : parsedDescription.citations || [];
+          parsedData.takeaway = parsedData.takeaway || parsedDescription.takeaway || '';
+          parsedData.notes = parsedData.notes || parsedDescription.notes || '';
+          parsedData.charts = parsedData.charts?.length ? parsedData.charts : parsedDescription.charts || [];
+          parsedData.title = parsedData.title || parsedDescription.title || framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          parsedData.description = typeof parsedDescription.description === 'string'
+            ? parsedDescription.description
+            : '';
+        }
+      } catch (parseError) {
+        console.log('⚠️ Failed to parse JSON description during final validation:', parseError.message);
+      }
+    }
   }
 
   console.log('Title:', parsedData.title);
@@ -1921,32 +1971,39 @@ function convertCompetitiveLandscapeToChartData(slideContent) {
   const labels = [];
   const datasets = [];
   
-  // Handle both player_categories and competitive_landscape_table structures
-  const competitiveData = slideContent.player_categories || slideContent.competitive_landscape_table;
-  if (competitiveData && Array.isArray(competitiveData)) {
-    competitiveData.forEach(category => {
-      const categoryName = category.category_name || category.competition_category || 'Unknown Category';
-      labels.push(categoryName);
-      
-      // Convert threat level to numeric value
-      const threatValue = category.threat_level === 'HIGH' ? 4 : 
-                        category.threat_level === 'MEDIUM-HIGH' ? 3 :
-                        category.threat_level === 'MEDIUM' ? 2 : 1;
-      
-      // Color based on threat level
-      const threatColor = category.threat_level === 'HIGH' ? '#ef4444' : 
-                        category.threat_level === 'MEDIUM-HIGH' ? '#f97316' :
-                        category.threat_level === 'MEDIUM' ? '#eab308' : '#22c55e';
-      
-      datasets.push({
-        label: categoryName,
-        data: [threatValue],
-        backgroundColor: threatColor,
-        borderColor: threatColor,
-        borderWidth: 1
-      });
+  const competitiveData = normalizeObjectArray(
+    slideContent?.player_categories || slideContent?.competitive_landscape_table,
+    null,
+    ['category_name', 'competition_category', 'threat_level']
+  );
+
+  competitiveData.forEach(categoryRaw => {
+    if (!categoryRaw) return;
+
+    const category = typeof categoryRaw === 'object'
+      ? categoryRaw
+      : { category_name: String(categoryRaw) };
+
+    const categoryName = category.category_name || category.competition_category || category.segment || category.name || 'Unknown Category';
+    labels.push(categoryName);
+    
+    const threatLevel = (category.threat_level || category.threat || '').toString().toUpperCase();
+    const threatValue = threatLevel === 'HIGH' ? 4 :
+                      threatLevel === 'MEDIUM-HIGH' ? 3 :
+                      threatLevel === 'MEDIUM' ? 2 : 1;
+    
+    const threatColor = threatLevel === 'HIGH' ? '#ef4444' :
+                      threatLevel === 'MEDIUM-HIGH' ? '#f97316' :
+                      threatLevel === 'MEDIUM' ? '#eab308' : '#22c55e';
+    
+    datasets.push({
+      label: categoryName,
+      data: [threatValue],
+      backgroundColor: threatColor,
+      borderColor: threatColor,
+      borderWidth: 1
     });
-  }
+  });
   
   return {
     labels: labels,
@@ -1962,18 +2019,31 @@ function convertCompetitiveLandscapeMarketShareToChartData(slideContent) {
   const data = [];
   const backgroundColor = [];
   
-  // Handle both player_categories and competitive_landscape_table structures
-  const competitiveData = slideContent.competitive_landscape_table || slideContent.player_categories;
-  if (competitiveData && Array.isArray(competitiveData)) {
-    competitiveData.forEach((category, index) => {
-      if (category.market_share_estimate) {
-        const categoryName = category.competition_category || category.category_name || 'Unknown Category';
-        labels.push(categoryName);
-        data.push(category.market_share_estimate);
-        backgroundColor.push(`hsl(${(index * 60) % 360}, 70%, 50%)`);
-      }
-    });
-  }
+  const competitiveData = normalizeObjectArray(
+    slideContent?.competitive_landscape_table || slideContent?.player_categories,
+    null,
+    ['category_name', 'competition_category', 'market_share_estimate']
+  );
+
+  competitiveData.forEach((categoryRaw, index) => {
+    if (!categoryRaw) return;
+
+    const category = typeof categoryRaw === 'object'
+      ? categoryRaw
+      : { competition_category: String(categoryRaw) };
+
+    if (category.market_share_estimate !== undefined && category.market_share_estimate !== null) {
+      const categoryName = category.competition_category || category.category_name || category.segment || category.name || 'Unknown Category';
+      labels.push(categoryName);
+
+      const numericValue = typeof category.market_share_estimate === 'number'
+        ? category.market_share_estimate
+        : parseFloat(String(category.market_share_estimate).replace(/[^0-9.-]/g, ''));
+
+      data.push(Number.isFinite(numericValue) ? numericValue : 0);
+      backgroundColor.push(`hsl(${(index * 60) % 360}, 70%, 50%)`);
+    }
+  });
   
   return {
     labels: labels,

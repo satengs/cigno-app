@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 
+// Ensure this endpoint is always resolved at request time. Using request.url in
+// the handler forces dynamic rendering, so we mark it explicitly to avoid
+// static optimization attempts during builds.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // AI Configuration matching other working endpoints
 const AI_CONFIG = {
   baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
@@ -12,7 +18,7 @@ const AI_CONFIG = {
  */
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl?.searchParams || new URL(request.url).searchParams;
     const knowledgeBaseId = searchParams.get('knowledgeBaseId');
 
     if (!knowledgeBaseId) {
@@ -67,4 +73,3 @@ export async function GET(request) {
     );
   }
 }
-

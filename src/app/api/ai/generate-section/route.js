@@ -160,7 +160,8 @@ export async function POST(request) {
       
       // Add timeout and better error handling (allow more time for real agent responses)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 2 minute timeout
+      const frameworkRequestTimeout = parseInt(process.env.FRAMEWORK_AGENT_TIMEOUT_MS || process.env.BACKEND_TIMEOUT || '100000');
+      const timeoutId = setTimeout(() => controller.abort(), frameworkRequestTimeout);
       
       const response = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`, {
         method: 'POST',
