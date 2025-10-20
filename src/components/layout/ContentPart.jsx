@@ -466,6 +466,74 @@ export default function ContentPart({
           // Log data conversion process
           console.log(`🔧 ===== DATA CONVERSION FOR ${framework.toUpperCase()} =====`);
           console.log(`📊 Section Data (before conversion):`, JSON.stringify(sectionData, null, 2));
+
+          const parseJsonString = (value) => {
+            if (typeof value !== 'string') return null;
+            const trimmed = value.trim();
+            if (!trimmed) return null;
+            const firstChar = trimmed[0];
+            const lastChar = trimmed[trimmed.length - 1];
+            if (!((firstChar === '{' && lastChar === '}') || (firstChar === '[' && lastChar === ']'))) {
+              return null;
+            }
+            try {
+              return JSON.parse(trimmed);
+            } catch (error) {
+              console.log('⚠️ Failed to parse JSON string in section data:', error.message);
+              return null;
+            }
+          };
+
+          const hydrateStructuredContent = (data) => {
+            if (!data || typeof data !== 'object') return;
+
+            const candidates = [
+              parseJsonString(data.slide_content),
+              parseJsonString(data.slideContent),
+              parseJsonString(data.description),
+              parseJsonString(data.notes)
+            ].filter(Boolean);
+
+            const parsed = candidates.find(item => typeof item === 'object');
+            if (!parsed) return;
+
+            const parsedSlideContent = parsed.slide_content || parsed.slideContent;
+            if (parsedSlideContent && (!data.slide_content || !Object.keys(data.slide_content || {}).length)) {
+              data.slide_content = parsedSlideContent;
+            }
+
+            if (!data.insights || !data.insights.length) {
+              data.insights = parsed.insights || parsed.key_insights || [];
+            }
+
+            if (!data.citations || !data.citations.length) {
+              data.citations = parsed.citations || [];
+            }
+
+            if (!data.takeaway && parsed.takeaway) {
+              data.takeaway = parsed.takeaway;
+            }
+
+            if (!data.notes && parsed.notes) {
+              data.notes = parsed.notes;
+            }
+
+            if (parsed.title && !data.title) {
+              data.title = parsed.title;
+            }
+
+            if (parsed.description && typeof parsed.description === 'string') {
+              data.description = parsed.description;
+            } else if (data.description && parseJsonString(data.description)) {
+              data.description = '';
+            }
+
+            if (!data.charts || !data.charts.length) {
+              data.charts = parsed.charts || [];
+            }
+          };
+
+          hydrateStructuredContent(sectionData);
           
           // Use only the JSON response content - no additional formatting
           const slideContent = sectionData.slide_content || {};
