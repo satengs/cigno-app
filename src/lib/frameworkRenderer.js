@@ -3,6 +3,121 @@
  * Converts JSON responses from CFA-DEMO agents into HTML based on framework type
  */
 
+// Helpers to cope with converted storyline data that may store JSON as strings or keyed objects
+const parseJsonIfString = (value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    console.log('⚠️ Failed to parse JSON string:', trimmed.substring(0, 60));
+    return trimmed;
+  }
+};
+
+const normalizeObjectArray = (value, fallbackKey, shapeKeys = []) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+
+  const parsed = parseJsonIfString(value);
+  if (parsed !== value) {
+    return normalizeObjectArray(parsed, fallbackKey, shapeKeys);
+  }
+
+  if (typeof parsed === 'string') {
+    if (fallbackKey) {
+      return [{ [fallbackKey]: parsed }];
+    }
+    return [parsed];
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.rows)) return parsed.rows;
+    if (Array.isArray(parsed.items)) return parsed.items;
+    if (Array.isArray(parsed.columns)) return parsed.columns;
+    if (Array.isArray(parsed.values)) return parsed.values;
+
+    const matchesShape = shapeKeys.some(key => Object.prototype.hasOwnProperty.call(parsed, key));
+    if (matchesShape) {
+      return [parsed];
+    }
+
+    const values = Object.values(parsed);
+    if (values.length) {
+      return values;
+    }
+  }
+
+  return [];
+};
+
+const normalizeStringList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => {
+        if (typeof item === 'string') return item.trim();
+        if (item === null || item === undefined) return '';
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  }
+
+  const parsed = parseJsonIfString(value);
+  if (parsed !== value) {
+    return normalizeStringList(parsed);
+  }
+
+  if (typeof parsed === 'string') {
+    return parsed
+      .split(/[\n;,•]+/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const normalizeKeyValuePairs = (value) => {
+  if (!value) return [];
+
+  const parsed = parseJsonIfString(value);
+  if (parsed !== value) {
+    return normalizeKeyValuePairs(parsed);
+  }
+
+  if (Array.isArray(parsed)) {
+    const entries = [];
+    parsed.forEach(item => {
+      if (Array.isArray(item) && item.length >= 2) {
+        entries.push([item[0], item[1]]);
+        return;
+      }
+
+      if (item && typeof item === 'object') {
+        const year = item.year ?? item.label ?? item.key ?? item.name;
+        const amount = item.value ?? item.amount ?? item.size ?? item.total ?? item.metric;
+        if (year !== undefined && amount !== undefined) {
+          entries.push([year, amount]);
+        }
+      }
+    });
+    return entries;
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    return Object.entries(parsed);
+  }
+
+  if (typeof parsed === 'number') {
+    return [['Value', parsed]];
+  }
+
+  return [];
+};
+
 // Framework-specific render configurations based on CFA-DEMO markdown files
 const renderCapabilityAssessmentContent = (slideContent) => {
   if (!slideContent) return '';
@@ -11,7 +126,13 @@ const renderCapabilityAssessmentContent = (slideContent) => {
 
   let html = '<div class="capability-assessment-content">';
 
-  if (slideContent.capability_comparison_table && slideContent.capability_comparison_table.rows && Array.isArray(slideContent.capability_comparison_table.rows)) {
+  const tableRows = normalizeObjectArray(
+    slideContent.capability_comparison_table?.rows,
+    null,
+    ['capability_type', 'client_status', 'overall_comment']
+  );
+
+  if (tableRows.length) {
     html += '<div class="capability-comparison-table mb-6">';
     html += '<h3 class="text-lg font-semibold mb-4">Capability Assessment Matrix</h3>';
 
@@ -27,7 +148,9 @@ const renderCapabilityAssessmentContent = (slideContent) => {
     html += '</thead>';
     html += '<tbody class="bg-white divide-y divide-gray-200">';
 
-    slideContent.capability_comparison_table.rows.forEach((row, index) => {
+    tableRows.forEach((row, index) => {
+      if (!row || typeof row !== 'object') return;
+
       const clientStatusColor = row.client_status === 'Green' ? 'text-green-600 bg-green-100'
         : row.client_status === 'Amber' ? 'text-yellow-600 bg-yellow-100'
         : 'text-red-600 bg-red-100';
@@ -45,9 +168,14 @@ const renderCapabilityAssessmentContent = (slideContent) => {
       html += '</td>';
 
       html += '<td class="px-4 py-3 text-sm text-gray-700">';
-      if (row.competitor_categories && Array.isArray(row.competitor_categories)) {
+      const competitorCategories = normalizeObjectArray(
+        row.competitor_categories,
+        null,
+        ['category_name', 'status', 'rationale']
+      );
+      if (competitorCategories.length) {
         html += '<div class="space-y-2">';
-        row.competitor_categories.forEach(competitor => {
+        competitorCategories.forEach(competitor => {
           const competitorStatusColor = competitor.status === 'Green' ? 'text-green-600'
             : competitor.status === 'Amber' ? 'text-yellow-600'
             : 'text-red-600';
@@ -77,11 +205,12 @@ const renderCapabilityAssessmentContent = (slideContent) => {
     html += '</div>';
   }
 
-  if (slideContent.capability_types && Array.isArray(slideContent.capability_types)) {
+  const capabilityTypes = normalizeStringList(slideContent.capability_types);
+  if (capabilityTypes.length) {
     html += '<div class="capability-types-summary mt-6">';
     html += '<h3 class="text-lg font-semibold mb-4">Capability Types Assessed</h3>';
     html += '<div class="flex flex-wrap gap-2">';
-    slideContent.capability_types.forEach(capability => {
+    capabilityTypes.forEach(capability => {
       html += `<span class="bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full">${capability}</span>`;
     });
     html += '</div>';
@@ -104,48 +233,79 @@ const FRAMEWORK_RENDERERS = {
       let html = '<div class="market-sizing-content">';
       
       // Market segments
-      if (slideContent.market_segments) {
+      const segments = normalizeObjectArray(
+        slideContent.market_segments,
+        'pillar',
+        ['pillar', 'segment', 'segment_name']
+      );
+
+      if (segments.length) {
         html += '<div class="market-segments mb-6">';
         html += '<h3 class="text-lg font-semibold mb-4">Market Segments by Product</h3>';
         
-        slideContent.market_segments.forEach(segment => {
+        segments.forEach(segmentRaw => {
+          if (!segmentRaw) return;
+
+          const segment = typeof segmentRaw === 'object'
+            ? segmentRaw
+            : { pillar: String(segmentRaw) };
+          const segmentTitle = segment.pillar || segment.segment || segment.segment_name || segment.name || 'Market Segment';
           html += `<div class="segment mb-4 p-4 bg-gray-50 rounded-lg">`;
-          html += `<h4 class="font-medium text-gray-800 mb-2">${segment.pillar}</h4>`;
+          html += `<h4 class="font-medium text-gray-800 mb-2">${segmentTitle}</h4>`;
           
-          if (segment.products) {
+          const products = normalizeObjectArray(
+            segment.products,
+            'product_name',
+            ['product_name', 'product', 'name']
+          );
+
+          if (products.length) {
             html += '<div class="products grid grid-cols-1 md:grid-cols-2 gap-4">';
-            segment.products.forEach(product => {
+            products.forEach(productRaw => {
+              if (!productRaw) return;
+
+              const product = typeof productRaw === 'object'
+                ? productRaw
+                : { product_name: String(productRaw) };
+              const productName = product.product_name || product.product || product.name || 'Unnamed Product';
               html += `<div class="product p-3 bg-white rounded border">`;
-              html += `<h5 class="font-medium text-sm mb-2">${product.product_name}</h5>`;
+              html += `<h5 class="font-medium text-sm mb-2">${productName}</h5>`;
               
               // Check for both possible field names
-              const marketSizeData = product.market_size_chf_bn || product.market_size_local_bn;
-              if (marketSizeData) {
+              const marketSizePairs = normalizeKeyValuePairs(product.market_size_chf_bn || product.market_size_local_bn);
+              if (marketSizePairs.length) {
                 html += '<div class="market-size mb-2">';
                 html += '<p class="text-xs text-gray-600 mb-1">Market Size (Bn)</p>';
-                Object.entries(marketSizeData).forEach(([year, value]) => {
-                  const isNA = value === 'N/A' || value === 'n/a';
+                marketSizePairs.forEach(([year, value]) => {
+                  const isNA = value === null || value === 'N/A' || value === 'n/a';
+                  const formattedValue = typeof value === 'number'
+                    ? value.toLocaleString()
+                    : typeof value === 'string'
+                      ? value.replace(/_/g, ',')
+                      : value;
                   const badgeClass = isNA 
                     ? 'bg-gray-100 text-gray-600' 
                     : 'bg-blue-100 text-blue-800';
-                  const displayValue = isNA ? 'N/A' : value;
+                  const displayValue = isNA ? 'N/A' : formattedValue;
                   html += `<span class="inline-block ${badgeClass} text-xs px-2 py-1 rounded mr-1 mb-1">${year}: ${displayValue}</span>`;
                 });
                 html += '</div>';
               }
               
-              if (product.cagr_2019_2030) {
-                const isNA = product.cagr_2019_2030 === 'N/A' || product.cagr_2019_2030 === 'n/a';
+              const cagrValue = product.cagr_2019_2030 || product.cagr;
+              if (cagrValue) {
+                const isNA = cagrValue === 'N/A' || cagrValue === 'n/a';
                 const cagrClass = isNA ? 'text-gray-500' : 'text-green-600';
-                const cagrValue = isNA ? 'N/A' : product.cagr_2019_2030;
-                html += `<p class="text-xs ${cagrClass} font-medium">CAGR: ${cagrValue}</p>`;
+                const displayCagr = isNA ? 'N/A' : cagrValue;
+                html += `<p class="text-xs ${cagrClass} font-medium">CAGR: ${displayCagr}</p>`;
               }
               
-              if (product.growth_drivers && product.growth_drivers.length > 0) {
+              const growthDrivers = normalizeStringList(product.growth_drivers || product.growthDrivers);
+              if (growthDrivers.length) {
                 html += '<div class="growth-drivers mt-2">';
                 html += '<p class="text-xs text-gray-600 mb-1">Growth Drivers:</p>';
                 html += '<ul class="text-xs text-gray-700">';
-                product.growth_drivers.forEach(driver => {
+                growthDrivers.forEach(driver => {
                   html += `<li class="ml-2">• ${driver}</li>`;
                 });
                 html += '</ul></div>';
@@ -153,6 +313,13 @@ const FRAMEWORK_RENDERERS = {
               
               html += '</div>';
             });
+            html += '</div>';
+          } else if (segment.products) {
+            html += '<div class="product p-3 bg-white rounded border">';
+            const fallbackText = typeof segment.products === 'string'
+              ? segment.products
+              : JSON.stringify(segment.products, null, 2);
+            html += `<p class="text-sm text-gray-600 whitespace-pre-wrap">${fallbackText}</p>`;
             html += '</div>';
           }
           
@@ -163,18 +330,31 @@ const FRAMEWORK_RENDERERS = {
       }
       
       // Total market
-      if (slideContent.total_market) {
+      const totalMarketPairs = normalizeKeyValuePairs(slideContent.total_market);
+      if (totalMarketPairs.length) {
         html += '<div class="total-market mb-4">';
         html += '<h3 class="text-lg font-semibold mb-2">Total Market Size</h3>';
         html += '<div class="total-values flex flex-wrap gap-2">';
-        Object.entries(slideContent.total_market).forEach(([year, value]) => {
-          // Handle both number and string formats (with underscores)
-          const displayValue = typeof value === 'string' 
-            ? value.replace(/_/g, ',') 
-            : value.toLocaleString();
-          html += `<span class="bg-green-100 text-green-800 text-sm px-3 py-1 rounded font-medium">${year}: ${displayValue} Bn</span>`;
+        totalMarketPairs.forEach(([year, value]) => {
+          const isNA = value === null || value === 'N/A' || value === 'n/a';
+          const formattedValue = typeof value === 'number'
+            ? value.toLocaleString()
+            : typeof value === 'string'
+              ? value.replace(/_/g, ',')
+              : value;
+          const badgeClass = isNA ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800';
+          const suffix = isNA ? '' : ' Bn';
+          const displayValue = isNA ? 'N/A' : formattedValue;
+          html += `<span class="${badgeClass} text-sm px-3 py-1 rounded font-medium">${year}: ${displayValue}${suffix}</span>`;
         });
         html += '</div></div>';
+      } else if (slideContent.total_market) {
+        html += '<div class="total-market mb-4">';
+        html += '<h3 class="text-lg font-semibold mb-2">Total Market Size</h3>';
+        html += `<p class="text-sm text-gray-600">${typeof slideContent.total_market === 'string'
+          ? slideContent.total_market
+          : JSON.stringify(slideContent.total_market, null, 2)}</p>`;
+        html += '</div>';
       }
       
       html += '</div>';
@@ -1690,26 +1870,43 @@ function convertMarketSizingToChartData(slideContent) {
   const labels = [];
   const datasets = [];
   
-  if (slideContent.market_segments) {
-    slideContent.market_segments.forEach(segment => {
-      if (segment.products) {
-        segment.products.forEach(product => {
-          labels.push(product.product_name);
-          
-          if (product.market_size_chf_bn) {
-            const years = Object.keys(product.market_size_chf_bn).sort();
-            const data = years.map(year => product.market_size_chf_bn[year]);
-            
-            datasets.push({
-              label: product.product_name,
-              data: data,
-              backgroundColor: `hsl(${Math.random() * 360}, 70%, 50%)`
-            });
-          }
+  const segments = normalizeObjectArray(
+    slideContent?.market_segments,
+    'pillar',
+    ['pillar', 'segment', 'segment_name']
+  );
+
+  segments.forEach(segmentRaw => {
+    const segment = typeof segmentRaw === 'object' ? segmentRaw : { pillar: segmentRaw };
+    const products = normalizeObjectArray(
+      segment?.products,
+      'product_name',
+      ['product_name', 'product', 'name']
+    );
+
+    products.forEach(productRaw => {
+      const product = typeof productRaw === 'object' ? productRaw : { product_name: productRaw };
+      const productName = product.product_name || product.product || product.name || 'Unnamed Product';
+      if (productName) {
+        labels.push(productName);
+      }
+
+      const marketSizePairs = normalizeKeyValuePairs(product.market_size_chf_bn || product.market_size_local_bn);
+      if (marketSizePairs.length) {
+        const data = marketSizePairs.map(([, value]) => {
+          if (typeof value === 'number') return value;
+          const numeric = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+          return Number.isFinite(numeric) ? numeric : 0;
+        });
+
+        datasets.push({
+          label: productName,
+          data,
+          backgroundColor: `hsl(${Math.random() * 360}, 70%, 50%)`
         });
       }
     });
-  }
+  });
   
   return {
     labels: labels,
@@ -1795,22 +1992,33 @@ function convertCapabilityBenchmarkToChartData(slideContent) {
   const labels = [];
   const datasets = [];
   
-  if (slideContent.capability_dimensions) {
-    slideContent.capability_dimensions.forEach(dimension => {
-      labels.push(dimension.dimension_name);
-      
-      // Convert gap assessment to numeric value
-      const gapValue = dimension.gap_assessment === 'RED' ? 1 : 
-                      dimension.gap_assessment === 'AMBER' ? 2 : 3;
-      
-      datasets.push({
-        label: dimension.dimension_name,
-        data: [gapValue],
-        backgroundColor: dimension.gap_assessment === 'RED' ? '#ef4444' :
-                        dimension.gap_assessment === 'AMBER' ? '#f59e0b' : '#10b981'
-      });
+  const dimensions = normalizeObjectArray(
+    slideContent?.capability_dimensions,
+    null,
+    ['dimension_name', 'gap_assessment']
+  );
+
+  dimensions.forEach(dimensionRaw => {
+    if (!dimensionRaw) return;
+
+    const dimension = typeof dimensionRaw === 'object'
+      ? dimensionRaw
+      : { dimension_name: String(dimensionRaw) };
+
+    const name = dimension.dimension_name || dimension.name || 'Capability';
+    const assessment = (dimension.gap_assessment || '').toString().toUpperCase();
+
+    labels.push(name);
+
+    const gapValue = assessment === 'RED' ? 1 : assessment === 'AMBER' ? 2 : 3;
+    const color = assessment === 'RED' ? '#ef4444' : assessment === 'AMBER' ? '#f59e0b' : '#10b981';
+
+    datasets.push({
+      label: name,
+      data: [gapValue],
+      backgroundColor: color
     });
-  }
+  });
   
   return {
     labels: labels,
