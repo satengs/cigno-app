@@ -55,7 +55,7 @@ export default function BriefQualityDisplay({
     return null;
   }
   
-  const PREVIEW_LIMIT = 3;
+  const PREVIEW_LIMIT = 5;
 
   if (compact) {
     return (
@@ -99,7 +99,7 @@ export default function BriefQualityDisplay({
                   </>
                 ) : (
                   <>
-                    <span>Show all ({strengths.length})</span>
+                    <span>Show more ({strengths.length - PREVIEW_LIMIT} more)</span>
                     <ChevronDown className="w-3 h-3" />
                   </>
                 )}
@@ -130,7 +130,7 @@ export default function BriefQualityDisplay({
                   </>
                 ) : (
                   <>
-                    <span>Show all ({improvements.length})</span>
+                    <span>Show more ({improvements.length - PREVIEW_LIMIT} more)</span>
                     <ChevronDown className="w-3 h-3" />
                   </>
                 )}

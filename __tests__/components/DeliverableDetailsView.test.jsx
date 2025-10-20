@@ -44,8 +44,8 @@ describe('DeliverableDetailsView', () => {
     
     expect(screen.getByDisplayValue('Test Deliverable')).toBeInTheDocument();
     expect(screen.getByText('Audience')).toBeInTheDocument();
-    expect(screen.getByText('Recognized Strengths')).toBeInTheDocument();
-    expect(screen.getByText('Suggested Improvements')).toBeInTheDocument();
+    expect(screen.getByText('Strengths')).toBeInTheDocument();
+    expect(screen.getByText('Areas to Improve')).toBeInTheDocument();
   });
 
   test('name input calls onInputChange when changed', () => {
@@ -69,9 +69,9 @@ describe('DeliverableDetailsView', () => {
   test('displays recognized strengths and improvements', () => {
     render(<DeliverableDetailsView {...mockProps} />);
 
-    expect(screen.getByText('Recognized Strengths')).toBeInTheDocument();
+    expect(screen.getByText('Strengths')).toBeInTheDocument();
     expect(screen.getByText('• Well defined requirements')).toBeInTheDocument();
-    expect(screen.getByText('Suggested Improvements')).toBeInTheDocument();
+    expect(screen.getByText('Areas to Improve')).toBeInTheDocument();
     expect(screen.getByText('• Add more details')).toBeInTheDocument();
   });
 

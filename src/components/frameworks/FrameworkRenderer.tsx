@@ -33,7 +33,10 @@ export type FrameworkType =
   | 'recommendations'
   | 'buy_vs_build'
   | 'partnerships'
-  | 'product_roadmap';
+  | 'product_roadmap'
+  | 'brief_scorer'
+  | 'key_industry_trends'
+  | 'deep_dive_strategic_option';
 
 export interface FrameworkData {
   labels: string[];
@@ -120,6 +123,15 @@ export function FrameworkRenderer({
     
     case 'product_roadmap':
       return <ProductRoadmapView {...commonProps} />;
+    
+    case 'brief_scorer':
+      return <GenericChartView {...commonProps} />; // TODO: Create BriefScorerView
+    
+    case 'key_industry_trends':
+      return <IndustryTrendsView {...commonProps} />; // Reuse existing view
+    
+    case 'deep_dive_strategic_option':
+      return <GenericChartView {...commonProps} />; // TODO: Create DeepDiveStrategicOptionView
     
     default:
       return <GenericChartView {...commonProps} />;

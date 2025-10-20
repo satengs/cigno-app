@@ -80,7 +80,11 @@ function isValidFramework(framework) {
     'recommendations',
     'buy_vs_build',
     'partnerships',
-    'product_roadmap'
+    'product_roadmap',
+    // New frameworks
+    'brief_scorer',
+    'key_industry_trends',
+    'deep_dive_strategic_option'
   ];
   
   return validFrameworks.includes(framework);
@@ -124,9 +128,13 @@ export function getDefaultFrameworks() {
   return [
     'market_sizing',
     'competitive_landscape',
-    'client_segments',
+    'key_industry_trends',
+    'capabilities_assessment',
+    'competitor_deep_dive',
     'strategic_options',
-    'recommendations'
+    'deep_dive_strategic_option',
+    'buy_vs_build',
+    'product_roadmap'
   ];
 }
 

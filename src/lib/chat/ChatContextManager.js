@@ -137,7 +137,7 @@ class ChatContextManager {
   }
 
   /**
-   * Switch to a specific project's chat context
+   * Switch to a specific project's chat context (with revalidation)
    * @param {Object} project - Project object
    * @param {string} userId - Current user ID
    * @param {Object} clientData - Optional client data
@@ -180,6 +180,11 @@ class ChatContextManager {
       if (projectData.currentDeliverable) {
         console.log(`📄 Current deliverable: ${projectData.currentDeliverable.name} (ID: ${projectData.currentDeliverable.id})`);
       }
+      
+      // Sync with database to ensure latest messages (async)
+      this.syncWithDatabase().catch(error => {
+        console.error('Failed to sync context with database:', error);
+      });
     }
 
     return context;
@@ -237,9 +242,13 @@ class ChatContextManager {
     });
     
     if (item.type === 'deliverable') {
-      // For deliverables, use the project field first, then projectId, then fall back to id
-      const projectId = item.project || item.projectId || item.id;
-      console.log(`📄 Deliverable project ID: ${projectId} (from project: ${item.project}, projectId: ${item.projectId}, fallback id: ${item.id})`);
+      // For deliverables, use the project field first, then projectId - DO NOT fall back to deliverable ID
+      const projectId = item.project || item.projectId;
+      if (!projectId) {
+        console.error(`❌ Deliverable ${item.name} has no project reference! This will break context consistency.`);
+        return null;
+      }
+      console.log(`📄 Deliverable project ID: ${projectId} (from project: ${item.project}, projectId: ${item.projectId})`);
       return projectId;
     } else {
       // For projects, use the id directly
@@ -304,7 +313,7 @@ class ChatContextManager {
   }
 
   /**
-   * Add message to current project's chat
+   * Add message to current project's chat (with deduplication)
    * @param {Object} message - Message object
    * @param {Object} aiMetadata - Optional AI response metadata
    * @returns {boolean} Success status
@@ -315,8 +324,18 @@ class ChatContextManager {
       return false;
     }
 
+    // Check for duplicate messages
+    const messageId = message.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const existingMessage = this.currentContext.messages.find(m => m.id === messageId);
+    
+    if (existingMessage) {
+      console.log(`⚠️ Duplicate message detected, skipping: ${messageId}`);
+      return false;
+    }
+
     const messageWithTimestamp = {
       ...message,
+      id: messageId,
       timestamp: message.timestamp || new Date().getTime() // Use provided timestamp or current time
     };
 
@@ -460,14 +479,21 @@ class ChatContextManager {
           timestamp: new Date(msg.timestamp).getTime() // Convert to timestamp for UI
         }));
 
-        // Merge with existing messages, avoiding duplicates
+        // Merge with existing messages, avoiding duplicates by message ID and content
         const existingIds = new Set(this.currentContext.messages.map(m => m.id));
-        const newMessages = contextMessages.filter(m => !existingIds.has(m.id));
+        const existingContent = new Set(this.currentContext.messages.map(m => `${m.role}:${m.content}:${m.timestamp}`));
+        
+        const newMessages = contextMessages.filter(m => 
+          !existingIds.has(m.id) && 
+          !existingContent.has(`${m.role}:${m.content}:${m.timestamp}`)
+        );
         
         if (newMessages.length > 0) {
           this.currentContext.messages = [...this.currentContext.messages, ...newMessages]
             .sort((a, b) => a.timestamp - b.timestamp);
-          console.log(`🔄 Synced ${newMessages.length} new messages from database`);
+          console.log(`🔄 Synced ${newMessages.length} new messages from database (${contextMessages.length} total checked)`);
+        } else {
+          console.log(`✅ No new messages to sync (${contextMessages.length} messages already present)`);
         }
       }
 

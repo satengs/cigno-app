@@ -22,7 +22,8 @@ import {
   Download,
   FileText,
   Presentation,
-  Sheet
+  Sheet,
+  Trash2
 } from 'lucide-react';
 import { authService } from '../../lib/auth/AuthService';
 import { useStorylineExport } from '../../lib/export/exportUtils';
@@ -31,7 +32,16 @@ import chatContextManager from '../../lib/chat/ChatContextManager';
 import documentService, { KNOWLEDGE_BASE_IDS } from '../../lib/services/DocumentService';
 import DocumentCard from '../ui/DocumentCard';
 
-export default function RightSection({ isModalOpen = false, selectedItem = null, showLayoutOptions = false, selectedLayout = 'title-2-columns', onLayoutChange, storyline = null, onApplyLayoutToAll }) {
+export default function RightSection({
+  isModalOpen = false,
+  selectedItem = null,
+  showLayoutOptions = false,
+  selectedLayout = 'default',
+  onLayoutChange,
+  storyline = null,
+  onApplyLayoutToAll,
+  availableLayouts = ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']
+}) {
   // State for collapsible sections - chat closed by default
   const [expandedSections, setExpandedSections] = useState({
     layoutOptions: true, // Default to expanded
@@ -88,6 +98,10 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
   const [currentChatContext, setCurrentChatContext] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const messagesEndRef = useRef(null);
+  
+  // Temporary narrative state (not persisted in chat history)
+  const [currentNarrative, setCurrentNarrative] = useState(null);
+  const narrativeTimeoutRef = useRef(null);
 
   // Resize state
   const [rightSectionWidth, setRightSectionWidth] = useState(320);
@@ -107,6 +121,15 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
   // Set isClient to true after hydration
   useEffect(() => {
     setIsClient(true);
+  }, []);
+
+  // Cleanup narrative timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (narrativeTimeoutRef.current) {
+        clearTimeout(narrativeTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Force close other sections when AI assistant opens
@@ -375,19 +398,27 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
       timestamp: Date.now()
     };
 
-    // Add message to UI immediately
-    setMessages(prev => [...prev, userMessage]);
+    // Add message using ChatContextManager (handles deduplication)
+    const addedSuccessfully = chatContextManager.addMessageToCurrentChat(userMessage);
     
-    // Save to context if available
-    if (currentChatContext) {
-      currentChatContext.messages.push(userMessage);
+    if (addedSuccessfully) {
+      // Update local state with the current context messages
+      const updatedContext = chatContextManager.getCurrentContext();
+      setMessages(updatedContext?.messages || []);
     }
     
     const currentInputValue = inputValue;
     setInputValue('');
     setIsLoading(true);
 
+    // Start narrative progression
+    showNarrative("🤔 Thinking about your question...");
+    startNarrativeTimeout();
+
     try {
+      // Update narrative after a moment
+      setTimeout(() => updateNarrative("🔍 Analyzing project context..."), 800);
+      setTimeout(() => updateNarrative("💡 Preparing a thoughtful response..."), 1600);
       // Call the simple chat API with project context
       // For deliverables, use the parent project ID for consistent history
       const projectId = currentChatContext?.projectId || 
@@ -464,12 +495,16 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           isStreaming: false
         };
         
-        // Add AI response to UI immediately
-        setMessages(prev => [...prev, aiResponse]);
+        // Clear narrative before adding response
+        clearNarrative();
         
-        // Save to context if available
-        if (currentChatContext) {
-          currentChatContext.messages.push(aiResponse);
+        // Add AI response using ChatContextManager (handles deduplication)
+        const aiAddedSuccessfully = chatContextManager.addMessageToCurrentChat(aiResponse);
+        
+        if (aiAddedSuccessfully) {
+          // Update local state with the current context messages
+          const updatedContext = chatContextManager.getCurrentContext();
+          setMessages(updatedContext?.messages || []);
         }
         
         console.log('✅ Chat message sent successfully:', assistantMessage);
@@ -488,15 +523,21 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
         isError: true
       };
       
-      // Add error message to UI immediately
-      setMessages(prev => [...prev, errorResponse]);
+      // Clear narrative before adding error
+      clearNarrative();
       
-      // Save to context if available
-      if (currentChatContext) {
-        currentChatContext.messages.push(errorResponse);
+      // Add error message using ChatContextManager (handles deduplication)
+      const errorAddedSuccessfully = chatContextManager.addMessageToCurrentChat(errorResponse);
+      
+      if (errorAddedSuccessfully) {
+        // Update local state with the current context messages
+        const updatedContext = chatContextManager.getCurrentContext();
+        setMessages(updatedContext?.messages || []);
       }
     } finally {
       setIsLoading(false);
+      // Ensure narrative is cleared even if something goes wrong
+      clearNarrative();
     }
   };
 
@@ -505,6 +546,72 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const clearChatContext = async () => {
+    if (!currentChatContext) return;
+
+    try {
+      console.log('🗑️ Clearing chat context for project:', currentChatContext.projectName);
+      
+      // Clear the chat context using ChatContextManager
+      const success = chatContextManager.clearCurrentChat();
+      
+      if (success) {
+        // Update local state to reflect the cleared context
+        const clearedContext = chatContextManager.getCurrentContext();
+        setCurrentChatContext(clearedContext);
+        setMessages(clearedContext?.messages || []);
+        console.log('✅ Chat context cleared successfully');
+      } else {
+        console.error('❌ Failed to clear chat context');
+      }
+    } catch (error) {
+      console.error('❌ Error clearing chat context:', error);
+    }
+  };
+
+  // Narrative management functions
+  const showNarrative = (text) => {
+    console.log('📝 Showing narrative:', text);
+    setCurrentNarrative({
+      id: `narrative-${Date.now()}`,
+      text: text,
+      timestamp: Date.now()
+    });
+  };
+
+  const clearNarrative = () => {
+    console.log('🗑️ Clearing narrative');
+    setCurrentNarrative(null);
+    if (narrativeTimeoutRef.current) {
+      clearTimeout(narrativeTimeoutRef.current);
+      narrativeTimeoutRef.current = null;
+    }
+  };
+
+  const updateNarrative = (newText) => {
+    console.log('🔄 Updating narrative:', newText);
+    if (currentNarrative) {
+      setCurrentNarrative(prev => ({
+        ...prev,
+        text: newText,
+        timestamp: Date.now()
+      }));
+    } else {
+      showNarrative(newText);
+    }
+  };
+
+  // Auto-clear narrative after timeout (fallback safety)
+  const startNarrativeTimeout = (duration = 30000) => {
+    if (narrativeTimeoutRef.current) {
+      clearTimeout(narrativeTimeoutRef.current);
+    }
+    narrativeTimeoutRef.current = setTimeout(() => {
+      console.log('⏰ Narrative timeout reached, clearing');
+      clearNarrative();
+    }, duration);
   };
 
   const handleTextareaChange = (e) => {
@@ -578,10 +685,26 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
   // Layout options data
   const LAYOUT_OPTIONS = [
     {
+      id: 'default',
+      name: 'Default (Recommended)',
+      description: 'Automatically uses the best layout for this section type',
+      recommended: true,
+      preview: (
+        <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+          <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+          <div className="flex items-center justify-center p-1 h-12">
+            <div className="w-6 h-6 rounded border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--text-primary)' }}>
+              <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>★</span>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'title-2-columns',
       name: 'Title + 2 Columns',
       description: 'Header with two equal content columns',
-      recommended: true,
+      recommended: false,
       preview: (
         <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
           <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -730,27 +853,39 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
           
           {expandedSections.layoutOptions && (
             <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
-              {LAYOUT_OPTIONS.map((layout) => (
-                <div
+              {LAYOUT_OPTIONS.map((layout) => {
+                const isEnabled = availableLayouts.includes(layout.id);
+                const isSelected = selectedLayout === layout.id;
+
+                return (
+                  <div
                   key={layout.id}
-                  onClick={() => onLayoutChange && onLayoutChange(layout.id)}
-                  className={`relative p-3 border rounded-lg cursor-pointer transition-all ${
-                    selectedLayout === layout.id
-                      ? 'shadow-sm'
-                      : 'hover:shadow-sm'
+                  onClick={() => {
+                    if (!isEnabled) return;
+                    onLayoutChange && onLayoutChange(layout.id);
+                  }}
+                  title={!isEnabled ? `${layout.name} is not available for the current section type` : layout.name}
+                  className={`relative p-3 border rounded-lg transition-all ${
+                    isEnabled
+                      ? 'cursor-pointer'
+                      : 'cursor-not-allowed opacity-50'
+                  } ${
+                    isSelected ? 'shadow-sm' : isEnabled ? 'hover:shadow-sm' : ''
                   }`}
                   style={{
-                    borderColor: selectedLayout === layout.id ? 'var(--text-primary)' : 'var(--border-primary)',
+                    borderColor: isSelected ? 'var(--text-primary)' : 'var(--border-primary)',
                     backgroundColor: 'var(--bg-primary)'
                   }}
                   onMouseEnter={(e) => {
-                    if (selectedLayout !== layout.id) {
-                      e.target.style.borderColor = 'var(--border-secondary)';
+                    if (!isEnabled) return;
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-secondary)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (selectedLayout !== layout.id) {
-                      e.target.style.borderColor = 'var(--border-primary)';
+                    if (!isEnabled) return;
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'var(--border-primary)';
                     }
                   }}
                 >
@@ -770,29 +905,45 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
                         <h3 className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                           {layout.name}
                         </h3>
-                        {selectedLayout === layout.id && (
+                        {isSelected && (
                           <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-primary)' }} />
                         )}
                       </div>
                       <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
                         {layout.description}
                       </p>
+                      {!isEnabled && (
+                        <p className="text-xs mt-1 text-red-500 font-medium">
+                          Not available for current section type
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               
               {/* Apply to All Slides Button */}
               <div className="pt-4 border-t" style={{ borderColor: 'var(--border-primary)' }}>
                 <button
-                  onClick={() => onApplyLayoutToAll && onApplyLayoutToAll(selectedLayout)}
-                  className="w-full px-4 py-2 text-white text-sm font-medium rounded transition-colors"
+                  onClick={() => {
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    onApplyLayoutToAll && onApplyLayoutToAll(selectedLayout);
+                  }}
+                  disabled={!availableLayouts.includes(selectedLayout)}
+                  className={`w-full px-4 py-2 text-white text-sm font-medium rounded transition-colors ${
+                    availableLayouts.includes(selectedLayout)
+                      ? ''
+                      : 'opacity-50 cursor-not-allowed'
+                  }`}
                   style={{ backgroundColor: 'var(--text-primary)' }}
                   onMouseEnter={(e) => {
-                    e.target.style.opacity = '0.9';
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    e.currentTarget.style.opacity = '0.9';
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.opacity = '1';
+                    if (!availableLayouts.includes(selectedLayout)) return;
+                    e.currentTarget.style.opacity = '1';
                   }}
                   title={`Apply ${LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.name || selectedLayout} to all slides`}
                 >
@@ -1189,6 +1340,18 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Chat Assistant</span>
           </div>
           <div className="flex items-center space-x-2">
+            {currentChatContext && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent section toggle
+                  clearChatContext();
+                }}
+                className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                title="Clear chat history"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
             {expandedSections.aiAssistant ? (
               <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             ) : (
@@ -1291,12 +1454,14 @@ export default function RightSection({ isModalOpen = false, selectedItem = null,
                 );
               })}
               
-              {isLoading && (
+              {currentNarrative && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 px-4 py-2 rounded-lg">
+                  <div className="px-4 py-2 rounded-lg" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
                     <div className="flex items-center space-x-2">
                       <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--text-secondary)' }} />
-                      <span className="text-sm">AI is thinking...</span>
+                      <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {currentNarrative.text}
+                      </span>
                     </div>
                   </div>
                 </div>

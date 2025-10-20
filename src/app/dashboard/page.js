@@ -12,7 +12,9 @@ function DashboardWithSearchParams() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentContentView, setCurrentContentView] = useState('detailed');
-  const [selectedLayout, setSelectedLayout] = useState('title-2-columns');
+  const [selectedLayout, setSelectedLayout] = useState('default');
+  const ALL_LAYOUT_IDS = ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow'];
+  const [availableLayouts, setAvailableLayouts] = useState(ALL_LAYOUT_IDS);
   const [currentStoryline, setCurrentStoryline] = useState(null);
   const processedUrlRef = useRef(null);
 
@@ -191,6 +193,8 @@ function DashboardWithSearchParams() {
           onViewChange={setCurrentContentView}
           selectedLayout={selectedLayout}
           onStorylineChange={setCurrentStoryline}
+          onLayoutChange={setSelectedLayout}
+          onLayoutOptionsChange={setAvailableLayouts}
         />
 
         {/* Right Section - Hide for client view */}
@@ -203,6 +207,7 @@ function DashboardWithSearchParams() {
             onLayoutChange={setSelectedLayout}
             storyline={currentStoryline}
             onApplyLayoutToAll={handleApplyLayoutToAll}
+            availableLayouts={availableLayouts}
           />
         )}
       </div>

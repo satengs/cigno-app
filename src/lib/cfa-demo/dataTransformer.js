@@ -4,7 +4,333 @@
  */
 export class CFADemoDataTransformer {
   
-  // Build input for Market Sizing Agent (CFA-DEMO-1)
+  // Generic method to build input for any framework
+  buildFrameworkInput(framework, projectInput, dependencies = {}) {
+    console.log(`🔧 Building input for framework: ${framework}`);
+    console.log(`📋 Project input:`, projectInput);
+    console.log(`🔗 Dependencies:`, Object.keys(dependencies));
+    
+    // Stringify all data into message field
+    const payloadData = {
+      project_context: {
+        name: projectInput.projectName || "Strategic Analysis",
+        client_name: projectInput.clientName || "Client",
+        id: projectInput.projectId || "project-1",
+        geography: projectInput.geography || "Global"
+      },
+      deliverable_context: {
+        brief: projectInput.deliverableBrief || "Strategic analysis and recommendations",
+        type: "Strategy Presentation",
+        audience: ["Business Stakeholders"]
+      },
+      client_context: {
+        name: projectInput.clientName || "Client",
+        geography: projectInput.geography || "Global",
+        industry: [projectInput.industry || "Financial Services"]
+      },
+      dependencies: dependencies,
+      format: 'json',
+      output_format: 'json'
+    };
+    
+    const baseInput = {
+      message: JSON.stringify(payloadData)
+    };
+    
+    return baseInput;
+  }
+  
+  getAgentIdForFramework(framework) {
+    const agentMapping = {
+      'market_sizing': '68f3a191dfc921b68ec3e83a',
+      'competitive_landscape': '68f3a9a5dfc921b68ec3e959',
+      'key_industry_trends': '68f3f71fdfc921b68ec3ea8d',
+      'capabilities_assessment': '68f3f817dfc921b68ec3ea8e',
+      'competitor_deep_dive': '68f4a393dfc921b68ec3ec36',
+      'strategic_options': '68f4a655dfc921b68ec3ec37',
+      'deep_dive_strategic_option': '68f4a8dfdfc921b68ec3ec38',
+      'buy_vs_build': '68f4ae2fdfc921b68ec3ec39',
+      'product_roadmap': '68f4b112dfc921b68ec3ec3a'
+    };
+    return agentMapping[framework] || 'unknown';
+  }
+  
+  getSlideNumberForFramework(framework) {
+    const slideNumbers = {
+      'market_sizing': 1,
+      'competitive_landscape': 2,
+      'key_industry_trends': 3,
+      'capabilities_assessment': 4,
+      'competitor_deep_dive': 5,
+      'strategic_options': 6,
+      'deep_dive_strategic_option': 7,
+      'buy_vs_build': 8,
+      'product_roadmap': 9
+    };
+    return slideNumbers[framework] || 1;
+  }
+  
+  getFrameworkDisplayName(framework) {
+    const displayNames = {
+      'market_sizing': 'Market Sizing Analysis',
+      'competitive_landscape': 'Competitive Landscape',
+      'key_industry_trends': 'Key Industry Trends',
+      'capabilities_assessment': 'Capabilities Assessment',
+      'competitor_deep_dive': 'Competitor Deep Dive',
+      'strategic_options': 'Strategic Options',
+      'deep_dive_strategic_option': 'Deep Dive Strategic Option',
+      'buy_vs_build': 'Buy vs Build Analysis',
+      'product_roadmap': 'Product Roadmap'
+    };
+    return displayNames[framework] || framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+  
+  getFrameworkTitle(framework, projectInput) {
+    const titles = {
+      'market_sizing': `${projectInput.clientName || 'Client'} Market Sizing Analysis`,
+      'competitive_landscape': `${projectInput.clientName || 'Client'} Competitive Landscape`,
+      'key_industry_trends': `Key ${projectInput.industry || 'Industry'} Trends`,
+      'capabilities_assessment': `${projectInput.clientName || 'Client'} Capabilities Assessment`,
+      'competitor_deep_dive': `${projectInput.clientName || 'Client'} Competitor Deep Dive`,
+      'strategic_options': `${projectInput.clientName || 'Client'} Strategic Options`,
+      'deep_dive_strategic_option': `${projectInput.clientName || 'Client'} Strategic Option Deep Dive`,
+      'buy_vs_build': `${projectInput.clientName || 'Client'} Buy vs Build Analysis`,
+      'product_roadmap': `${projectInput.clientName || 'Client'} Product Roadmap`
+    };
+    return titles[framework] || `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`;
+  }
+  
+  getFrameworkSlots(framework) {
+    // Define slots for each framework
+    const frameworkSlots = {
+      'market_sizing': [
+        {
+          slot_id: "market_segments",
+          slot_name: "Market Segments",
+          slot_type: "table",
+          required: true,
+          description: "Market size breakdown by segments with historical and forecast data"
+        },
+        {
+          slot_id: "total_market",
+          slot_name: "Total Market Size",
+          slot_type: "number",
+          required: true,
+          description: "Aggregate market size across all segments"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Key Insights",
+          slot_type: "list",
+          required: true,
+          description: "3-5 key insights about market trends and growth drivers"
+        }
+      ],
+      'competitive_landscape': [
+        {
+          slot_id: "competitors",
+          slot_name: "Key Competitors",
+          slot_type: "table",
+          required: true,
+          description: "Analysis of key competitors and their positioning"
+        },
+        {
+          slot_id: "positioning",
+          slot_name: "Market Positioning",
+          slot_type: "chart",
+          required: true,
+          description: "Visual representation of competitive positioning"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Competitive Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights about competitive dynamics"
+        }
+      ],
+      'key_industry_trends': [
+        {
+          slot_id: "trends",
+          slot_name: "Industry Trends",
+          slot_type: "list",
+          required: true,
+          description: "Key industry trends and their implications"
+        },
+        {
+          slot_id: "timeline",
+          slot_name: "Trend Timeline",
+          slot_type: "timeline",
+          required: true,
+          description: "Timeline of trend development and future projections"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Trend Insights",
+          slot_type: "list",
+          required: true,
+          description: "Strategic implications of industry trends"
+        }
+      ],
+      'capabilities_assessment': [
+        {
+          slot_id: "capabilities",
+          slot_name: "Current Capabilities",
+          slot_type: "table",
+          required: true,
+          description: "Assessment of current organizational capabilities"
+        },
+        {
+          slot_id: "gaps",
+          slot_name: "Capability Gaps",
+          slot_type: "list",
+          required: true,
+          description: "Identified gaps in capabilities"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Capability Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights about capability strengths and weaknesses"
+        }
+      ],
+      'competitor_deep_dive': [
+        {
+          slot_id: "competitor_profile",
+          slot_name: "Competitor Profile",
+          slot_type: "table",
+          required: true,
+          description: "Detailed profile of selected competitor"
+        },
+        {
+          slot_id: "best_practices",
+          slot_name: "Best Practices",
+          slot_type: "list",
+          required: true,
+          description: "Best practices identified from competitor analysis"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Competitor Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights and learnings from competitor analysis"
+        }
+      ],
+      'strategic_options': [
+        {
+          slot_id: "options",
+          slot_name: "Strategic Options",
+          slot_type: "table",
+          required: true,
+          description: "Evaluation of strategic options with pros/cons"
+        },
+        {
+          slot_id: "recommendation",
+          slot_name: "Recommended Option",
+          slot_type: "text",
+          required: true,
+          description: "Recommended strategic option with rationale"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Strategic Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights about strategic options and recommendations"
+        }
+      ],
+      'deep_dive_strategic_option': [
+        {
+          slot_id: "detailed_analysis",
+          slot_name: "Detailed Analysis",
+          slot_type: "text",
+          required: true,
+          description: "Detailed analysis of the selected strategic option"
+        },
+        {
+          slot_id: "implementation",
+          slot_name: "Implementation Plan",
+          slot_type: "list",
+          required: true,
+          description: "Step-by-step implementation plan"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Deep Dive Insights",
+          slot_type: "list",
+          required: true,
+          description: "Detailed insights and recommendations"
+        }
+      ],
+      'buy_vs_build': [
+        {
+          slot_id: "analysis",
+          slot_name: "Buy vs Build Analysis",
+          slot_type: "table",
+          required: true,
+          description: "Comparative analysis of buy vs build options"
+        },
+        {
+          slot_id: "recommendation",
+          slot_name: "Recommendation",
+          slot_type: "text",
+          required: true,
+          description: "Recommended approach with rationale"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Buy vs Build Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights about sourcing decisions"
+        }
+      ],
+      'product_roadmap': [
+        {
+          slot_id: "roadmap",
+          slot_name: "Product Roadmap",
+          slot_type: "timeline",
+          required: true,
+          description: "Detailed product roadmap with phases and milestones"
+        },
+        {
+          slot_id: "priorities",
+          slot_name: "Priorities",
+          slot_type: "list",
+          required: true,
+          description: "Prioritized list of initiatives and features"
+        },
+        {
+          slot_id: "insights",
+          slot_name: "Roadmap Insights",
+          slot_type: "list",
+          required: true,
+          description: "Key insights about product development strategy"
+        }
+      ]
+    };
+    
+    return frameworkSlots[framework] || [
+      {
+        slot_id: "content",
+        slot_name: "Content",
+        slot_type: "text",
+        required: true,
+        description: "Framework-specific content and analysis"
+      },
+      {
+        slot_id: "insights",
+        slot_name: "Key Insights",
+        slot_type: "list",
+        required: true,
+        description: "Key insights and recommendations"
+      }
+    ];
+  }
+  
+  // Build input for Market Sizing Agent (CFA-DEMO-1) - Legacy method
   buildMarketSizingInput(projectInput) {
     const input = {
       task_id: "task_slide1_market_sizing",

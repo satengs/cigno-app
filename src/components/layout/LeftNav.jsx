@@ -905,7 +905,7 @@ const mapProjectStatusToMenu = (status) => {
       <div className="lg:hidden">
         <button
           onClick={onToggle}
-          className="fixed top-4 left-4 z-50 p-2 bg-blue-600 text-white rounded-lg shadow-lg"
+          className="fixed top-4 left-4 z-50 p-2 bg-blue-600 text-white rounded-lg shadow-lg cursor-pointer"
         >
           <ChevronRight className="h-5 w-5" />
         </button>
@@ -1014,7 +1014,7 @@ const mapProjectStatusToMenu = (status) => {
               <button
                 data-testid="client-collapse-button"
                 onClick={() => toggleSection('client')}
-                className="flex items-center space-x-2 flex-1 text-left"
+                className="flex items-center space-x-2 flex-1 text-left cursor-pointer"
               >
                 {expandedSections.client ? (
                   <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
@@ -1027,7 +1027,7 @@ const mapProjectStatusToMenu = (status) => {
                 <button 
                   data-testid="add-client-button"
                   aria-label="Add client"
-                  className="p-1 rounded transition-colors"
+                className="p-1 rounded transition-colors cursor-pointer"
                   style={{ backgroundColor: 'transparent' }}
                   onMouseEnter={(e) => {
                     e.target.style.backgroundColor = 'var(--bg-secondary)';
@@ -1045,7 +1045,7 @@ const mapProjectStatusToMenu = (status) => {
                 <div className="relative">
                   <button 
                     data-testid="client-action-button"
-                    className="p-1 rounded transition-colors"
+                    className="p-1 rounded transition-colors cursor-pointer"
                     style={{ backgroundColor: 'transparent' }}
                     onMouseEnter={(e) => {
                       e.target.style.backgroundColor = 'var(--bg-secondary)';
@@ -1067,7 +1067,7 @@ const mapProjectStatusToMenu = (status) => {
                             refreshFromDatabase();
                           }
                         }}
-                        className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                        className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                         style={{ color: 'var(--text-primary)' }}
                         onMouseEnter={(e) => {
                           e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1121,7 +1121,7 @@ const mapProjectStatusToMenu = (status) => {
                                   e.stopPropagation();
                                   toggleCollapse(client._id || client.id);
                                 }}
-                                className="p-0.5 rounded transition-colors hover:bg-opacity-20"
+                                className="p-0.5 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                               >
                                 {client.isCollapsed ? (
                                   <ChevronRight className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
@@ -1138,7 +1138,7 @@ const mapProjectStatusToMenu = (status) => {
                           <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `client-${client._id || client.id}` ? 'opacity-100' : 'opacity-0'}`}>
                             <button
           onClick={() => handleAddItem('project', resolveBusinessEntityId(client))}
-                              className="p-1 rounded transition-colors hover:bg-opacity-20"
+                                              className="p-1 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                               style={{ 
                                 backgroundColor: 'transparent',
                                 color: 'var(--text-secondary)'
@@ -1156,7 +1156,7 @@ const mapProjectStatusToMenu = (status) => {
                             </button>
                             <div className="relative">
                               <button 
-                                className="p-1 rounded transition-colors hover:bg-opacity-20"
+                                className="p-1 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                                 style={{ 
                                   backgroundColor: 'transparent',
                                   color: 'var(--text-secondary)'
@@ -1184,7 +1184,7 @@ const mapProjectStatusToMenu = (status) => {
                                       toggleActionMenu(null);
                                       handleEditItem({ ...client, type: 'client' });
                                     }}
-                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                     style={{ color: 'var(--text-primary)' }}
                                     onMouseEnter={(e) => {
                                       e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1202,7 +1202,7 @@ const mapProjectStatusToMenu = (status) => {
                                         refreshFromDatabase();
                                       }
                                     }}
-                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                     style={{ color: 'var(--text-primary)' }}
                                     onMouseEnter={(e) => {
                                       e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1228,7 +1228,7 @@ const mapProjectStatusToMenu = (status) => {
                                       });
                                       handleRemoveItem('client', businessEntityId, client.title);
                                     }}
-                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                    className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                     style={{ color: 'var(--text-danger)' }}
                                     onMouseEnter={(e) => {
                                       e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1247,7 +1247,7 @@ const mapProjectStatusToMenu = (status) => {
 
                         {/* PROJECT Section */}
                         {client.children && client.children.length > 0 && !client.isCollapsed && (
-                          <div className="ml-4 mt-2 space-y-1 pl-4 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
+                          <div className="ml-1 mt-2 space-y-1 pl-1 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
                             <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors"
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
@@ -1258,7 +1258,7 @@ const mapProjectStatusToMenu = (status) => {
                             >
                               <button
                                 onClick={() => toggleSection('project')}
-                                className="flex items-center space-x-2 flex-1 text-left"
+                                className="flex items-center space-x-2 flex-1 text-left cursor-pointer"
                               >
                                 {expandedSections.project ? (
                                   <ChevronDown className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
@@ -1269,7 +1269,7 @@ const mapProjectStatusToMenu = (status) => {
                               </button>
                               <button
                                 onClick={() => handleAddItem('project', resolveBusinessEntityId(client))}
-                                className="p-1 rounded transition-colors"
+                              className="p-1 rounded transition-colors cursor-pointer"
                                 style={{ backgroundColor: 'var(--bg-tertiary)' }}
                                 onMouseEnter={(e) => {
                                   e.target.style.backgroundColor = 'var(--bg-secondary)';
@@ -1314,7 +1314,7 @@ const mapProjectStatusToMenu = (status) => {
                                                 e.stopPropagation();
                                                 toggleCollapse(project._id || project.id);
                                               }}
-                                              className="p-0.5 rounded transition-colors hover:bg-opacity-20"
+                                              className="p-0.5 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                                             >
                                               {project.isCollapsed ? (
                                                 <ChevronRight className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
@@ -1331,7 +1331,7 @@ const mapProjectStatusToMenu = (status) => {
                                         <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `project-${project._id || project.id}` ? 'opacity-100' : 'opacity-0'}`}>
                                           <button
                                             onClick={() => handleAddItem('deliverable', resolveBusinessEntityId(project))}
-                                            className="p-1 rounded transition-colors hover:bg-opacity-20"
+                                            className="p-1 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                                             style={{ 
                                               backgroundColor: 'transparent',
                                               color: 'var(--text-secondary)'
@@ -1348,8 +1348,8 @@ const mapProjectStatusToMenu = (status) => {
                                             <Plus className="h-2 w-2" />
                                           </button>
                                           <div className="relative">
-                                            <button 
-                                              className="p-1 rounded transition-colors hover:bg-opacity-20"
+                              <button 
+                                className="p-1 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                                               style={{ 
                                                 backgroundColor: 'transparent',
                                                 color: 'var(--text-secondary)'
@@ -1377,7 +1377,7 @@ const mapProjectStatusToMenu = (status) => {
                                                     toggleActionMenu(null);
                                                     handleEditItem({ ...project, type: 'project' });
                                                   }}
-                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                   style={{ color: 'var(--text-primary)' }}
                                                   onMouseEnter={(e) => {
                                                     e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1395,7 +1395,7 @@ const mapProjectStatusToMenu = (status) => {
                                                       refreshFromDatabase();
                                                     }
                                                   }}
-                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                   style={{ color: 'var(--text-primary)' }}
                                                   onMouseEnter={(e) => {
                                                     e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1421,7 +1421,7 @@ const mapProjectStatusToMenu = (status) => {
                                                     });
                                                     handleRemoveItem('project', businessEntityId, project.title);
                                                   }}
-                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                  className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                   style={{ color: 'var(--text-danger)' }}
                                                   onMouseEnter={(e) => {
                                                     e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1440,7 +1440,7 @@ const mapProjectStatusToMenu = (status) => {
 
                                       {/* DELIVERABLE Section */}
                                       {project.children && project.children.length > 0 && !project.isCollapsed && (
-                                        <div className="ml-2 mt-1 space-y-1 pl-4 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
+                                        <div className="ml-2 mt-1 space-y-1 pl-1 border-l-2" style={{ borderColor: 'var(--border-primary)' }}>
                                           <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors"
                                             onMouseEnter={(e) => {
                                               e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
@@ -1451,7 +1451,7 @@ const mapProjectStatusToMenu = (status) => {
                                           >
                                             <button
                                               onClick={() => toggleSection('deliverable')}
-                                              className="flex items-center space-x-2 flex-1 text-left"
+                                              className="flex items-center space-x-2 flex-1 text-left cursor-pointer"
                                             >
                                               {expandedSections.deliverable ? (
                                                 <ChevronDown className="h-2.5 w-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.6 }} />
@@ -1462,7 +1462,7 @@ const mapProjectStatusToMenu = (status) => {
                                             </button>
                                             <button
                                               onClick={() => handleAddItem('deliverable', resolveBusinessEntityId(project))}
-                                              className="p-1 rounded transition-colors"
+                                              className="p-1 rounded transition-colors cursor-pointer"
                                               style={{ backgroundColor: 'var(--bg-tertiary)' }}
                                               onMouseEnter={(e) => {
                                                 e.target.style.backgroundColor = 'var(--bg-secondary)';
@@ -1508,7 +1508,7 @@ const mapProjectStatusToMenu = (status) => {
                                                       <div className={`flex items-center space-x-1 transition-opacity ${hoveredItem === `deliverable-${deliverable._id || deliverable.id}` ? 'opacity-100' : 'opacity-0'}`}>
                                                         <div className="relative">
                                                           <button 
-                                                            className="p-1 rounded transition-colors hover:bg-opacity-20"
+                                                            className="p-1 rounded transition-colors hover:bg-opacity-20 cursor-pointer"
                                                             style={{ 
                                                               backgroundColor: 'transparent',
                                                               color: 'var(--text-secondary)'
@@ -1536,7 +1536,7 @@ const mapProjectStatusToMenu = (status) => {
                                                                   toggleActionMenu(null);
                                                                   handleEditItem({ ...deliverable, type: 'deliverable' });
                                                                 }}
-                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                                 style={{ color: 'var(--text-primary)' }}
                                                                 onMouseEnter={(e) => {
                                                                   e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1554,7 +1554,7 @@ const mapProjectStatusToMenu = (status) => {
                                                                     refreshFromDatabase();
                                                                   }
                                                                 }}
-                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                                 style={{ color: 'var(--text-primary)' }}
                                                                 onMouseEnter={(e) => {
                                                                   e.target.style.backgroundColor = 'var(--bg-tertiary)';
@@ -1585,7 +1585,7 @@ const mapProjectStatusToMenu = (status) => {
                                                                   });
                                                                   handleRemoveItem('deliverable', businessEntityId, deliverable.title, deliverable._id || deliverable.id);
                                                                 }}
-                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors"
+                                                                className="block w-full text-left px-4 py-2 text-sm rounded-md transition-colors cursor-pointer"
                                                                 style={{ color: 'var(--text-danger)' }}
                                                                 onMouseEnter={(e) => {
                                                                   e.target.style.backgroundColor = 'var(--bg-tertiary)';

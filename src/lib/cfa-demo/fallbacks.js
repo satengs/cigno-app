@@ -646,7 +646,7 @@ export class CFADemoFallbacks {
           fallback: true
         }
       ],
-      totalSections: 5,
+      totalSections: 9,
       estimatedDuration: 15,
       generatedAt: new Date(),
       generationSource: 'cfa-demo-fallback',

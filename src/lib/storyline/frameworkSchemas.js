@@ -139,5 +139,35 @@ export const FRAMEWORK_SCHEMAS = {
     title: 'Partnership Implementation',
     chartTypes: ['timeline', 'network'],
     defaultChartType: 'timeline'
+  },
+  
+  // New frameworks based on dependency structure
+  brief_scorer: {
+    agent: 'BriefScorerAgent',
+    promptKey: 'brief-scorer',
+    title: 'Brief Analysis & Scoring',
+    chartTypes: ['table', 'gauge'],
+    defaultChartType: 'table'
+  },
+  key_industry_trends: {
+    agent: 'KeyIndustryTrendsAgent',
+    promptKey: 'key-industry-trends',
+    title: 'Key Industry Trends',
+    chartTypes: ['line', 'area'],
+    defaultChartType: 'line'
+  },
+  capabilities_assessment: {
+    agent: 'CapabilitiesAssessmentAgent',
+    promptKey: 'capabilities-assessment',
+    title: 'Capabilities Assessment',
+    chartTypes: ['radar', 'bar'],
+    defaultChartType: 'radar'
+  },
+  deep_dive_strategic_option: {
+    agent: 'DeepDiveStrategicOptionAgent',
+    promptKey: 'deep-dive-strategic-option',
+    title: 'Deep Dive Strategic Option',
+    chartTypes: ['process', 'flow'],
+    defaultChartType: 'process'
   }
 };

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Check, ChevronDown, ChevronUp, Sparkles, Loader2, Plus, X } from 'lucide-react';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
 import { renderFrameworkContent } from '../../../lib/frameworkRenderer';
 import dynamic from 'next/dynamic';
@@ -12,10 +12,53 @@ const ChartPreview = dynamic(() => import('../../storyline/ChartPreview'), {
 
 const LAYOUT_OPTIONS = [
   {
+    id: 'default',
+    name: 'Default (Recommended)',
+    description: 'Automatically uses the best layout for this section type',
+    recommended: true,
+    type: 'default',
+    columns: 'auto',
+    columnConfig: [],
+    preview: (
+      <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+        <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+        <div className="flex items-center justify-center p-1 h-12">
+          <div className="w-6 h-6 rounded border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--text-primary)' }}>
+            <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>★</span>
+          </div>
+        </div>
+      </div>
+    )
+  },
+  {
+    id: 'full-width',
+    name: 'Full Width',
+    description: 'Single column, edge-to-edge narrative layout',
+    type: 'columns',
+    columns: 1,
+    columnConfig: [
+      { type: 'full', title: '', flex: 1 }
+    ],
+    preview: (
+      <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+        <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+        <div className="p-1 h-12">
+          <div className="w-full h-full rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+        </div>
+      </div>
+    )
+  },
+  {
     id: 'title-2-columns',
     name: 'Title + 2 Columns',
     description: 'Header with two equal content columns',
-    recommended: true,
+    recommended: false,
+    type: 'columns',
+    columns: 2,
+    columnConfig: [
+      { type: 'content', title: 'Content', flex: 1 },
+      { type: 'analysis', title: 'Analysis', flex: 1 }
+    ],
     preview: (
       <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -30,6 +73,15 @@ const LAYOUT_OPTIONS = [
     id: 'bcg-matrix',
     name: 'BCG Matrix',
     description: '2x2 matrix for strategic analysis',
+    type: 'grid',
+    columns: 2,
+    rows: 2,
+    columnConfig: [
+      { type: 'quadrant', title: 'High Priority', flex: 1 },
+      { type: 'quadrant', title: 'Medium Priority', flex: 1 },
+      { type: 'quadrant', title: 'Opportunities', flex: 1 },
+      { type: 'quadrant', title: 'Risks', flex: 1 }
+    ],
     preview: (
       <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="h-2 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -46,6 +98,13 @@ const LAYOUT_OPTIONS = [
     id: 'three-columns',
     name: '3 Columns',
     description: 'Three equal content columns',
+    type: 'columns',
+    columns: 3,
+    columnConfig: [
+      { type: 'content', title: 'Point 1', flex: 1 },
+      { type: 'content', title: 'Point 2', flex: 1 },
+      { type: 'content', title: 'Point 3', flex: 1 }
+    ],
     preview: (
       <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -58,22 +117,14 @@ const LAYOUT_OPTIONS = [
     )
   },
   {
-    id: 'full-width',
-    name: 'Full Width',
-    description: 'Single column full width content',
-    preview: (
-      <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-        <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
-        <div className="p-1 h-12">
-          <div className="w-full h-full rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
-        </div>
-      </div>
-    )
-  },
-  {
     id: 'timeline',
     name: 'Timeline Layout',
     description: 'Horizontal timeline with milestones',
+    type: 'timeline',
+    columns: 1,
+    columnConfig: [
+      { type: 'timeline', title: 'Timeline', flex: 1 }
+    ],
     preview: (
       <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -91,6 +142,11 @@ const LAYOUT_OPTIONS = [
     id: 'process-flow',
     name: 'Process Flow',
     description: 'Sequential process with arrows',
+    type: 'flow',
+    columns: 1,
+    columnConfig: [
+      { type: 'flow', title: 'Process Flow', flex: 1 }
+    ],
     preview: (
       <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
         <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
@@ -106,16 +162,70 @@ const LAYOUT_OPTIONS = [
   }
 ];
 
+const ALL_LAYOUT_IDS = LAYOUT_OPTIONS.map(option => option.id);
+
+const FRAMEWORK_LAYOUT_SUPPORT = {
+  // Market analysis frameworks
+  market_sizing: ['default', 'full-width', 'title-2-columns', 'three-columns'],
+  competitive_landscape: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  industry_trends: ['default', 'three-columns', 'timeline', 'full-width'],
+  key_industry_trends: ['default', 'three-columns', 'timeline', 'full-width'],
+  
+  // Capability frameworks  
+  capability_benchmark: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  capabilities_assessment: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  
+  // Competitive analysis
+  competitor_deep_dive: ['default', 'full-width'],
+  competition_analysis: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  
+  // Strategic frameworks
+  strategic_options: ['default', 'bcg-matrix', 'process-flow', 'full-width'],
+  deep_dive_strategic_option: ['default', 'bcg-matrix', 'process-flow', 'full-width'],
+  buy_vs_build: ['default', 'title-2-columns', 'process-flow', 'full-width'],
+  
+  // Product and roadmap
+  product_roadmap: ['default', 'timeline', 'process-flow', 'full-width'],
+  product_landscape: ['default', 'bcg-matrix', 'three-columns', 'full-width'],
+  
+  // Business frameworks
+  client_segments: ['default', 'three-columns', 'bcg-matrix', 'full-width'],
+  partnerships: ['default', 'process-flow', 'timeline', 'full-width'],
+  gap_analysis: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  recommendations: ['default', 'three-columns', 'process-flow', 'full-width'],
+  
+  // CFA Demo frameworks
+  cfa_demo_market_sizing: ['default', 'title-2-columns', 'three-columns', 'full-width'],
+  cfa_demo_competitive: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  cfa_demo_capability: ['default', 'title-2-columns', 'bcg-matrix', 'full-width'],
+  cfa_demo_strategic: ['default', 'bcg-matrix', 'process-flow', 'full-width'],
+  cfa_demo_partnership: ['default', 'timeline', 'process-flow', 'full-width'],
+  
+  // Utility frameworks
+  brief_scorer: ['default', 'full-width']
+};
+
+const getSupportedLayoutsForSection = (section) => {
+  if (!section) return ALL_LAYOUT_IDS;
+  if (section.framework) {
+    return FRAMEWORK_LAYOUT_SUPPORT[section.framework] || ['full-width'];
+  }
+  const hasStructuredContent = Array.isArray(section.keyPoints) || Array.isArray(section.contentBlocks);
+  return hasStructuredContent ? ALL_LAYOUT_IDS : ['full-width', 'title-2-columns'];
+};
+
 export default function DeliverableLayoutView({
   hasStoryline,
   onGenerateStoryline,
   isGeneratingStoryline,
   storyline,
   onApplyLayout,
-  selectedLayout = 'title-2-columns',
+  selectedLayout = 'full-width',
   onStorylineChange,
   onApplyLayoutToAll,
-  briefQuality = null
+  briefQuality = null,
+  onSupportedLayoutsChange,
+  onLayoutChange
 }) {
   const [previewSection, setPreviewSection] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -191,21 +301,81 @@ export default function DeliverableLayoutView({
   console.log('🔧 DeliverableLayoutView - sections count:', storyline?.sections?.length || 0);
   console.log('🔧 DeliverableLayoutView - sections:', storyline?.sections);
 
+const chartsForSection = Array.isArray(currentSection?.charts) && currentSection.charts.length > 0
+    ? currentSection.charts
+    : Array.isArray(currentSection?.sectionContent?.charts)
+      ? currentSection.sectionContent.charts
+      : [];
+
+  const citationsForSection = Array.isArray(currentSection?.citations) && currentSection.citations.length > 0
+    ? currentSection.citations
+    : Array.isArray(currentSection?.sectionContent?.citations)
+      ? currentSection.sectionContent.citations
+      : [];
+
+  const insightsForSection = Array.isArray(currentSection?.insights) && currentSection.insights.length > 0
+    ? currentSection.insights
+    : Array.isArray(currentSection?.sectionContent?.insights)
+      ? currentSection.sectionContent.insights
+      : [];
+
+  const sectionDisplayTitle = currentSection?.sectionContent?.title
+    || currentSection?.slideContent?.title
+    || currentSection?.title
+    || `Section ${currentSectionIndex + 1}`;
+
   const cleanText = (value = '') => value.replace(/^[-*#>\s]+/, '').trim();
 
-  // Helper function to render framework content (same as storyline view)
+  const supportedLayouts = useMemo(() => {
+    return getSupportedLayoutsForSection(currentSection);
+  }, [currentSection]);
+
+  useEffect(() => {
+    if (typeof onSupportedLayoutsChange === 'function') {
+      onSupportedLayoutsChange(supportedLayouts);
+    }
+  }, [supportedLayouts, onSupportedLayoutsChange]);
+
+
+  // Helper function to render framework content with full data from sectionContent
   const renderFrameworkSection = () => {
+    console.log('🔍 renderFrameworkSection called with currentSection:', currentSection);
+    console.log('🔍 currentSection.framework:', currentSection?.framework);
+    console.log('🔍 currentSection.slideContent:', currentSection?.slideContent);
+    console.log('🔍 currentSection.sectionContent:', currentSection?.sectionContent);
+    
     if (!currentSection?.framework) {
+      console.log('❌ No framework found for currentSection');
       return null;
     }
 
-    // Use the same framework renderer as storyline view
+    // Prioritize sectionContent over direct slideContent for full data in layout view
+    const slideContent = currentSection?.sectionContent?.slideContent && Object.keys(currentSection.sectionContent.slideContent || {}).length > 0
+      ? currentSection.sectionContent.slideContent
+      : currentSection?.slideContent && Object.keys(currentSection.slideContent || {}).length > 0
+        ? currentSection.slideContent
+        : null;
+
+    const displayCitations = citationsForSection;
+
+    const displayKeyPoints = Array.isArray(currentSection?.keyPoints) && currentSection.keyPoints.length > 0
+      ? currentSection.keyPoints
+      : insightsForSection;
+
+    if (!slideContent) {
+      console.log('❌ No slide content found for currentSection');
+      return null;
+    }
+
+    // Use the same framework renderer as storyline view but with full data
     const rendered = renderFrameworkContent(
       currentSection.framework, 
-      currentSection.slideContent, 
-      currentSection.keyPoints || [], 
-      currentSection.citations || []
+      slideContent, 
+      displayKeyPoints, 
+      displayCitations
     );
+    
+    console.log('🔍 renderFrameworkContent result:', rendered);
 
     return (
       <div className="framework-content">
@@ -217,22 +387,36 @@ export default function DeliverableLayoutView({
     );
   };
 
-  // Helper function to render charts (same as storyline view)
+  // Helper function to render charts with full data in layout view
   const renderCharts = () => {
-    if (!currentSection?.framework || !currentSection?.charts || currentSection.charts.length === 0) {
+    console.log('🔍 renderCharts called with currentSection:', currentSection);
+    console.log('🔍 currentSection?.framework:', currentSection?.framework);
+    console.log('🔍 currentSection?.charts:', currentSection?.charts);
+    console.log('🔍 currentSection?.sectionContent?.charts:', currentSection?.sectionContent?.charts);
+    
+    // Prioritize sectionContent charts for layout view to get full data
+    const charts = Array.isArray(currentSection?.sectionContent?.charts) && currentSection.sectionContent.charts.length > 0
+      ? currentSection.sectionContent.charts
+      : chartsForSection;
+
+    if (!currentSection?.framework || charts.length === 0) {
+      console.log('❌ No charts found for currentSection');
       return null;
     }
 
-    // Check if we have real data from AI agent
-    const hasRealChartData = currentSection.chartData || (currentSection.charts && currentSection.charts.length > 0 && currentSection.charts[0]?.config?.data);
+    // Check if we have any chart data (real or fallback)
+    const chartDataSource = currentSection.sectionContent?.chartData || currentSection.chartData;
+    const hasChartData = chartDataSource || charts.length > 0;
     
-    if (!hasRealChartData) {
+    console.log('🔍 hasChartData:', hasChartData);
+    console.log('🔍 currentSection.sectionContent?.chartData:', currentSection.sectionContent?.chartData);
+    console.log('🔍 charts[0]?.config?.data:', charts[0]?.config?.data);
+    
+    if (!hasChartData) {
+      console.log('❌ No chart data found');
       return null;
     }
 
-    // Render charts directly using ChartPreview for framework sections
-    const charts = currentSection.charts || [];
-    
     // For market_sizing, display charts in a 2x3 grid like the example
     if (currentSection.framework === 'market_sizing' && charts.length > 1) {
       return (
@@ -337,6 +521,26 @@ export default function DeliverableLayoutView({
     return [sectionKeyPoints.slice(0, midpoint), sectionKeyPoints.slice(midpoint)];
   };
 
+  const renderCompetitorDeepDiveFullWidth = () => {
+    if (!currentSection) return null;
+    return (
+      <div className="h-full overflow-y-auto space-y-6">
+        {renderFrameworkSection()}
+        {renderCharts()}
+        {citationsForSection.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Sources</h4>
+            <ul className="space-y-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {citationsForSection.map((citation, index) => (
+                <li key={index}>• {typeof citation === 'string' ? citation : citation.source || citation}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const [leftColumnPoints, rightColumnPoints] = splitKeyPoints();
 
   const deriveDescriptionBullets = () => {
@@ -378,7 +582,23 @@ export default function DeliverableLayoutView({
   };
 
   const getProcessItems = () => {
-    return processFlowItems.length ? processFlowItems.slice(0, 4) : []; // Only return actual data from backend
+    // Return actual data from backend if available
+    if (processFlowItems.length) {
+      return processFlowItems.slice(0, 4);
+    }
+    
+    // Check for process items in current section
+    if (currentSection?.processItems) {
+      return currentSection.processItems;
+    }
+    
+    // Create fallback process items for demo/preview purposes
+    return [
+      { title: 'Planning', content: 'Define objectives and scope' },
+      { title: 'Analysis', content: 'Gather and analyze data' },
+      { title: 'Solution', content: 'Develop recommendations' },
+      { title: 'Implementation', content: 'Execute plan' }
+    ];
   };
 
   const renderBullet = (point, index) => (
@@ -476,10 +696,394 @@ export default function DeliverableLayoutView({
   };
 
   const renderPreviewContent = () => {
+    console.log('🔍 renderPreviewContent called');
+    console.log('🔍 sectionSlides.length:', sectionSlides.length);
+    console.log('🔍 currentSection:', currentSection);
+    console.log('🔍 currentSection?.framework:', currentSection?.framework);
+    
     if (sectionSlides.length) {
+      console.log('🔍 Rendering slides preview');
       return renderSlidesPreview();
     }
 
+    // For framework sections, render content in the selected layout template
+    if (currentSection?.framework) {
+      console.log('🔍 Rendering framework content for:', currentSection.framework, 'with layout:', selectedLayout);
+      return renderFrameworkWithLayout();
+    }
+    
+    console.log('🔍 No framework found, falling back to layout switch');
+    
+    // Fallback: Render based on selected layout even without framework
+    console.log('🔍 No framework found, rendering with selected layout:', selectedLayout);
+    
+    return renderLayoutBasedContent();
+  };
+
+  // Render framework content using the selected layout template
+  const renderFrameworkWithLayout = () => {
+    const frameworkContent = renderFrameworkSection();
+    const frameworkCharts = renderCharts();
+    
+    // Get framework content as components
+    const contentComponent = frameworkContent;
+    const chartsComponent = frameworkCharts;
+    const insightsComponent = insightsForSection.length > 0 && (
+      <div className="space-y-2">
+        <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Key Insights</h4>
+        <ul className="space-y-1">
+          {insightsForSection.map((insight, index) => (
+            <li key={index} className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              • {insight}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+    const citationsComponent = citationsForSection.length > 0 && (
+      <div className="space-y-2">
+        <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Sources</h4>
+        <ul className="space-y-1">
+          {citationsForSection.map((citation, index) => (
+            <li key={index} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              • {typeof citation === 'string' ? citation : citation.source || citation}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+
+    // Apply the selected layout template to framework content
+    return renderLayoutBasedContent(contentComponent, chartsComponent, insightsComponent, citationsComponent);
+  };
+
+  // Get current layout configuration
+  const getCurrentLayoutConfig = () => {
+    return LAYOUT_OPTIONS.find(layout => layout.id === selectedLayout) || LAYOUT_OPTIONS[0];
+  };
+
+  // Render content based on selected layout using dynamic column system
+  const renderLayoutBasedContent = (frameworkContent = null, frameworkCharts = null, frameworkInsights = null, frameworkCitations = null) => {
+    const layoutConfig = getCurrentLayoutConfig();
+    
+    // Render layout header
+    const renderHeader = () => {
+      return (
+        <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            {sectionDisplayTitle || 'Section Title'}
+          </h1>
+        </div>
+      );
+    };
+
+    // Organize content by type for column distribution
+    const organizeContent = () => {
+      const contentItems = [];
+      
+      // Add framework content if available
+      if (frameworkContent) {
+        contentItems.push({ type: 'framework', content: frameworkContent, priority: 1 });
+      }
+      
+      if (frameworkCharts) {
+        contentItems.push({ type: 'charts', content: frameworkCharts, priority: 2 });
+      }
+      
+      if (frameworkInsights) {
+        contentItems.push({ type: 'insights', content: frameworkInsights, priority: 3 });
+      }
+      
+      if (frameworkCitations) {
+        contentItems.push({ type: 'citations', content: frameworkCitations, priority: 4 });
+      }
+      
+      // Add fallback content if no framework content
+      if (!frameworkContent) {
+        if (sectionKeyPoints.length > 0) {
+          contentItems.push({ 
+            type: 'keypoints', 
+            content: (
+              <div className="space-y-3">
+                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Key Points</h3>
+                <ul className="space-y-2">
+                  {sectionKeyPoints.map((point, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0" style={{ backgroundColor: 'var(--text-secondary)' }}></span>
+                      <span style={{ color: 'var(--text-primary)' }}>{point.content}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ), 
+            priority: 1 
+          });
+        }
+        
+        if (renderParagraph()) {
+          contentItems.push({ 
+            type: 'text', 
+            content: renderParagraph(), 
+            priority: 1 
+          });
+        }
+      }
+      
+      return contentItems.sort((a, b) => a.priority - b.priority);
+    };
+
+    // Render dynamic column layout
+    const renderDynamicLayout = () => {
+      const contentItems = organizeContent();
+      
+      if (layoutConfig.type === 'default') {
+        return renderDefaultLayout(contentItems);
+      }
+      
+      if (layoutConfig.type === 'timeline') {
+        return renderTimelineLayout(contentItems);
+      }
+      
+      if (layoutConfig.type === 'flow') {
+        return renderFlowLayout(contentItems);
+      }
+      
+      if (layoutConfig.type === 'grid') {
+        return renderGridLayout(contentItems, layoutConfig);
+      }
+      
+      // Default: column-based layout
+      return renderColumnLayout(contentItems, layoutConfig);
+    };
+
+    return (
+      <div className="h-full">
+        {renderHeader()}
+        <div className="h-4/5 overflow-y-auto">
+          {renderDynamicLayout()}
+        </div>
+      </div>
+    );
+  };
+
+  // Render default layout - automatically picks the best layout for the section
+  const renderDefaultLayout = (contentItems) => {
+    // Get the recommended layout for the current section
+    const recommendedLayoutId = getRecommendedLayoutForSection(currentSection);
+    const recommendedLayoutConfig = LAYOUT_OPTIONS.find(layout => layout.id === recommendedLayoutId);
+    
+    if (!recommendedLayoutConfig || recommendedLayoutConfig.id === 'default') {
+      // Fallback to full-width if we can't find a specific recommendation
+      const fullWidthConfig = LAYOUT_OPTIONS.find(layout => layout.id === 'full-width');
+      return renderColumnLayout(contentItems, fullWidthConfig);
+    }
+    
+    // Render using the recommended layout's logic
+    console.log(`🎯 Default layout using recommended: ${recommendedLayoutId} for framework: ${currentSection?.framework}`);
+    
+    if (recommendedLayoutConfig.type === 'timeline') {
+      return renderTimelineLayout(contentItems);
+    }
+    
+    if (recommendedLayoutConfig.type === 'flow') {
+      return renderFlowLayout(contentItems);
+    }
+    
+    if (recommendedLayoutConfig.type === 'grid') {
+      return renderGridLayout(contentItems, recommendedLayoutConfig);
+    }
+    
+    // Default to column-based layout
+    return renderColumnLayout(contentItems, recommendedLayoutConfig);
+  };
+
+  // Render column-based layout
+  const renderColumnLayout = (contentItems, layoutConfig) => {
+    const { columns, columnConfig } = layoutConfig;
+    const gridClass = `grid grid-cols-${columns} gap-8`;
+    
+    return (
+      <div className={gridClass}>
+        {columnConfig.map((colConfig, index) => {
+          const columnContent = distributeContentToColumn(contentItems, index, columnConfig.length, colConfig);
+          
+          return (
+            <div key={index} className="space-y-4">
+              {colConfig.title && (
+                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {colConfig.title}
+                </h3>
+              )}
+              <div className="space-y-4">
+                {columnContent}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Render grid layout (for BCG matrix)
+  const renderGridLayout = (contentItems, layoutConfig) => {
+    const { columns, rows, columnConfig } = layoutConfig;
+    const gridClass = `grid grid-cols-${columns} gap-4`;
+    
+    return (
+      <div className={gridClass}>
+        {columnConfig.map((quadrantConfig, index) => {
+          const colors = [
+            { bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', text: 'text-green-700' },
+            { bg: 'bg-yellow-50', border: 'border-yellow-200', title: 'text-yellow-800', text: 'text-yellow-700' },
+            { bg: 'bg-blue-50', border: 'border-blue-200', title: 'text-blue-800', text: 'text-blue-700' },
+            { bg: 'bg-red-50', border: 'border-red-200', title: 'text-red-800', text: 'text-red-700' }
+          ];
+          const color = colors[index % 4];
+          
+          const quadrantContent = distributeContentToColumn(contentItems, index, columnConfig.length, quadrantConfig);
+          
+          return (
+            <div key={index} className={`border ${color.border} rounded p-4 ${color.bg}`}>
+              <h3 className={`font-semibold ${color.title}`}>
+                {quadrantConfig.title}
+              </h3>
+              <div className={`text-sm ${color.text} mt-2`}>
+                {quadrantContent || <span>Add content for this quadrant</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Render timeline layout
+  const renderTimelineLayout = (contentItems) => {
+    const timelineItems = getTimelineItems();
+    
+    if (timelineItems.length === 0) {
+      return (
+        <div className="space-y-6">
+          {contentItems.map((item, index) => (
+            <div key={index}>{item.content}</div>
+          ))}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex items-center">
+        <div className="w-full">
+          <div className="flex items-center justify-between relative">
+            <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+            {timelineItems.map((item, index) => (
+              <div key={index} className="relative bg-white px-2">
+                <div className="w-4 h-4 rounded-full mx-auto mb-3" style={{ backgroundColor: 'var(--text-primary)' }}></div>
+                <div className="text-center min-w-0">
+                  <h4 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                    {item.title || `Milestone ${index + 1}`}
+                  </h4>
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {item.content}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render flow layout
+  const renderFlowLayout = (contentItems) => {
+    const processItems = getProcessItems();
+    
+    if (processItems.length === 0) {
+      return (
+        <div className="space-y-6">
+          {contentItems.map((item, index) => (
+            <div key={index}>{item.content}</div>
+          ))}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex items-center justify-center">
+        <div className="flex items-center space-x-4">
+          {processItems.map((item, index) => (
+            <React.Fragment key={index}>
+              <div className="text-center">
+                <div className="w-24 h-16 rounded flex items-center justify-center mx-auto mb-2" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {item.title || `Step ${index + 1}`}
+                  </span>
+                </div>
+                <p className="text-xs max-w-24" style={{ color: 'var(--text-secondary)' }}>
+                  {item.content || `Step ${index + 1} description.`}
+                </p>
+              </div>
+              {index < processItems.length - 1 && (
+                <div className="flex items-center">
+                  <div className="w-8 h-0.5" style={{ backgroundColor: 'var(--border-secondary)' }}></div>
+                  <div className="w-2 h-2 border-t-2 border-r-2 transform rotate-45 -ml-1" style={{ borderColor: 'var(--border-secondary)' }}></div>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Distribute content to columns intelligently
+  const distributeContentToColumn = (contentItems, columnIndex, totalColumns, columnConfig) => {
+    if (totalColumns === 1) {
+      // Single column: show all content
+      return contentItems.map((item, index) => (
+        <div key={index}>{item.content}</div>
+      ));
+    }
+    
+    if (totalColumns === 2) {
+      // Two columns: content vs analysis
+      if (columnIndex === 0) {
+        // Left column: framework content, text, keypoints
+        return contentItems
+          .filter(item => ['framework', 'text', 'keypoints'].includes(item.type))
+          .map((item, index) => <div key={index}>{item.content}</div>);
+      } else {
+        // Right column: charts, insights, citations
+        return contentItems
+          .filter(item => ['charts', 'insights', 'citations'].includes(item.type))
+          .map((item, index) => <div key={index}>{item.content}</div>);
+      }
+    }
+    
+    if (totalColumns === 3) {
+      // Three columns: distribute evenly
+      const itemsPerColumn = Math.ceil(contentItems.length / 3);
+      const startIndex = columnIndex * itemsPerColumn;
+      const endIndex = startIndex + itemsPerColumn;
+      
+      return contentItems
+        .slice(startIndex, endIndex)
+        .map((item, index) => <div key={index}>{item.content}</div>);
+    }
+    
+    // Fallback: show content for this column index
+    if (contentItems[columnIndex]) {
+      return <div>{contentItems[columnIndex].content}</div>;
+    }
+    
+    return null;
+  };
+
+  // Helper functions for special layout types already defined above
+
+  // Legacy switch statement fallback (can be removed once tested)
+  const renderLayoutBasedContentLegacy = (frameworkContent = null, frameworkCharts = null, frameworkInsights = null, frameworkCitations = null) => {
     switch (selectedLayout) {
       case 'title-2-columns': {
         const leftHeading = cleanText(
@@ -492,20 +1096,34 @@ export default function DeliverableLayoutView({
           <div className="h-full">
             <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {currentSection?.title || storyline?.title || 'Section Title'}
+                {sectionDisplayTitle || 'Section Title'}
               </h1>
               <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
                 Section {currentSectionIndex + 1} of {storyline?.sections?.length || 1}
               </p>
             </div>
-            {/* Render framework content if available, otherwise fall back to layout */}
-            {currentSection?.framework ? (
-              <div className="h-4/5 overflow-y-auto">
-                {/* Render the complete framework content (same as storyline view) */}
-                {renderFrameworkSection()}
-                
-                {/* Render charts for framework sections */}
-                {renderCharts()}
+            
+            {/* Use framework content if available, otherwise use fallback data */}
+            {frameworkContent ? (
+              <div className="grid grid-cols-2 gap-8 h-4/5">
+                <div className="space-y-4">
+                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Content
+                  </h3>
+                  <div className="space-y-4">
+                    {frameworkContent}
+                    {frameworkInsights}
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Analysis
+                  </h3>
+                  <div className="space-y-4">
+                    {frameworkCharts}
+                    {frameworkCitations}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-8 h-4/5">
@@ -634,20 +1252,21 @@ export default function DeliverableLayoutView({
           <div className="h-full">
             <div className="border-b pb-4 mb-6" style={{ borderColor: 'var(--border-primary)' }}>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {currentSection?.title || storyline?.title || ''}
+                {sectionDisplayTitle || 'Section Title'}
               </h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-              </p>
             </div>
-            {/* Render framework content if available, otherwise fall back to layout */}
-            {currentSection?.framework ? (
+            
+            {/* Use framework content if available, otherwise use fallback data */}
+            {frameworkContent ? (
+              <div className="space-y-6 h-4/5 overflow-y-auto">
+                {frameworkContent}
+                {frameworkCharts}
+                {frameworkInsights}
+                {frameworkCitations}
+              </div>
+            ) : currentSection?.framework === 'competitor_deep_dive' ? (
               <div className="h-4/5 overflow-y-auto">
-                {/* Render the complete framework content (same as storyline view) */}
-                {renderFrameworkSection()}
-                
-                {/* Render charts for framework sections */}
-                {renderCharts()}
+                {renderCompetitorDeepDiveFullWidth()}
               </div>
             ) : (
               <div className="space-y-6 h-4/5 overflow-y-auto">
@@ -680,9 +1299,6 @@ export default function DeliverableLayoutView({
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 {currentSection?.title || storyline?.title || 'Timeline'}
               </h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-              </p>
             </div>
             {/* Render framework content if available, otherwise fall back to layout */}
             {currentSection?.framework ? (
@@ -727,9 +1343,6 @@ export default function DeliverableLayoutView({
               <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 {currentSection?.title || storyline?.title || 'Process Flow'}
               </h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-              </p>
             </div>
             {/* Render framework content if available, otherwise fall back to layout */}
             {currentSection?.framework ? (
@@ -868,6 +1481,58 @@ export default function DeliverableLayoutView({
     // Propagate the change up to parent
     onStorylineChange(updatedStoryline);
     console.log(`✅ Applied layout ${selectedLayout} to section: ${sectionId}`);
+  };
+
+  const handleResetSectionLayout = (sectionId) => {
+    console.log(`Resetting layout for section: ${sectionId}`);
+    
+    if (!storyline || !onStorylineChange) {
+      console.warn('Cannot reset layout: storyline or onStorylineChange not available');
+      return;
+    }
+    
+    // Find the section to get its framework and determine recommended layout
+    const section = storyline.sections?.find(s => s.id === sectionId || s.title === sectionId);
+    const recommendedLayout = getRecommendedLayoutForSection(section);
+    
+    // Update the storyline to set recommended layout for this specific section
+    const updatedStoryline = {
+      ...storyline,
+      sections: storyline.sections?.map(section => {
+        if (section.id === sectionId || section.title === sectionId) {
+          return {
+            ...section,
+            layout: recommendedLayout,
+            layoutResetAt: new Date().toISOString(),
+            layoutAppliedAt: new Date().toISOString()
+          };
+        }
+        return section;
+      }) || []
+    };
+    
+    // Propagate the change up to parent
+    onStorylineChange(updatedStoryline);
+    console.log(`✅ Reset layout for section: ${sectionId} to recommended: ${recommendedLayout}`);
+  };
+
+  // Helper function to get recommended layout for a section
+  const getRecommendedLayoutForSection = (section) => {
+    if (!section?.framework) {
+      return 'full-width'; // Default for sections without framework
+    }
+    
+    // Get supported layouts for this framework
+    const supportedLayouts = getSupportedLayoutsForSection(section);
+    
+    // Skip 'default' and return the first actual layout (usually the recommended one)
+    const actualLayouts = supportedLayouts.filter(layout => layout !== 'default');
+    if (actualLayouts.length > 0) {
+      return actualLayouts[0];
+    }
+    
+    // Fallback to full-width if no specific recommendations
+    return 'full-width';
   };
 
   const updateStorylineSection = (sectionId, updater) => {
@@ -1014,7 +1679,7 @@ export default function DeliverableLayoutView({
             </div>
           </div>
         </div>
-        
+
         <div className="p-8 h-full overflow-y-auto pb-20">
           <div className="max-w-4xl mx-auto">
             {/* Slide Preview */}
@@ -1177,9 +1842,6 @@ export default function DeliverableLayoutView({
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                       {currentSection?.title || storyline?.title || 'Timeline'}
                     </h1>
-                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-                    </p>
                   </div>
                   <div className="h-4/5 flex items-center">
                     <div className="w-full">
@@ -1210,9 +1872,6 @@ export default function DeliverableLayoutView({
                     <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                       {currentSection?.title || storyline?.title || 'Process Flow'}
                     </h1>
-                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      {LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.description}
-                    </p>
                   </div>
                   <div className="h-4/5 flex items-center justify-center">
                     <div className="flex items-center space-x-4">
@@ -1255,7 +1914,7 @@ export default function DeliverableLayoutView({
                     { id: '4', title: 'Technical Architecture', status: 'draft', slides: 1 },
                     { id: '5', title: 'Risk Assessment & Compliance', status: 'draft', slides: 1 },
                     { id: '6', title: 'Implementation Roadmap', status: 'draft', slides: 1 }
-                  ]).slice(0, 6).map((section, index) => {
+                  ]).map((section, index) => {
                     const sectionId = section.id || section.title || `section-${index}`;
                     const slideState = slideGenerationState[sectionId] || {};
                     const hasSlides = Array.isArray(section.slides) && section.slides.length > 0;
@@ -1306,8 +1965,37 @@ export default function DeliverableLayoutView({
                             onClick={() => setPreviewSection(sectionId)}
                           >
                             {/* Section Header */}
-                            <div className="p-1.5 pr-8">
-                              <div className="text-xs font-medium truncate leading-tight" style={{ color: 'var(--text-primary)' }}>
+                            <div className="p-1.5 pr-8 relative">
+                              {/* Action buttons in top right */}
+                              <div className="absolute top-1 right-1 flex items-center gap-1">
+                                {/* Apply current selected layout to this section */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleApplyLayoutToSection(sectionId);
+                                  }}
+                                  className="w-4 h-4 bg-blue-100 hover:bg-blue-200 rounded-full flex items-center justify-center transition-colors"
+                                  title={`Apply "${LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.name || selectedLayout}" layout to this section`}
+                                >
+                                  <Check className="w-2.5 h-2.5 text-blue-600" />
+                                </button>
+                                
+                                {/* Reset to recommended layout button */}
+                                {section.layout && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResetSectionLayout(sectionId);
+                                    }}
+                                    className="w-4 h-4 bg-red-100 hover:bg-red-200 rounded-full flex items-center justify-center transition-colors"
+                                    title="Reset to recommended layout for this section type"
+                                  >
+                                    <X className="w-2.5 h-2.5 text-red-600" />
+                                  </button>
+                                )}
+                              </div>
+                              
+                              <div className="text-xs font-medium break-words leading-tight pr-12" style={{ color: 'var(--text-primary)' }}>
                                 {section.title || `Section ${index + 1}`}
                               </div>
                               {!collapsedSections.has(sectionId) && (

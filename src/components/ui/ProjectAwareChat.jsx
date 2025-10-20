@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, X, Bot, User, Loader2, MessageCircle, FolderOpen } from 'lucide-react';
+import { Send, X, Bot, User, Loader2, MessageCircle, FolderOpen, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 const ProjectAwareChat = ({ 
@@ -219,10 +219,10 @@ const ProjectAwareChat = ({
           {currentContext && (
             <button
               onClick={clearConversation}
-              className="p-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+              className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
               title="Clear conversation"
             >
-              Clear
+              <Trash2 className="h-4 w-4" />
             </button>
           )}
           <button 
