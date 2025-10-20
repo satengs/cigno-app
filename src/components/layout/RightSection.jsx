@@ -22,7 +22,8 @@ import {
   Download,
   FileText,
   Presentation,
-  Sheet
+  Sheet,
+  Trash2
 } from 'lucide-react';
 import { authService } from '../../lib/auth/AuthService';
 import { useStorylineExport } from '../../lib/export/exportUtils';
@@ -97,6 +98,10 @@ export default function RightSection({
   const [currentChatContext, setCurrentChatContext] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const messagesEndRef = useRef(null);
+  
+  // Temporary narrative state (not persisted in chat history)
+  const [currentNarrative, setCurrentNarrative] = useState(null);
+  const narrativeTimeoutRef = useRef(null);
 
   // Resize state
   const [rightSectionWidth, setRightSectionWidth] = useState(320);
@@ -116,6 +121,15 @@ export default function RightSection({
   // Set isClient to true after hydration
   useEffect(() => {
     setIsClient(true);
+  }, []);
+
+  // Cleanup narrative timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (narrativeTimeoutRef.current) {
+        clearTimeout(narrativeTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Force close other sections when AI assistant opens
@@ -384,19 +398,27 @@ export default function RightSection({
       timestamp: Date.now()
     };
 
-    // Add message to UI immediately
-    setMessages(prev => [...prev, userMessage]);
+    // Add message using ChatContextManager (handles deduplication)
+    const addedSuccessfully = chatContextManager.addMessageToCurrentChat(userMessage);
     
-    // Save to context if available
-    if (currentChatContext) {
-      currentChatContext.messages.push(userMessage);
+    if (addedSuccessfully) {
+      // Update local state with the current context messages
+      const updatedContext = chatContextManager.getCurrentContext();
+      setMessages(updatedContext?.messages || []);
     }
     
     const currentInputValue = inputValue;
     setInputValue('');
     setIsLoading(true);
 
+    // Start narrative progression
+    showNarrative("🤔 Thinking about your question...");
+    startNarrativeTimeout();
+
     try {
+      // Update narrative after a moment
+      setTimeout(() => updateNarrative("🔍 Analyzing project context..."), 800);
+      setTimeout(() => updateNarrative("💡 Preparing a thoughtful response..."), 1600);
       // Call the simple chat API with project context
       // For deliverables, use the parent project ID for consistent history
       const projectId = currentChatContext?.projectId || 
@@ -473,12 +495,16 @@ export default function RightSection({
           isStreaming: false
         };
         
-        // Add AI response to UI immediately
-        setMessages(prev => [...prev, aiResponse]);
+        // Clear narrative before adding response
+        clearNarrative();
         
-        // Save to context if available
-        if (currentChatContext) {
-          currentChatContext.messages.push(aiResponse);
+        // Add AI response using ChatContextManager (handles deduplication)
+        const aiAddedSuccessfully = chatContextManager.addMessageToCurrentChat(aiResponse);
+        
+        if (aiAddedSuccessfully) {
+          // Update local state with the current context messages
+          const updatedContext = chatContextManager.getCurrentContext();
+          setMessages(updatedContext?.messages || []);
         }
         
         console.log('✅ Chat message sent successfully:', assistantMessage);
@@ -497,15 +523,21 @@ export default function RightSection({
         isError: true
       };
       
-      // Add error message to UI immediately
-      setMessages(prev => [...prev, errorResponse]);
+      // Clear narrative before adding error
+      clearNarrative();
       
-      // Save to context if available
-      if (currentChatContext) {
-        currentChatContext.messages.push(errorResponse);
+      // Add error message using ChatContextManager (handles deduplication)
+      const errorAddedSuccessfully = chatContextManager.addMessageToCurrentChat(errorResponse);
+      
+      if (errorAddedSuccessfully) {
+        // Update local state with the current context messages
+        const updatedContext = chatContextManager.getCurrentContext();
+        setMessages(updatedContext?.messages || []);
       }
     } finally {
       setIsLoading(false);
+      // Ensure narrative is cleared even if something goes wrong
+      clearNarrative();
     }
   };
 
@@ -514,6 +546,72 @@ export default function RightSection({
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const clearChatContext = async () => {
+    if (!currentChatContext) return;
+
+    try {
+      console.log('🗑️ Clearing chat context for project:', currentChatContext.projectName);
+      
+      // Clear the chat context using ChatContextManager
+      const success = chatContextManager.clearCurrentChat();
+      
+      if (success) {
+        // Update local state to reflect the cleared context
+        const clearedContext = chatContextManager.getCurrentContext();
+        setCurrentChatContext(clearedContext);
+        setMessages(clearedContext?.messages || []);
+        console.log('✅ Chat context cleared successfully');
+      } else {
+        console.error('❌ Failed to clear chat context');
+      }
+    } catch (error) {
+      console.error('❌ Error clearing chat context:', error);
+    }
+  };
+
+  // Narrative management functions
+  const showNarrative = (text) => {
+    console.log('📝 Showing narrative:', text);
+    setCurrentNarrative({
+      id: `narrative-${Date.now()}`,
+      text: text,
+      timestamp: Date.now()
+    });
+  };
+
+  const clearNarrative = () => {
+    console.log('🗑️ Clearing narrative');
+    setCurrentNarrative(null);
+    if (narrativeTimeoutRef.current) {
+      clearTimeout(narrativeTimeoutRef.current);
+      narrativeTimeoutRef.current = null;
+    }
+  };
+
+  const updateNarrative = (newText) => {
+    console.log('🔄 Updating narrative:', newText);
+    if (currentNarrative) {
+      setCurrentNarrative(prev => ({
+        ...prev,
+        text: newText,
+        timestamp: Date.now()
+      }));
+    } else {
+      showNarrative(newText);
+    }
+  };
+
+  // Auto-clear narrative after timeout (fallback safety)
+  const startNarrativeTimeout = (duration = 30000) => {
+    if (narrativeTimeoutRef.current) {
+      clearTimeout(narrativeTimeoutRef.current);
+    }
+    narrativeTimeoutRef.current = setTimeout(() => {
+      console.log('⏰ Narrative timeout reached, clearing');
+      clearNarrative();
+    }, duration);
   };
 
   const handleTextareaChange = (e) => {
@@ -1242,6 +1340,18 @@ export default function RightSection({
             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Chat Assistant</span>
           </div>
           <div className="flex items-center space-x-2">
+            {currentChatContext && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent section toggle
+                  clearChatContext();
+                }}
+                className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                title="Clear chat history"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
             {expandedSections.aiAssistant ? (
               <ChevronDown className="h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
             ) : (
@@ -1344,12 +1454,14 @@ export default function RightSection({
                 );
               })}
               
-              {isLoading && (
+              {currentNarrative && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 px-4 py-2 rounded-lg">
+                  <div className="px-4 py-2 rounded-lg" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
                     <div className="flex items-center space-x-2">
                       <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--text-secondary)' }} />
-                      <span className="text-sm">AI is thinking...</span>
+                      <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {currentNarrative.text}
+                      </span>
                     </div>
                   </div>
                 </div>
