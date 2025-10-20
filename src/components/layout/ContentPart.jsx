@@ -40,7 +40,7 @@ const DELIVERABLE_TYPES = [
   'Other'
 ];
 
-const ALL_LAYOUT_IDS = ['title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow'];
+const ALL_LAYOUT_IDS = ['full-width', 'title-2-columns', 'bcg-matrix', 'three-columns', 'timeline', 'process-flow'];
 
 // Framework dependencies mapping - from your provided structure
 // Note: brief_scorer is not part of pipeline, it's just deliverable data
@@ -918,7 +918,7 @@ export default function ContentPart({
     return list.map((item, index) => normalizeDeliverable(item, index));
   }, [normalizeDeliverable]);
 
-  const normalizeSlideForState = useCallback((slide, index = 0, fallbackLayout = 'title-2-columns') => {
+  const normalizeSlideForState = useCallback((slide, index = 0, fallbackLayout = 'full-width') => {
     const toArray = (value) => {
       if (!value) return [];
       if (Array.isArray(value)) return value;
@@ -1000,7 +1000,7 @@ export default function ContentPart({
 
     const layout = typeof section.layout === 'string' && section.layout.trim()
       ? section.layout.trim()
-      : 'title-2-columns';
+      : 'full-width';
 
     return {
     id: section.id || section._id || `section_${index + 1}`,
@@ -1085,7 +1085,7 @@ export default function ContentPart({
       sections: (storyline.sections || []).map((section, index) => {
         const layout = typeof section.layout === 'string' && section.layout.trim()
           ? section.layout.trim()
-          : 'title-2-columns';
+          : 'full-width';
 
         return {
         id: section.id || `section_${index + 1}`,
@@ -3168,7 +3168,7 @@ export default function ContentPart({
     try {
       for (const section of sectionsToProcess) {
         const sectionId = section.id || section._id || section.title || `section_${completed + 1}`;
-        const layoutForSection = section.layout || selectedLayout || 'title-2-columns';
+        const layoutForSection = section.layout || selectedLayout || 'full-width';
         const sectionKey = section.id || section._id || section.title || sectionId;
 
         try {

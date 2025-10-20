@@ -31,6 +31,24 @@ const LAYOUT_OPTIONS = [
     )
   },
   {
+    id: 'full-width',
+    name: 'Full Width',
+    description: 'Single column, edge-to-edge narrative layout',
+    type: 'columns',
+    columns: 1,
+    columnConfig: [
+      { type: 'full', title: '', flex: 1 }
+    ],
+    preview: (
+      <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
+        <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
+        <div className="p-1 h-12">
+          <div className="w-full h-full rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
+        </div>
+      </div>
+    )
+  },
+  {
     id: 'title-2-columns',
     name: 'Title + 2 Columns',
     description: 'Header with two equal content columns',
@@ -94,24 +112,6 @@ const LAYOUT_OPTIONS = [
           <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
           <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
           <div className="flex-1 rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
-        </div>
-      </div>
-    )
-  },
-  {
-    id: 'full-width',
-    name: 'Full Width',
-    description: 'Single column full width content',
-    type: 'columns',
-    columns: 1,
-    columnConfig: [
-      { type: 'full', title: '', flex: 1 }
-    ],
-    preview: (
-      <div className="w-full h-full rounded border" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}>
-        <div className="h-3 rounded-t border-b mb-1" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}></div>
-        <div className="p-1 h-12">
-          <div className="w-full h-full rounded" style={{ backgroundColor: 'var(--bg-primary)' }}></div>
         </div>
       </div>
     )
@@ -220,7 +220,7 @@ export default function DeliverableLayoutView({
   isGeneratingStoryline,
   storyline,
   onApplyLayout,
-  selectedLayout = 'title-2-columns',
+  selectedLayout = 'full-width',
   onStorylineChange,
   onApplyLayoutToAll,
   briefQuality = null,

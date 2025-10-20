@@ -191,8 +191,9 @@ const FRAMEWORK_RENDERERS = {
       
       let html = '<div class="competitive-landscape-content">';
       
-      // Handle the player_categories structure from the AI agent (based on actual agent config)
-      if (slideContent.player_categories && Array.isArray(slideContent.player_categories)) {
+      // Handle both player_categories and competitive_landscape_table structures
+      const competitiveCategories = slideContent.player_categories || slideContent.competitive_landscape_table;
+      if (competitiveCategories && Array.isArray(competitiveCategories)) {
         html += '<div class="competitive-landscape-table mb-6">';
         html += '<h3 class="text-lg font-semibold mb-4">Competitive Landscape by Category</h3>';
         
@@ -210,7 +211,7 @@ const FRAMEWORK_RENDERERS = {
         html += '</thead>';
         html += '<tbody class="bg-white divide-y divide-gray-200">';
         
-        slideContent.player_categories.forEach((category, index) => {
+        competitiveCategories.forEach((category, index) => {
           const threatColor = category.threat_level === 'HIGH' ? 'text-red-600 bg-red-100' : 
                             category.threat_level === 'MEDIUM-HIGH' ? 'text-orange-600 bg-orange-100' : 
                             category.threat_level === 'MEDIUM' ? 'text-yellow-600 bg-yellow-100' : 
@@ -219,10 +220,10 @@ const FRAMEWORK_RENDERERS = {
           html += `<tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
           
           // Category Name
-          html += `<td class="px-4 py-3 text-sm font-medium text-gray-900">${category.category_name || 'N/A'}</td>`;
+          html += `<td class="px-4 py-3 text-sm font-medium text-gray-900">${category.category_name || category.competition_category || 'N/A'}</td>`;
           
           // Business Model Today
-          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.business_model_today || 'N/A'}</td>`;
+          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.business_model_today || category.business_model_definition || 'N/A'}</td>`;
           
           // Threat Level
           html += `<td class="px-4 py-3 text-sm">`;
@@ -247,7 +248,7 @@ const FRAMEWORK_RENDERERS = {
           html += `</td>`;
           
           // Future Outlook
-          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.future_outlook || 'N/A'}</td>`;
+          html += `<td class="px-4 py-3 text-sm text-gray-700">${category.future_outlook || category.category_outlook || 'N/A'}</td>`;
           
           html += `</tr>`;
         });
@@ -259,11 +260,12 @@ const FRAMEWORK_RENDERERS = {
       }
       
       // Additional details section for each category
-      if (slideContent.competitive_landscape_table && Array.isArray(slideContent.competitive_landscape_table)) {
+      const categoriesData = slideContent.competitive_landscape_table || slideContent.player_categories;
+      if (categoriesData && Array.isArray(categoriesData)) {
         html += '<div class="category-details mt-6">';
         html += '<h3 class="text-lg font-semibold mb-4">Detailed Category Analysis</h3>';
         
-        slideContent.player_categories.forEach((category, index) => {
+        categoriesData.forEach((category, index) => {
           html += `<div class="category-detail mb-6 p-4 bg-gray-50 rounded-lg">`;
           html += `<h4 class="font-medium text-gray-800 mb-3">${category.competition_category || 'Unknown Category'}</h4>`;
           
@@ -1514,7 +1516,8 @@ function generateChartsFromSlideContent(slideContent, framework, sectionIndex) {
       break;
       
     case 'competitive_landscape':
-      if (slideContent.player_categories && Array.isArray(slideContent.player_categories)) {
+      const competitiveData = slideContent.competitive_landscape_table || slideContent.player_categories;
+      if (competitiveData && Array.isArray(competitiveData)) {
         // Create a competitive landscape chart based on threat levels
         charts.push({
           id: `chart_${sectionIndex + 1}`,
@@ -1527,7 +1530,7 @@ function generateChartsFromSlideContent(slideContent, framework, sectionIndex) {
         });
         
         // Create a market share chart if data is available
-        const hasMarketShareData = slideContent.competitive_landscape_table.some(cat => cat.market_share_estimate);
+        const hasMarketShareData = competitiveData.some(cat => cat.market_share_estimate);
         if (hasMarketShareData) {
           charts.push({
             id: `chart_${sectionIndex + 1}_market_share`,
@@ -1721,9 +1724,12 @@ function convertCompetitiveLandscapeToChartData(slideContent) {
   const labels = [];
   const datasets = [];
   
-  if (slideContent.player_categories && Array.isArray(slideContent.player_categories)) {
-    slideContent.player_categories.forEach(category => {
-      labels.push(category.category_name || 'Unknown Category');
+  // Handle both player_categories and competitive_landscape_table structures
+  const competitiveData = slideContent.player_categories || slideContent.competitive_landscape_table;
+  if (competitiveData && Array.isArray(competitiveData)) {
+    competitiveData.forEach(category => {
+      const categoryName = category.category_name || category.competition_category || 'Unknown Category';
+      labels.push(categoryName);
       
       // Convert threat level to numeric value
       const threatValue = category.threat_level === 'HIGH' ? 4 : 
@@ -1736,7 +1742,7 @@ function convertCompetitiveLandscapeToChartData(slideContent) {
                         category.threat_level === 'MEDIUM' ? '#eab308' : '#22c55e';
       
       datasets.push({
-        label: category.category_name || 'Unknown Category',
+        label: categoryName,
         data: [threatValue],
         backgroundColor: threatColor,
         borderColor: threatColor,
@@ -1759,10 +1765,13 @@ function convertCompetitiveLandscapeMarketShareToChartData(slideContent) {
   const data = [];
   const backgroundColor = [];
   
-  if (slideContent.competitive_landscape_table && Array.isArray(slideContent.competitive_landscape_table)) {
-    slideContent.competitive_landscape_table.forEach((category, index) => {
+  // Handle both player_categories and competitive_landscape_table structures
+  const competitiveData = slideContent.competitive_landscape_table || slideContent.player_categories;
+  if (competitiveData && Array.isArray(competitiveData)) {
+    competitiveData.forEach((category, index) => {
       if (category.market_share_estimate) {
-        labels.push(category.competition_category || 'Unknown Category');
+        const categoryName = category.competition_category || category.category_name || 'Unknown Category';
+        labels.push(categoryName);
         data.push(category.market_share_estimate);
         backgroundColor.push(`hsl(${(index * 60) % 360}, 70%, 50%)`);
       }

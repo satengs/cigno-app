@@ -1,7 +1,5 @@
-import React, { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import React from 'react';
 import SectionNavigator from '../../storyline/SectionNavigator';
-import RegenerationConfirmModal from '../../ui/RegenerationConfirmModal';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
 
 
@@ -26,7 +24,6 @@ export default function DeliverableStorylineView({
 }) {
   const normalizedBriefQuality = normalizeScoreValue(briefQuality);
   const canGenerateStoryline = normalizedBriefQuality !== null && normalizedBriefQuality >= 7.5;
-  const [showRegenerationModal, setShowRegenerationModal] = useState(false);
   if (!generatedStoryline) {
     const disabled = isGeneratingStoryline || !canGenerateStoryline;
     return (
@@ -81,19 +78,6 @@ export default function DeliverableStorylineView({
             Reset
           </button>
           <button
-            onClick={() => setShowRegenerationModal(true)}
-            disabled={isGeneratingStoryline || isSavingStoryline}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-sm text-sm font-medium transition-colors ${
-              isGeneratingStoryline || isSavingStoryline
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-            title="Regenerate storyline while preserving locked sections"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span>Regenerate</span>
-          </button>
-          <button
             onClick={onSaveStoryline}
             disabled={!storylineDirty || isSavingStoryline}
             className={`px-4 py-2 rounded-sm text-sm font-medium ${
@@ -121,18 +105,6 @@ export default function DeliverableStorylineView({
           viewMode="storyline"
         />
       </div>
-
-      {/* Regeneration Confirmation Modal */}
-      {showRegenerationModal && (
-        <RegenerationConfirmModal
-          storyline={generatedStoryline}
-          onConfirm={(options) => {
-            setShowRegenerationModal(false);
-            onRegenerateStoryline?.(options);
-          }}
-          onCancel={() => setShowRegenerationModal(false)}
-        />
-      )}
     </div>
   );
 }

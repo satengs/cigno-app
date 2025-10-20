@@ -158,9 +158,9 @@ export async function POST(request) {
       console.log(`🔑 API Key: ${AI_CONFIG.apiKey ? 'Present' : 'Missing'}`);
       console.log(`📦 Payload:`, JSON.stringify(agentPayload, null, 2));
       
-      // Add timeout and better error handling
+      // Add timeout and better error handling (allow more time for real agent responses)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 2 minute timeout
       
       const response = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`, {
         method: 'POST',
@@ -682,4 +682,3 @@ function generateFallbackContent(framework, originalResponse) {
   // Return structured content that can be parsed
   return JSON.stringify(fallback);
 }
-

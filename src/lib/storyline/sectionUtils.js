@@ -213,7 +213,7 @@ const cloneMixedValue = (value, fallback = null) => {
   return value;
 };
 
-const normalizeSlides = (slides, fallbackLayout = 'title-2-columns') => {
+const normalizeSlides = (slides, fallbackLayout = 'full-width') => {
   if (!Array.isArray(slides)) return [];
 
   return slides.map((slide, index) => {
@@ -454,7 +454,7 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     notes: section.notes || '',
     insights: normalizedInsights,
     sources: normalizedSources,
-    layout: section.layout || options.layout,
+    layout: section.layout || options.layout || 'full-width',
     layoutAppliedAt: section.layoutAppliedAt
       ? new Date(section.layoutAppliedAt)
       : (section.layout_applied_at ? new Date(section.layout_applied_at) : undefined),
@@ -463,7 +463,7 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     generatedAt: section.generatedAt
       ? new Date(section.generatedAt)
       : (section.generated_at ? new Date(section.generated_at) : undefined),
-    slides: normalizeSlides(rawSlides, section.layout || options.defaultLayout),
+    slides: normalizeSlides(rawSlides, section.layout || options.defaultLayout || 'full-width'),
     slidesGeneratedAt: section.slidesGeneratedAt
       ? new Date(section.slidesGeneratedAt)
       : (section.slides_generated_at ? new Date(section.slides_generated_at) : undefined),
