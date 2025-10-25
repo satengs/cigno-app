@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import parseProjectDescription from '../../../../lib/parsers/projectDescriptionParser';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
 
 // Configuration for optional remote enrichment. Network issues are handled gracefully.
 const AI_CONFIG = {
   baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-  apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
+  apiKey: getRequiredAiApiKey(),
   customAgentId: process.env.AI_CUSTOM_AGENT_ID || '68db998aabd74ae6e0a5fbc8',
   enableRemote: process.env.CIGNO_DISABLE_REMOTE_ANALYSIS !== 'true'
 };

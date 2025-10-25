@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
 
 export async function POST(request) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request) {
     // AI Configuration for CFA-DEMO agents
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-      apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
+      apiKey: getRequiredAiApiKey(),
       timeout: 120000 // 2 minutes per agent
     };
 
@@ -169,7 +170,7 @@ export async function GET(request) {
     
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-      apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17'
+      apiKey: getRequiredAiApiKey()
     };
 
     const executor = new AgentExecutor(AI_CONFIG);

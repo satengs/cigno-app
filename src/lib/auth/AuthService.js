@@ -60,10 +60,11 @@ export default class AuthService {
    */
   getAuthHeaders() {
     const headers = {
-      'Content-Type': 'application/json',
-      'X-API-Key': '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae'
+      'Content-Type': 'application/json'
     };
-    
+    if (this.isAccessTokenValid()) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    }
     return headers;
   }
 

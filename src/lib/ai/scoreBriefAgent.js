@@ -1,3 +1,5 @@
+import getRequiredAiApiKey from './getRequiredAiApiKey.js';
+
 const GEOGRAPHY_KEYWORDS = [
   'switzerland',
   'swiss',
@@ -192,7 +194,7 @@ export async function scoreBriefWithAgent({
 
   const AI_CONFIG = {
     baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-    apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
+    apiKey: getRequiredAiApiKey(),
     scoreAgentId: process.env.AI_BRIEF_SCORE_AGENT_ID || '68f48912dfc921b68ec3eb2b'
   };
 

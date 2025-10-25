@@ -1,6 +1,7 @@
 import React from 'react';
 import SectionNavigator from '../../storyline/SectionNavigator';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
+import Progress from '../../ui/feedback/Progress';
 
 
 export default function DeliverableStorylineView({
@@ -90,6 +91,46 @@ export default function DeliverableStorylineView({
           </button>
         </div>
       </div>
+      
+      {/* Progress Bar */}
+      {generatedStoryline.sections && generatedStoryline.sections.length > 0 && (
+        <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+          <Progress
+            value={(() => {
+              const completedSections = generatedStoryline.sections.filter(s => 
+                s.generationStatus === 'completed' || s.status === 'completed'
+              ).length;
+              return (completedSections / generatedStoryline.sections.length) * 100;
+            })()}
+            max={100}
+            size="md"
+            variant="info"
+            showLabel={false}
+          />
+          <p className="mt-2 text-xs text-gray-600">
+            {(() => {
+              const completedSections = generatedStoryline.sections.filter(s => 
+                s.generationStatus === 'completed' || s.status === 'completed'
+              ).length;
+              const inProgressSections = generatedStoryline.sections.filter(s => 
+                s.isLoading || s.generationStatus === 'in_progress'
+              ).length;
+              const failedSections = generatedStoryline.sections.filter(s => 
+                s.generationStatus === 'failed' || s.status === 'failed'
+              ).length;
+              
+              const parts = [
+                `${completedSections} of ${generatedStoryline.sections.length} sections completed`
+              ];
+              if (inProgressSections > 0) parts.push(`${inProgressSections} in progress`);
+              if (failedSections > 0) parts.push(`${failedSections} failed`);
+              return parts.join(' · ');
+            })()}
+          </p>
+        </div>
+      )}
+      
+
       <div className="flex-1 p-6 overflow-y-auto">
         {console.log('🔍 DeliverableStorylineView - generatedStoryline:', generatedStoryline)}
         {console.log('🔍 DeliverableStorylineView - sections:', generatedStoryline?.sections)}

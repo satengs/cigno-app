@@ -2,6 +2,7 @@ import AIProvider from './AIProvider.js';
 import { BackendConfig } from '../config/backend.js';
 import { authService } from '../auth/AuthService.js';
 import ProgressiveResponseStreamer from '../communication/ProgressiveResponseStreamer.js';
+import aiLogger from '../logging/aiLogger.js';
 
 /**
  * Backend API Provider Implementation
@@ -162,6 +163,20 @@ export default class BackendProvider extends AIProvider {
         }
       }
     };
+
+    // Log the AI request
+    const requestId = aiLogger.logAIRequest({
+      url: sendUrl,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': this.apiKey ? '[REDACTED]' : 'none'
+      },
+      payload: payload,
+      requestType: 'backend_chat',
+      projectId: projectInfo.projectId || 'default',
+      userId: payload.userId
+    });
     
     // Add attachments if there are previous messages (conversation context)
     if (messages.length > 1) {
@@ -181,14 +196,22 @@ export default class BackendProvider extends AIProvider {
       ];
     }
 
-    const apiKey = this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae';
-    console.log('🔑 Using API key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'none');
-    
+    const apiKey = this.apiKey || process.env.BACKEND_API_KEY || null;
+    if (apiKey) {
+      console.log('🔑 Using backend API key');
+    } else {
+      console.log('ℹ️ No backend API key configured; attempting unauthenticated request.');
+    }
+
     const headers = {
-      'X-API-Key': apiKey,
       'Content-Type': 'application/json'
     };
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
 
+    const startTime = Date.now();
+    
     try {
       console.log(`🔄 Calling backend API: ${sendUrl}`);
       console.log('📤 Request payload:', JSON.stringify(payload, null, 2));
@@ -248,6 +271,14 @@ export default class BackendProvider extends AIProvider {
                 } else if (data.type === 'narrative' && data.content) {
                   // Handle narrative chunks
                   console.log('📖 Narrative:', data.content);
+                  aiLogger.logNarrative({
+                    content: data.content,
+                    type: data.type,
+                    phase: data.phase || 'unknown',
+                    projectId: projectInfo.projectId || 'default',
+                    userId: payload.userId,
+                    source: 'ai_backend'
+                  });
                 }
               } catch (parseError) {
                 console.warn('Failed to parse SSE data:', parseError.message);
@@ -283,13 +314,38 @@ export default class BackendProvider extends AIProvider {
       }
 
       if (fullResponse) {
+        // Log successful response
+        aiLogger.logAIResponse(requestId, {
+          status: 200,
+          success: true,
+          duration: Date.now() - startTime,
+          responseSize: fullResponse.length,
+          source: 'backend_streaming'
+        });
         return fullResponse;
       } else {
         console.log('⚠️ No complete response found in streaming data');
-        throw new Error('No response received from backend');
+        const error = new Error('No response received from backend');
+        aiLogger.logAIResponse(requestId, {
+          status: 500,
+          success: false,
+          duration: Date.now() - startTime,
+          error: error.message,
+          source: 'backend_streaming'
+        });
+        throw error;
       }
 
     } catch (error) {
+      // Log failed response
+      aiLogger.logAIResponse(requestId, {
+        status: error.status || 500,
+        success: false,
+        duration: Date.now() - startTime,
+        error: error.message,
+        source: 'backend_streaming'
+      });
+
       if (error.name === 'AbortError') {
         throw new Error(`Backend API timeout after ${this.timeout}ms`);
       }
@@ -313,11 +369,16 @@ export default class BackendProvider extends AIProvider {
 
     while (pollCount < maxPolls) {
       try {
+        const pollHeaders = {
+          'Content-Type': 'application/json'
+        };
+        const pollApiKey = this.apiKey || process.env.BACKEND_API_KEY || null;
+        if (pollApiKey) {
+          pollHeaders['X-API-Key'] = pollApiKey;
+        }
+
         const statusResponse = await fetch(statusUrl, {
-          headers: {
-            'X-API-Key': this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
-            'Content-Type': 'application/json'
-          }
+          headers: pollHeaders
         });
 
         if (!statusResponse.ok) {
@@ -538,12 +599,17 @@ export default class BackendProvider extends AIProvider {
 
       // If verification fails, try a simple test call to the send endpoint
       // This will fail but at least tell us if the endpoint exists
+      const testHeaders = {
+        'Content-Type': 'application/json'
+      };
+      const testApiKey = this.apiKey || process.env.BACKEND_API_KEY || null;
+      if (testApiKey) {
+        testHeaders['X-API-Key'] = testApiKey;
+      }
+
       const testResponse = await fetch(`${this.backendUrl}${this.endpoint}`, {
         method: 'POST',
-        headers: {
-          'X-API-Key': this.apiKey || process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
-          'Content-Type': 'application/json'
-        },
+        headers: testHeaders,
         body: JSON.stringify({
           message: 'connection test',
           userId: 'test'

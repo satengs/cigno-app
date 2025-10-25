@@ -4,9 +4,6 @@
  */
 import { useState, useCallback } from 'react';
 
-const API_KEY = '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae';
-const BASE_URL = 'https://ai.vave.ch';
-
 export function useStreamingChat() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,10 +34,9 @@ export function useStreamingChat() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const response = await fetch(`${BASE_URL}/api/chat/send-streaming`, {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: {
-          'X-API-Key': API_KEY,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

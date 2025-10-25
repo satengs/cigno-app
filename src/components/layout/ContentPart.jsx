@@ -44,17 +44,236 @@ const ALL_LAYOUT_IDS = ['full-width', 'title-2-columns', 'bcg-matrix', 'three-co
 
 // Framework dependencies mapping - from your provided structure
 // Note: brief_scorer is not part of pipeline, it's just deliverable data
+const TAXONOMY_DEPENDENT_FRAMEWORKS = new Set(['market_sizing', 'competitive_landscape', 'capabilities_assessment']);
+
 const FRAMEWORK_DEPENDENCIES = {
   // Map framework IDs to their dependencies (excluding brief_scorer as it's deliverable data)
-  'market_sizing': [],  // No dependencies, starts the chain
+  'market_sizing': [],
   'competitive_landscape': ['market_sizing'],
-  'key_industry_trends': ['market_sizing', 'competitive_landscape'],
-  'capabilities_assessment': ['market_sizing', 'competitive_landscape', 'key_industry_trends'],
-  'competitor_deep_dive': ['market_sizing', 'competitive_landscape', 'capabilities_assessment'],
-  'strategic_options': ['capabilities_assessment', 'competitor_deep_dive', 'key_industry_trends'],
+  'key_industry_trends': [],
+  'capabilities_assessment': ['market_sizing', 'competitive_landscape'],
+  'competitor_deep_dive': ['capabilities_assessment', 'competitive_landscape'],
+  'strategic_options': ['key_industry_trends', 'capabilities_assessment'],
   'deep_dive_strategic_option': ['strategic_options'],
-  'buy_vs_build': ['capabilities_assessment', 'strategic_options'],
-  'product_roadmap': ['buy_vs_build', 'strategic_options', 'deep_dive_strategic_option']
+  'buy_vs_build': ['deep_dive_strategic_option'],
+  'product_roadmap': ['buy_vs_build']
+};
+
+// Framework to Agent ID mapping (mirrors synchronous orchestrator defaults)
+const FRAMEWORK_AGENT_MAPPING = {
+  taxonomy: process.env.TAXONOMY_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
+  'market_sizing': process.env.AI_MARKET_SIZING_AGENT_ID || '68f3a191dfc921b68ec3e83a',
+  'competitive_landscape': process.env.AI_COMPETITIVE_LANDSCAPE_AGENT_ID || '68f3a9a5dfc921b68ec3e959',
+  'key_industry_trends': process.env.AI_KEY_INDUSTRY_TRENDS_AGENT_ID || '68f3f71fdfc921b68ec3ea8d',
+  'capabilities_assessment': process.env.AI_CAPABILITIES_ASSESSMENT_AGENT_ID || '68f3f817dfc921b68ec3ea8e',
+  'competitor_deep_dive': process.env.AI_COMPETITOR_DEEP_DIVE_AGENT_ID || '68f4a393dfc921b68ec3ec36',
+  'strategic_options': process.env.AI_STRATEGIC_OPTIONS_AGENT_ID || '68f4a655dfc921b68ec3ec37',
+  'deep_dive_strategic_option': process.env.AI_DEEP_DIVE_STRATEGIC_OPTION_AGENT_ID || '68f4a8dfdfc921b68ec3ec38',
+  'buy_vs_build': process.env.AI_BUY_VS_BUILD_AGENT_ID || '68f4ae2fdfc921b68ec3ec39',
+  'product_roadmap': process.env.AI_PRODUCT_ROADMAP_AGENT_ID || '68f4b112dfc921b68ec3ec3a',
+  'capability_benchmark': process.env.AI_CAPABILITY_BENCHMARK_AGENT_ID || '68f22f36330210e8b8f60a51',
+  'partnerships': process.env.AI_PARTNERSHIPS_AGENT_ID || '68f23be77e8d5848f9404847',
+  'competition_analysis': process.env.AI_COMPETITION_ANALYSIS_AGENT_ID || '68f22dc0330210e8b8f60a43',
+  'client_segments': process.env.AI_CLIENT_SEGMENTS_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
+  'product_landscape': process.env.AI_PRODUCT_LANDSCAPE_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
+  'gap_analysis': process.env.AI_GAP_ANALYSIS_AGENT_ID || '68f1825bd9092e63f8d3ee17',
+  'industry_trends': process.env.AI_INDUSTRY_TRENDS_AGENT_ID || '68f17297d9092e63f8d3edf6',
+  'recommendations': process.env.AI_RECOMMENDATIONS_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0'
+};
+
+// Helper function to build proper orchestrator payload like generate-section endpoint
+const buildOrchestratorPayload = (framework, dependencies, projectData, deliverableData, clientData, briefContent) => {
+  const baseContext = {
+    project: {
+      name: projectData?.name || deliverableData?.name || 'Strategic Analysis',
+      client_name: clientData?.name || projectData?.client_name || 'Client',
+      id: projectData?.id || 'project-1',
+      geography: clientData?.geography || 'Switzerland'
+    },
+    deliverable: {
+      brief: briefContent || deliverableData?.brief || 'Strategic analysis and recommendations',
+      brief_quality: deliverableData?.brief_quality || null,
+      brief_strengths: deliverableData?.brief_strengths || [],
+      brief_improvements: deliverableData?.brief_improvements || [],
+      type: deliverableData?.type || 'Strategy Presentation',
+      audience: deliverableData?.audience || ['Business Stakeholders'],
+      title: deliverableData?.title || deliverableData?.name || 'Strategic Analysis',
+      industry: deliverableData?.industry || []
+    },
+    client: {
+      name: clientData?.name,
+      geography: clientData?.geography,
+      industry: clientData?.industry
+    }
+  };
+
+  const payloadData = {
+    project_context: baseContext.project,
+    deliverable_context: baseContext.deliverable,
+    client_context: baseContext.client,
+    dependencies: dependencies,
+    framework,
+    format: 'json',
+    output_format: 'json'
+  };
+
+  return {
+    message: JSON.stringify(payloadData),
+    context: {
+      requestType: 'generate_storyline_section',
+      framework,
+      dependencyCount: dependencies ? Object.keys(dependencies).length : 0,
+      timestamp: new Date().toISOString()
+    },
+    data: {
+      framework,
+      dependencies,
+      projectData: baseContext.project,
+      deliverableData: baseContext.deliverable,
+      clientData: baseContext.client
+    }
+  };
+};
+
+const normalizeStatusTimeline = (timeline) => {
+  if (!Array.isArray(timeline)) return [];
+
+  return timeline
+    .map((entry, index) => {
+      if (!entry) return null;
+
+      if (typeof entry === 'string') {
+        return {
+          id: `timeline-${index}`,
+          message: entry,
+          type: 'info',
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      if (typeof entry === 'object') {
+        const message = typeof entry.message === 'string' && entry.message.trim().length > 0
+          ? entry.message.trim()
+          : typeof entry.text === 'string' && entry.text.trim().length > 0
+            ? entry.text.trim()
+            : typeof entry.description === 'string' && entry.description.trim().length > 0
+              ? entry.description.trim()
+              : null;
+
+        if (!message) return null;
+
+        const typeCandidate = typeof entry.type === 'string' ? entry.type : typeof entry.status === 'string' ? entry.status : 'info';
+        const type = typeCandidate.toLowerCase();
+
+        const timestampSource = entry.timestamp || entry.time || entry.updated_at || entry.updatedAt || entry.created_at || entry.createdAt;
+        const timestampDate = timestampSource ? new Date(timestampSource) : new Date();
+        const timestamp = Number.isNaN(timestampDate.valueOf()) ? new Date().toISOString() : timestampDate.toISOString();
+
+        return {
+          id: entry.id || `timeline-${index}`,
+          message,
+          type,
+          timestamp
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+};
+
+const extractStatusTimeline = (resultPayload, fallbackTimeline = []) => {
+  if (!resultPayload || typeof resultPayload !== 'object') {
+    return normalizeStatusTimeline(fallbackTimeline);
+  }
+
+  const candidates = [];
+
+  if (Array.isArray(resultPayload.narratives)) {
+    candidates.push(resultPayload.narratives);
+  }
+
+  if (Array.isArray(resultPayload.statusTimeline)) {
+    candidates.push(resultPayload.statusTimeline);
+  }
+
+  if (resultPayload.data && Array.isArray(resultPayload.data.statusTimeline)) {
+    candidates.push(resultPayload.data.statusTimeline);
+  }
+
+  const firstPopulated = candidates.find((item) => Array.isArray(item) && item.length > 0);
+  if (firstPopulated) {
+    return normalizeStatusTimeline(firstPopulated);
+  }
+
+  if (Array.isArray(fallbackTimeline) && fallbackTimeline.length > 0) {
+    return normalizeStatusTimeline(fallbackTimeline);
+  }
+
+  return [];
+};
+
+const parseJsonSafely = (value, contextLabel = 'dependency') => {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn(`⚠️ Failed to parse JSON for ${contextLabel}:`, error?.message);
+    return null;
+  }
+};
+
+const extractDependencyPayload = (depSection, depFramework) => {
+  if (!depSection) return null;
+
+  const attemptParse = (candidate, label) => {
+    if (!candidate) return null;
+    if (typeof candidate === 'string') {
+      return parseJsonSafely(candidate, label) || candidate;
+    }
+    return candidate;
+  };
+
+  const tryFrameworkLookup = (candidate) => {
+    if (!candidate || typeof candidate !== 'object') return null;
+    if (candidate[depFramework]) {
+      return attemptParse(candidate[depFramework], `${depFramework}-subkey`) || candidate[depFramework];
+    }
+    return null;
+  };
+
+  const rawResponse = depSection.rawResponse;
+  const rawAgentResponse = depSection.rawAgentResponse;
+
+  const parsedRawResponse = attemptParse(rawResponse, `${depFramework}-raw`);
+  const fromRawResponse = tryFrameworkLookup(parsedRawResponse);
+  if (fromRawResponse) return fromRawResponse;
+  if (parsedRawResponse && typeof parsedRawResponse !== 'string') return parsedRawResponse;
+
+  const responsePayload = rawAgentResponse?.response;
+  const parsedResponsePayload = attemptParse(responsePayload, `${depFramework}-response`);
+  const fromResponsePayload = tryFrameworkLookup(parsedResponsePayload);
+  if (fromResponsePayload) return fromResponsePayload;
+  if (parsedResponsePayload && typeof parsedResponsePayload !== 'string') return parsedResponsePayload;
+  if (responsePayload) return responsePayload;
+
+  const parsedRawAgent = attemptParse(rawAgentResponse, `${depFramework}-agent`);
+  const fromRawAgent = tryFrameworkLookup(parsedRawAgent);
+  if (fromRawAgent) return fromRawAgent;
+  if (parsedRawAgent && typeof parsedRawAgent !== 'string') return parsedRawAgent;
+  if (rawAgentResponse) return rawAgentResponse;
+
+  if (depSection.sectionContent?.slideContent) {
+    return depSection.sectionContent.slideContent;
+  }
+  if (depSection.slide_content) {
+    return depSection.slide_content;
+  }
+  if (depSection.slideContent) {
+    return depSection.slideContent;
+  }
+
+  return null;
 };
 
 // Function to build dependency data for AI agent calls
@@ -82,28 +301,15 @@ const buildDependencyData = (currentFramework, storylineSections) => {
         chartsCount: (depSection.charts || []).length
       });
       
-      // Include comprehensive dependency data
-      dependencies[depFramework] = {
-        framework: depFramework,
-        title: depSection.title,
-        description: depSection.description,
-        slide_content: depSection.sectionContent?.slideContent || depSection.slideContent || {},
-        insights: depSection.insights || [],
-        key_points: depSection.keyPoints || [],
-        charts: depSection.charts || [],
-        chart_data: depSection.chartData || depSection.sectionContent?.chartData || null,
-        citations: depSection.citations || depSection.sources || [],
-        takeaway: depSection.takeaway || '',
-        status: depSection.status || 'draft',
-        generated_at: depSection.generatedAt || depSection.created_at
-      };
-      
-      console.log(`✅ Added dependency data for ${depFramework}:`, {
-        hasSlideContent: !!dependencies[depFramework].slide_content,
-        insightsCount: dependencies[depFramework].insights.length,
-        chartsCount: dependencies[depFramework].charts.length,
-        citationsCount: dependencies[depFramework].citations.length
-      });
+      const dependencyPayload = extractDependencyPayload(depSection, depFramework);
+
+      if (dependencyPayload) {
+        dependencies[depFramework] = dependencyPayload;
+        console.log(`✅ Added dependency payload for ${depFramework}:`, dependencyPayload);
+      } else {
+        console.warn(`⚠️ No dependency payload derived for ${depFramework}, defaulting to slide content.`);
+        dependencies[depFramework] = depSection.sectionContent?.slideContent || depSection.slideContent || depSection;
+      }
     } else {
       console.warn(`⚠️ Missing dependency: ${depFramework} not found in storyline sections`);
     }
@@ -364,219 +570,455 @@ export default function ContentPart({
   const [storylineDirty, setStorylineDirty] = useState(false);
   const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
   const [slideGenerationProgress, setSlideGenerationProgress] = useState({ completed: 0, total: 0 });
+  const taxonomyDataRef = useRef(null);
 
-  // Helper function to generate individual section content
+  useEffect(() => {
+    if (generatedStoryline?.taxonomy) {
+      taxonomyDataRef.current = generatedStoryline.taxonomy;
+    }
+  }, [generatedStoryline?.taxonomy]);
+
+
+  // Helper function to generate individual section content with async polling
   const generateSectionContent = async (framework, dependencies, sectionIndex, contextData) => {
-    console.log(`🔧 ===== GENERATE-SECTION API ROUTE CALLED =====`);
+    const shouldUpdateStoryline = typeof sectionIndex === 'number' && sectionIndex >= 0;
+    console.log(`🚀 ===== ASYNC SECTION GENERATION STARTED =====`);
     console.log(`📋 Framework: ${framework}`);
-    console.log(`📋 Dependencies:`, Object.keys(dependencies));
+    console.log(`📋 Dependencies (provided):`, Object.keys(dependencies));
     console.log(`📋 Section Index: ${sectionIndex}`);
     console.log(`📋 Context Data:`, contextData);
-    
-    // Update section to generating status
-    setGeneratedStoryline(prev => {
-      if (!prev) return null;
-      const updatedSections = [...prev.sections];
-      if (updatedSections[sectionIndex]) {
-        updatedSections[sectionIndex] = {
-          ...updatedSections[sectionIndex],
-          isLoading: true,
-          generationStatus: 'generating',
-          phaseName: updatedSections[sectionIndex].phaseName?.replace(' (Waiting)', ' (In Progress)') || 'Generating...'
-        };
-      }
-      return { ...prev, sections: updatedSections };
-    });
+
+    const computedDependencies = buildDependencyData(framework, generatedStoryline?.sections || []);
+    const dependencyPayload = {
+      ...computedDependencies,
+      ...dependencies,
+    };
+
+    if (framework !== 'taxonomy' && taxonomyDataRef.current && TAXONOMY_DEPENDENT_FRAMEWORKS.has(framework) && !dependencyPayload.taxonomy) {
+      dependencyPayload.taxonomy = taxonomyDataRef.current;
+    }
+
+    console.log(`🔗 Merged dependencies for ${framework}:`, Object.keys(dependencyPayload));
+
+    if (shouldUpdateStoryline) {
+      setGeneratedStoryline(prev => {
+        if (!prev) return null;
+        const updatedSections = [...prev.sections];
+        if (updatedSections[sectionIndex]) {
+          updatedSections[sectionIndex] = {
+            ...updatedSections[sectionIndex],
+            isLoading: true,
+            generationStatus: 'starting',
+            phaseName: 'Starting async generation...',
+            progress: 0,
+            narratives: [],
+            statusTimeline: [{
+              id: `start_${Date.now()}`,
+              type: 'info',
+              message: 'Starting async section generation...',
+              timestamp: new Date().toISOString()
+            }]
+          };
+        }
+        return { ...prev, sections: updatedSections };
+      });
+    }
 
     try {
-      const response = await fetch('/api/ai/generate-section', {
+      // Get framework-specific agent ID
+      const agentId = FRAMEWORK_AGENT_MAPPING[framework];
+      if (!agentId) {
+        throw new Error(`No agent configured for framework: ${framework}`);
+      }
+
+      // Build proper orchestrator payload
+      const projectData = {
+        id: contextData.projectId,
+        name: contextData.projectName || 'UBS Pension Strategy',
+        client_name: contextData.clientName || 'UBS',
+        industry: contextData.industry || 'financial-services',
+        description: contextData.projectDescription || 'Strategic analysis for UBS pension strategy'
+      };
+
+      const deliverableData = {
+        id: contextData.deliverableId,
+        project: contextData.projectId,
+        project_id: contextData.projectId,
+        name: contextData.deliverableName || 'UBS Pension Strategy',
+        brief: contextData.deliverableBrief || 'Strategic analysis and recommendations',
+        type: 'Strategy Presentation',
+        audience: ['Business Stakeholders'],
+        title: contextData.deliverableName || 'Strategic Analysis',
+        industry: contextData.industry ? [contextData.industry] : []
+      };
+
+      const clientData = {
+        name: contextData.clientName || 'UBS',
+        industry: contextData.industry || 'financial-services',
+        geography: contextData.geography || 'Switzerland'
+      };
+
+      const orchestratorPayload = buildOrchestratorPayload(
+        framework, 
+        dependencyPayload, 
+        projectData, 
+        deliverableData, 
+        clientData, 
+        contextData.deliverableBrief || 'Strategic analysis and recommendations'
+      );
+
+      console.log(`🤖 Using agent ID for ${framework}:`, agentId);
+      console.log(`📋 Orchestrator payload:`, JSON.stringify(orchestratorPayload, null, 2));
+
+      // Step 1: Start async execution
+      const asyncResponse = await fetch('/api/ai/direct/async-execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          framework,
-          dependencies,
-          projectId: contextData.projectId,
-          projectData: {
-            id: contextData.projectId,
-            name: contextData.projectName || 'UBS Pension Strategy',
-            client_name: contextData.clientName || 'UBS',
-            industry: contextData.industry || 'financial-services',
-            description: contextData.projectDescription || 'Strategic analysis for UBS pension strategy'
-          },
-          deliverableData: {
-            id: contextData.deliverableId,
-            project: contextData.projectId,
-            project_id: contextData.projectId,
-            name: contextData.deliverableName || 'UBS Pension Strategy',
-            brief: contextData.deliverableBrief || 'Strategic analysis and recommendations'
-          },
-          clientData: {
-            name: contextData.clientName || 'UBS',
-            industry: contextData.industry || 'financial-services',
-            geography: contextData.geography || 'Switzerland'
-          }
+          agentId: agentId,
+          ...orchestratorPayload
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to generate ${framework} section`);
+      if (!asyncResponse.ok) {
+        const errorData = await asyncResponse.json();
+        throw new Error(errorData.error || `Failed to start async generation for ${framework} section`);
       }
 
-      const result = await response.json();
+      const asyncResult = await asyncResponse.json();
+      const executionId = asyncResult.executionId;
       
-      // Log external API response before conversion
-      console.log(`🔍 ===== EXTERNAL API RESPONSE FOR ${framework.toUpperCase()} =====`);
-      console.log(`📊 Raw API Response:`, JSON.stringify(result, null, 2));
-      console.log(`📋 Response Structure:`, {
-        hasData: !!result.data,
-        hasSuccess: 'success' in result,
-        hasError: 'error' in result,
-        dataKeys: result.data ? Object.keys(result.data) : 'No data',
-        resultKeys: Object.keys(result)
-      });
-      
-      if (result.data) {
-        console.log(`📊 Data Content:`, JSON.stringify(result.data, null, 2));
-        console.log(`📋 Data Structure:`, {
-          hasSlideContent: !!result.data.slide_content,
-          hasInsights: !!result.data.insights,
-          hasCitations: !!result.data.citations,
-          hasCharts: !!result.data.charts,
-          hasTakeaway: !!result.data.takeaway,
-          slideContentKeys: result.data.slide_content ? Object.keys(result.data.slide_content) : 'No slide_content',
-          insightsLength: result.data.insights ? result.data.insights.length : 0,
-          citationsLength: result.data.citations ? result.data.citations.length : 0,
-          chartsLength: result.data.charts ? result.data.charts.length : 0
+      if (!executionId) {
+        throw new Error('No execution ID returned from async start');
+      }
+
+      console.log(`🔍 Starting polling for execution: ${executionId}`);
+
+      // Update section with execution ID and polling status
+      if (shouldUpdateStoryline) {
+        setGeneratedStoryline(prev => {
+          if (!prev) return null;
+          const updatedSections = [...prev.sections];
+          if (updatedSections[sectionIndex]) {
+            updatedSections[sectionIndex] = {
+              ...updatedSections[sectionIndex],
+              generationStatus: 'in_progress',
+              phaseName: 'Polling for progress...',
+              executionId,
+              progress: 0,
+              narratives: [],
+             statusTimeline: [...(updatedSections[sectionIndex].statusTimeline || []), {
+               id: `polling_${Date.now()}`,
+               type: 'info',
+               message: `Started polling execution ${executionId}`,
+               timestamp: new Date().toISOString()
+             }]
+            };
+          }
+          return { ...prev, sections: updatedSections };
         });
       }
-      
-      console.log(`✅ ${framework} section generated successfully`);
 
-      // Update section with completed content
-      setGeneratedStoryline(prev => {
-        if (!prev) return null;
-        const updatedSections = [...prev.sections];
-        if (updatedSections[sectionIndex]) {
-          const sectionData = result.data || result;
-          const frameworkName = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          
-          // Log data conversion process
-          console.log(`🔧 ===== DATA CONVERSION FOR ${framework.toUpperCase()} =====`);
-          console.log(`📊 Section Data (before conversion):`, JSON.stringify(sectionData, null, 2));
+      // Step 2: Poll for completion with live updates
+      const pollForCompletion = async () => {
+        let attempts = 0;
+        const maxAttempts = 60; // 5 minutes max
+        let delay = 3000; // Start with 3 seconds
+        const maxDelay = 10000; // Max 10 seconds
 
-          const parseJsonString = (value) => {
-            if (typeof value !== 'string') return null;
-            const trimmed = value.trim();
-            if (!trimmed) return null;
-            const firstChar = trimmed[0];
-            const lastChar = trimmed[trimmed.length - 1];
-            if (!((firstChar === '{' && lastChar === '}') || (firstChar === '[' && lastChar === ']'))) {
-              return null;
-            }
-            try {
-              return JSON.parse(trimmed);
-            } catch (error) {
-              console.log('⚠️ Failed to parse JSON string in section data:', error.message);
-              return null;
-            }
-          };
-
-          const hydrateStructuredContent = (data) => {
-            if (!data || typeof data !== 'object') return;
-
-            const candidates = [
-              parseJsonString(data.slide_content),
-              parseJsonString(data.slideContent),
-              parseJsonString(data.description),
-              parseJsonString(data.notes)
-            ].filter(Boolean);
-
-            const parsed = candidates.find(item => typeof item === 'object');
-            if (!parsed) return;
-
-            const parsedSlideContent = parsed.slide_content || parsed.slideContent;
-            if (parsedSlideContent && (!data.slide_content || !Object.keys(data.slide_content || {}).length)) {
-              data.slide_content = parsedSlideContent;
+        while (attempts < maxAttempts) {
+          try {
+            const statusResponse = await fetch(`/api/ai/direct/status/${executionId}`);
+            
+            if (!statusResponse.ok) {
+              throw new Error(`Status check failed: ${statusResponse.status}`);
             }
 
-            if (!data.insights || !data.insights.length) {
-              data.insights = parsed.insights || parsed.key_insights || [];
+            const statusData = await statusResponse.json();
+            const status = statusData.status;
+            const progress = statusData.progress || 0;
+            const narratives = statusData.data?.narrative || [];
+            const uniqueNarratives = [];
+            const seenNarratives = new Set();
+
+            narratives.forEach(rawMessage => {
+              const message = typeof rawMessage === 'string' ? rawMessage : rawMessage?.message;
+              if (!message) return;
+              if (message.includes('Calling Openai (openai/gpt-4.1) - Iteration')) return;
+              if (seenNarratives.has(message)) return;
+              seenNarratives.add(message);
+              uniqueNarratives.push(message);
+            });
+
+            console.log(`📊 Poll ${attempts + 1}: ${status} (${progress}%)`);
+            console.log(`📖 Narratives:`, uniqueNarratives);
+
+            // Update section with live progress and narratives
+            if (shouldUpdateStoryline) {
+              setGeneratedStoryline(prev => {
+                if (!prev) return null;
+                const updatedSections = [...prev.sections];
+                if (updatedSections[sectionIndex]) {
+                  // Filter out repetitive AI iteration messages, keep only meaningful progress
+                  const currentNarratives = uniqueNarratives.map((narrative, index) => ({
+                    id: `narrative_${index}`,
+                    type: 'progress',
+                    message: narrative,
+                    timestamp: new Date().toISOString()
+                  }));
+
+                  updatedSections[sectionIndex] = {
+                    ...updatedSections[sectionIndex],
+                    progress,
+                    narratives: currentNarratives,
+                    phaseName: uniqueNarratives.length > 0 ? uniqueNarratives[uniqueNarratives.length - 1] : 'Processing...',
+                   statusTimeline: [
+                     ...(updatedSections[sectionIndex].statusTimeline || []),
+                     {
+                       id: `progress_${Date.now()}`,
+                       type: 'progress',
+                       message: `Progress: ${progress}% - ${narratives.length > 0 ? narratives[narratives.length - 1] : 'Processing...'}`,
+                       timestamp: new Date().toISOString()
+                     }
+                   ]
+                  };
+                }
+                return { ...prev, sections: updatedSections };
+              });
             }
 
-            if (!data.citations || !data.citations.length) {
-              data.citations = parsed.citations || [];
+            // Check for completion
+            if (status === 'completed' || status === 'complete') {
+              console.log(`✅ ${framework} section generation completed`);
+              
+              console.log(`📋 Full statusData structure:`, JSON.stringify(statusData, null, 2));
+              console.log(`📋 statusData.data:`, statusData.data);
+              console.log(`📋 statusData.data.result:`, statusData.data?.result);
+              console.log(`📋 statusData.data.result.response:`, statusData.data?.result?.response);
+              
+              const result = statusData.data?.result || statusData.data;
+              let sectionData = result || {};
+              
+              console.log(`📋 Extracted result:`, result);
+              console.log(`📋 result.response type:`, typeof result?.response);
+              
+              // Handle cases where content is in result.response as JSON string
+              if (result?.response && typeof result.response === 'string') {
+                console.log(`🔍 Found result.response as string, parsing JSON...`);
+                console.log(`📋 Raw response string:`, result.response.substring(0, 200) + '...');
+                
+                try {
+                  const parsedResponse = JSON.parse(result.response);
+                  console.log(`✅ Successfully parsed JSON response:`, parsedResponse);
+                  
+                  // Handle different response formats
+                  let frameworkData;
+                  
+                  if (parsedResponse[framework]) {
+                    // Expected format: {framework: {slide_content: ...}}
+                    frameworkData = parsedResponse[framework];
+                    console.log(`📋 Found framework-specific data for ${framework}:`, frameworkData);
+                  } else if (parsedResponse.storyline && Array.isArray(parsedResponse.storyline)) {
+                    // Storyline array format: {storyline: [{title, content}...]}
+                    console.log(`📋 Found storyline array format, converting to slide_content structure`);
+                    frameworkData = {
+                      slide_content: {
+                        title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                        slides: parsedResponse.storyline,
+                        sections: parsedResponse.storyline.map((slide, index) => ({
+                          id: `slide_${index}`,
+                          title: slide.title || slide.name || `Section ${index + 1}`,
+                          content: Array.isArray(slide.content) ? slide.content : [slide.content || slide.text || slide.description || '']
+                        }))
+                      },
+                      insights: parsedResponse.insights || parsedResponse.key_insights || [],
+                      citations: parsedResponse.citations || parsedResponse.sources || []
+                    };
+                  } else if (parsedResponse.slides && Array.isArray(parsedResponse.slides)) {
+                    // Alternative format: {slides: [{title, content}...]}
+                    console.log(`📋 Found slides array format, converting to slide_content structure`);
+                    frameworkData = {
+                      slide_content: {
+                        title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                        slides: parsedResponse.slides,
+                        sections: parsedResponse.slides.map((slide, index) => ({
+                          id: `slide_${index}`,
+                          title: slide.title,
+                          content: Array.isArray(slide.content) ? slide.content : [slide.content]
+                        }))
+                      },
+                      insights: parsedResponse.insights || parsedResponse.key_insights || [],
+                      citations: parsedResponse.citations || parsedResponse.sources || []
+                    };
+                  } else {
+                    // Fallback: use entire parsed response
+                    frameworkData = parsedResponse;
+                    console.log(`📋 Using entire parsed response as framework data`);
+                  }
+                  
+                  sectionData = frameworkData;
+                  console.log(`📋 Final extracted framework data for ${framework}:`, frameworkData);
+                } catch (parseError) {
+                  console.warn(`⚠️ Failed to parse response JSON for ${framework}:`, parseError);
+                  console.warn(`📋 Raw response content (first 200 chars):`, result.response.substring(0, 200));
+                  
+                  // Handle plain text responses by creating proper structure
+                  sectionData = {
+                    slide_content: {
+                      title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                      content: result.response,
+                      text: result.response
+                    },
+                    insights: [],
+                    citations: [],
+                    rawResponse: result.response
+                  };
+                  console.log(`📋 Created slide_content structure from plain text response`);
+                }
+              } else {
+                console.log(`📋 No result.response string found, using result directly:`, result);
+              }
+              
+              // Update section with final content
+              if (shouldUpdateStoryline) {
+                console.log(`🔄 Starting section content conversion for ${framework}`);
+                console.log(`📋 Raw sectionData to convert:`, JSON.stringify(sectionData, null, 2));
+                console.log(`📋 sectionData keys:`, Object.keys(sectionData));
+                console.log(`📋 sectionData.slide_content:`, sectionData.slide_content);
+                console.log(`📋 sectionData.content:`, sectionData.content);
+                console.log(`📋 sectionData.insights:`, sectionData.insights);
+                console.log(`📋 sectionData.citations:`, sectionData.citations);
+                
+                setGeneratedStoryline(prev => {
+                  if (!prev) return null;
+                  const updatedSections = [...prev.sections];
+                  if (updatedSections[sectionIndex]) {
+                    const frameworkName = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                    console.log(`📋 Converting section at index ${sectionIndex} for framework ${framework}`);
+                    console.log(`📋 Original section before update:`, updatedSections[sectionIndex]);
+
+                    // Extract slide content with multiple fallback paths
+                    const extractedSlideContent = sectionData.slide_content || 
+                                                 sectionData.content || 
+                                                 sectionData.slideContent ||
+                                                 sectionData.section_content ||
+                                                 { title: frameworkName, content: 'Generated content' };
+                    
+                    console.log(`📋 Extracted slide_content:`, extractedSlideContent);
+
+                    // Extract insights with multiple fallback paths  
+                    const extractedInsights = sectionData.insights || 
+                                            sectionData.key_insights || 
+                                            sectionData.summary_insights ||
+                                            [];
+                    
+                    console.log(`📋 Extracted insights:`, extractedInsights);
+
+                    // Simple data conversion for async results
+                    const convertedSection = {
+                      ...updatedSections[sectionIndex],
+                      isLoading: false,
+                      generationStatus: 'completed',
+                      progress: 100,
+                      phaseName: 'Completed',
+                      title: extractedSlideContent.title || frameworkName,
+                      slide_content: extractedSlideContent,
+                      slideContent: extractedSlideContent, // Add camelCase version for compatibility
+                      sectionContent: {
+                        slideContent: extractedSlideContent // Add nested structure for layout view
+                      },
+                      insights: extractedInsights,
+                      citations: sectionData.citations || sectionData.sources || [],
+                      charts: sectionData.charts || [],
+                      takeaway: sectionData.takeaway || sectionData.summary || '',
+                      notes: sectionData.notes || '',
+                      rawAgentResponse: result,
+                      rawResponse: result?.response,
+                      statusTimeline: []
+                    };
+
+                    console.log(`✅ Final converted section for ${framework}:`, JSON.stringify(convertedSection, null, 2));
+                    console.log(`📋 Final section title:`, convertedSection.title);
+                    console.log(`📋 Final section slide_content:`, convertedSection.slide_content);
+                    console.log(`📋 Final section insights:`, convertedSection.insights);
+                    
+                    updatedSections[sectionIndex] = convertedSection;
+                  }
+                  
+                  console.log(`📋 Updated sections array:`, updatedSections.map(s => ({ 
+                    id: s.id, 
+                    framework: s.framework, 
+                    title: s.title,
+                    hasSlideContent: !!s.slide_content,
+                    insightsCount: s.insights?.length || 0
+                  })));
+                  
+                  return { ...prev, sections: updatedSections };
+                });
+              }
+
+              return result;
             }
 
-            if (!data.takeaway && parsed.takeaway) {
-              data.takeaway = parsed.takeaway;
+            // Check for failure
+            if (status === 'failed' || status === 'error') {
+              const errorMessage = statusData.data?.error || statusData.error || 'Generation failed';
+              
+              if (shouldUpdateStoryline) {
+                setGeneratedStoryline(prev => {
+                  if (!prev) return null;
+                  const updatedSections = [...prev.sections];
+                  if (updatedSections[sectionIndex]) {
+                    updatedSections[sectionIndex] = {
+                      ...updatedSections[sectionIndex],
+                      isLoading: false,
+                      generationStatus: 'failed',
+                      progress: 0,
+                      phaseName: 'Failed',
+                      statusTimeline: [
+                        ...(updatedSections[sectionIndex].statusTimeline || []),
+                        {
+                          id: `failed_${Date.now()}`,
+                          type: 'error',
+                          message: `Generation failed: ${errorMessage}`,
+                          timestamp: new Date().toISOString()
+                        }
+                      ]
+                    };
+                  }
+                  return { ...prev, sections: updatedSections };
+                });
+              }
+
+              throw new Error(`Generation failed: ${errorMessage}`);
             }
 
-            if (!data.notes && parsed.notes) {
-              data.notes = parsed.notes;
+            // Continue polling
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 1.2, maxDelay); // Exponential backoff
+
+          } catch (error) {
+            console.warn(`⚠️ Poll attempt ${attempts + 1} failed:`, error.message);
+            
+            if (attempts >= maxAttempts - 1) {
+              throw new Error(`Polling timeout after ${maxAttempts} attempts: ${error.message}`);
             }
-
-            if (parsed.title && !data.title) {
-              data.title = parsed.title;
-            }
-
-            if (parsed.description && typeof parsed.description === 'string') {
-              data.description = parsed.description;
-            } else if (data.description && parseJsonString(data.description)) {
-              data.description = '';
-            }
-
-            if (!data.charts || !data.charts.length) {
-              data.charts = parsed.charts || [];
-            }
-          };
-
-          hydrateStructuredContent(sectionData);
-          
-          // Use only the JSON response content - no additional formatting
-          const slideContent = sectionData.slide_content || {};
-          const insights = sectionData.insights || [];
-          const citations = sectionData.citations || [];
-          
-          console.log(`📋 Extracted Values:`, {
-            slideContent: slideContent,
-            insights: insights,
-            citations: citations,
-            takeaway: sectionData.takeaway || '',
-            notes: sectionData.notes || '',
-            charts: sectionData.charts || []
-          });
-
-          const convertedSection = {
-            ...updatedSections[sectionIndex],
-            ...sectionData,
-            id: updatedSections[sectionIndex].id, // Preserve original section ID
-            status: 'draft',
-            isLoading: false,
-            generationStatus: 'completed',
-            framework: framework,
-            slideContent: slideContent,
-            keyPoints: insights,
-            takeaway: sectionData.takeaway || '',
-            notes: sectionData.notes || '',
-            charts: sectionData.charts || [],
-            citations: citations,
-            markdown: '', // No markdown - only JSON content
-            html: '', // No HTML - only JSON content
-            phaseName: updatedSections[sectionIndex].phaseName?.replace(' (In Progress)', ' (Completed)') || 'Completed'
-          };
-          
-          console.log(`📊 Converted Section (after conversion):`, JSON.stringify(convertedSection, null, 2));
-          console.log(`✅ Data conversion completed for ${framework}`);
-
-          updatedSections[sectionIndex] = convertedSection;
+            
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 1.2, maxDelay);
+          }
         }
-        return { ...prev, sections: updatedSections };
-      });
 
-      return result.data || result;
+        throw new Error(`Polling timeout after ${maxAttempts} attempts`);
+      };
+
+      // Start polling and return the result
+      return await pollForCompletion();
     } catch (error) {
       console.error(`❌ Error generating ${framework} section:`, error);
       
@@ -585,12 +1027,22 @@ export default function ContentPart({
         if (!prev) return null;
         const updatedSections = [...prev.sections];
         if (updatedSections[sectionIndex]) {
+          const previousTimeline = Array.isArray(updatedSections[sectionIndex].statusTimeline)
+            ? updatedSections[sectionIndex].statusTimeline
+            : [];
+          const errorEntry = {
+            id: `timeline-error-${Date.now()}`,
+            message: `Error generating section: ${error.message}`,
+            type: 'error',
+            timestamp: new Date().toISOString()
+          };
           updatedSections[sectionIndex] = {
             ...updatedSections[sectionIndex],
             isLoading: false,
             generationStatus: 'error',
             phaseName: updatedSections[sectionIndex].phaseName?.replace(' (In Progress)', ' (Error)') || 'Error',
-            markdown: `# ${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n\n## Error\nFailed to generate content: ${error.message}`
+            markdown: `# ${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n\n## Error\nFailed to generate content: ${error.message}`,
+            statusTimeline: [...previousTimeline, errorEntry]
           };
         }
         return { ...prev, sections: updatedSections };
@@ -1070,6 +1522,11 @@ export default function ContentPart({
       ? section.layout.trim()
       : 'full-width';
 
+    const slideContent = section.slide_content || section.slideContent || section.sectionContent?.slideContent || {};
+    const statusMessage = section.statusMessage || section.status_message || '';
+    const progress = typeof section.progress === 'number' ? section.progress : null;
+    const generationStatus = section.generationStatus || section.generation_status || null;
+
     return {
     id: section.id || section._id || `section_${index + 1}`,
     title: section.title,
@@ -1098,101 +1555,120 @@ export default function ContentPart({
       notes: section.notes || '',
       layout,
       layoutAppliedAt: section.layoutAppliedAt || section.layout_applied_at || null,
+      slide_content: cloneToPlainObject(slideContent, {}),
+      slideContent: cloneToPlainObject(slideContent, {}),
+      sectionContent: section.sectionContent ? cloneToPlainObject(section.sectionContent, {}) : undefined,
+      rawAgentResponse: section.rawAgentResponse || section.raw_agent_response || null,
+      rawResponse: section.rawResponse || section.raw_response || null,
+      generationStatus,
+      statusMessage,
+      progress,
       source: section.source || section.generationSource || '',
       generatedAt: section.generatedAt || section.generated_at || null,
       isLoading: !!section.isLoading,
       error: section.error || null,
     created_at: section.created_at || section.createdAt,
-    updated_at: section.updated_at || section.updatedAt
+    updated_at: section.updated_at || section.updatedAt,
+      statusTimeline: Array.isArray(section.statusTimeline)
+        ? cloneToPlainObject(section.statusTimeline, [])
+        : []
     };
   }, [normalizeSlideForState, normalizeStatus]);
 
-  const sanitizeStorylineForApi = useCallback((storyline) => {
+  const prepareStorylinePayload = useCallback((storyline, overrides = {}) => {
     if (!storyline) return null;
 
-    const sanitizeAudience = (audience) => {
+    const cloneArray = (value) => (Array.isArray(value) ? cloneToPlainObject(value, []) : []);
+
+    const toAudienceArray = (audience) => {
       if (!audience) return [];
       if (Array.isArray(audience)) {
         return audience
           .map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
           .filter(Boolean);
       }
-      return [typeof audience === 'string' ? audience.trim() : String(audience).trim()].filter(Boolean);
+      const single = typeof audience === 'string' ? audience.trim() : String(audience).trim();
+      return single ? [single] : [];
     };
 
-    const sanitizeCharts = (charts) => {
-      if (!Array.isArray(charts)) return [];
-      return charts.map((chart, chartIndex) => ({
-        id: chart?.id || `chart-${chartIndex + 1}`,
-        title: chart?.title || '',
-        caption: chart?.caption || '',
-        source: chart?.source || '',
-        config: chart?.config || {},
-        attributes: chart?.attributes || {},
-        raw: chart?.raw || '',
-        generated: chart?.generated || false,
-        type: chart?.type || 'bar'
-      }));
-    };
+    const sections = (storyline.sections || []).map((section, index) => {
+      const layout = typeof section.layout === 'string' && section.layout.trim()
+        ? section.layout.trim()
+        : 'full-width';
 
-    return {
+      const slideContent = section.slide_content || section.slideContent || section.sectionContent?.slideContent || {};
+
+      return {
+        id: section.id || `section_${index + 1}`,
+        title: section.title || `Section ${index + 1}`,
+        description: section.description || '',
+        framework: typeof section.framework === 'string' ? section.framework : undefined,
+        status: normalizeStatus(section.status, 'draft'),
+        order: section.order ?? index,
+        markdown: typeof section.markdown === 'string' ? section.markdown : '',
+        html: typeof section.html === 'string' ? section.html : '',
+        keyPoints: Array.isArray(section.keyPoints) ? cloneToPlainObject(section.keyPoints, []) : [],
+        insights: Array.isArray(section.insights) ? cloneToPlainObject(section.insights, []) : normalizeInsightList(section.insights),
+        contentBlocks: Array.isArray(section.contentBlocks) ? cloneToPlainObject(section.contentBlocks, []) : [],
+        sources: normalizeStringList(section.sources),
+        citations: cloneToPlainObject(section.citations, []),
+        charts: cloneToPlainObject(section.charts, []),
+        chartData: cloneToPlainObject(section.chartData, null),
+        takeaway: section.takeaway || '',
+        notes: section.notes || '',
+        layout,
+        layoutAppliedAt: section.layoutAppliedAt || section.layout_applied_at || null,
+        slides: cloneToPlainObject(section.slides || (section.sectionContent?.slides) || [], []),
+        slidesGeneratedAt: section.slidesGeneratedAt || section.slides_generated_at || null,
+        slidesGenerationContext: cloneToPlainObject(section.slidesGenerationContext || section.slides_generation_context, null),
+        slide_content: cloneToPlainObject(slideContent, {}),
+        slideContent: cloneToPlainObject(slideContent, {}),
+        sectionContent: section.sectionContent ? cloneToPlainObject(section.sectionContent, {}) : undefined,
+        rawAgentResponse: cloneToPlainObject(section.rawAgentResponse || section.raw_agent_response, null),
+        rawResponse: cloneToPlainObject(section.rawResponse || section.raw_response, null),
+        progress: typeof section.progress === 'number' ? section.progress : null,
+        generationStatus: section.generationStatus || section.generation_status || null,
+        statusMessage: section.statusMessage || section.status_message || '',
+        isLoading: !!section.isLoading,
+        source: section.source || section.generationSource || undefined,
+        generatedAt: section.generatedAt || section.generated_at || null,
+        locked: !!section.locked,
+        lockedBy: section.locked
+          ? getIdString(section.lockedBy?._id || section.lockedBy)
+          : undefined,
+        lockedAt: section.locked ? section.lockedAt : undefined,
+        created_at: section.created_at || section.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        statusTimeline: cloneToPlainObject(section.statusTimeline, [])
+      };
+    });
+
+    const payload = {
       _id: storyline._id,
       id: storyline.id,
       title: storyline.title,
       status: storyline.status,
       version: storyline.version,
-      executiveSummary: storyline.executiveSummary,
-      presentationFlow: storyline.presentationFlow,
-      callToAction: storyline.callToAction,
-      topic: storyline.topic,
-      industry: storyline.industry,
-      audience: sanitizeAudience(storyline.audience),
+      executiveSummary: storyline.executiveSummary || '',
+      presentationFlow: storyline.presentationFlow || '',
+      callToAction: storyline.callToAction || '',
+      topic: storyline.topic || '',
+      industry: storyline.industry || '',
+      audience: toAudienceArray(storyline.audience),
       objectives: storyline.objectives,
-      presentationStyle: storyline.presentationStyle,
-      complexity: storyline.complexity,
-      sections: (storyline.sections || []).map((section, index) => {
-        const layout = typeof section.layout === 'string' && section.layout.trim()
-          ? section.layout.trim()
-          : 'full-width';
-
-        return {
-        id: section.id || `section_${index + 1}`,
-        title: section.title,
-        description: section.description,
-          markdown: typeof section.markdown === 'string' ? section.markdown : '',
-          html: typeof section.html === 'string' ? section.html : '',
-          charts: sanitizeCharts(section.charts),
-          chartData: cloneToPlainObject(section.chartData, null),
-          status: normalizeStatus(section.status, 'draft'),
-        order: section.order ?? index,
-        keyPoints: Array.isArray(section.keyPoints) ? section.keyPoints : [],
-          insights: normalizeInsightList(section.insights || section.keyInsights),
-        contentBlocks: Array.isArray(section.contentBlocks) ? section.contentBlocks : [],
-          sources: normalizeStringList(section.sources),
-        estimatedSlides: section.estimatedSlides,
-        locked: !!section.locked,
-          lockedBy: section.locked
-            ? getIdString(section.lockedBy?._id || section.lockedBy)
-            : undefined,
-          lockedAt: section.locked ? section.lockedAt : undefined,
-          framework: typeof section.framework === 'string' ? section.framework : undefined,
-          takeaway: section.takeaway || '',
-          notes: section.notes || '',
-          layout,
-          layoutAppliedAt: section.layoutAppliedAt || section.layout_applied_at || null,
-          slides: Array.isArray(section.slides)
-            ? section.slides.map((slide, slideIndex) => normalizeSlideForState(slide, slideIndex, layout))
-            : [],
-          slidesGeneratedAt: section.slidesGeneratedAt || section.slides_generated_at || null,
-          slidesGenerationContext: cloneToPlainObject(section.slidesGenerationContext || section.slides_generation_context, undefined),
-          source: section.source || section.generationSource || undefined,
-          generatedAt: section.generatedAt || section.generated_at || null,
-          created_at: section.created_at || section.createdAt,
-          updated_at: section.updated_at || section.updatedAt
-        };
-      })
+      presentationStyle: storyline.presentationStyle || 'consulting',
+      complexity: storyline.complexity || 'intermediate',
+      sections
     };
-  }, [normalizeSlideForState]);
+
+    if (overrides.deliverable) {
+      payload.deliverable = overrides.deliverable;
+    } else if (storyline.deliverable) {
+      payload.deliverable = storyline.deliverable;
+    }
+
+    return payload;
+  }, [normalizeInsightList, normalizeStringList]);
 
   const fetchProjectDeliverables = useCallback(async (projectId) => {
     if (!projectId) return;
@@ -1515,84 +1991,351 @@ export default function ContentPart({
     if (!section.framework || !generatedStoryline) return;
     
     try {
-      console.log(`🔄 Regenerating section ${section.id} with framework ${section.framework}`);
+      console.log(`🚀 Starting async regeneration for section ${section.id} with framework ${section.framework}`);
       
-      // Set section to loading state
+      // Set section to async loading state
       handleSectionUpdate(section.id, { 
         isLoading: true,
-        status: 'draft'
+        status: 'draft',
+        generationStatus: 'starting',
+        phaseName: 'Starting regeneration...',
+        progress: 0,
+        narratives: [],
+        statusTimeline: [{
+          id: `regen_start_${Date.now()}`,
+          type: 'info',
+          message: 'Starting section regeneration...',
+          timestamp: new Date().toISOString()
+        }]
       });
       
       // Build dependency data for this framework
       const dependencies = buildDependencyData(section.framework, generatedStoryline?.sections || []);
       
-      // Call the section generation API
-      const response = await fetch('/api/ai/generate-section', {
+      // Get framework-specific agent ID
+      const agentId = FRAMEWORK_AGENT_MAPPING[section.framework];
+      if (!agentId) {
+        throw new Error(`No agent configured for framework: ${section.framework}`);
+      }
+
+      // Build proper orchestrator payload for regeneration
+      const projectData = {
+        name: selectedItem?.name || selectedItem?.title || 'Project',
+        description: selectedItem?.description || '',
+        industry: selectedItem?.industry || formData.industry,
+        id: selectedItem?.id || 'project-1',
+        client_name: selectedItem?.client_name || 'Client'
+      };
+
+      const deliverableData = {
+        brief: formData.brief,
+        brief_quality: formData.brief_quality,
+        title: formData.title,
+        type: formData.type,
+        industry: formData.industry,
+        audience: formData.audience,
+        objectives: formData.objectives,
+        name: formData.title || 'Strategic Analysis'
+      };
+
+      const clientData = {
+        name: selectedItem?.client_name || 'Client',
+        industry: selectedItem?.client_industry || formData.industry,
+        geography: selectedItem?.geography || 'Switzerland'
+      };
+
+      const orchestratorPayload = buildOrchestratorPayload(
+        section.framework, 
+        dependencies, 
+        projectData, 
+        deliverableData, 
+        clientData, 
+        formData.brief
+      );
+
+      console.log(`🤖 Using agent ID for ${section.framework} regeneration:`, agentId);
+      console.log(`📋 Regeneration orchestrator payload:`, JSON.stringify(orchestratorPayload, null, 2));
+
+      // Step 1: Start async regeneration
+      const asyncResponse = await fetch('/api/ai/direct/async-execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          framework: section.framework,
-          sectionId: section.id,
-          sectionIndex: section.order - 1, // Convert to 0-based index
-          dependencies, // Add dependency data
-          deliverableData: {
-            brief: formData.brief,
-            brief_quality: formData.brief_quality,
-            title: formData.title,
-            type: formData.type,
-            industry: formData.industry,
-            audience: formData.audience,
-            objectives: formData.objectives
-          },
-          projectData: {
-            name: selectedItem?.name || selectedItem?.title || 'Project',
-            description: selectedItem?.description || '',
-            industry: selectedItem?.industry || formData.industry
-          },
-          clientData: {
-            name: selectedItem?.client_name || 'Client',
-            industry: selectedItem?.client_industry || formData.industry
-          }
+          agentId: agentId,
+          ...orchestratorPayload
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to regenerate section: ${response.status}`);
+      if (!asyncResponse.ok) {
+        const errorData = await asyncResponse.json();
+        throw new Error(errorData.error || `Failed to start async regeneration: ${asyncResponse.status}`);
       }
 
-      const result = await response.json();
+      const asyncResult = await asyncResponse.json();
+      const executionId = asyncResult.executionId;
       
-      if (!result.success) {
-        throw new Error(result.error || 'Section regeneration failed');
+      if (!executionId) {
+        throw new Error('No execution ID returned from async regeneration start');
       }
 
-      // Update the section with new data
-      const newSectionData = result.data;
-      console.log(`🔍 Received section data for regeneration:`, JSON.stringify(newSectionData, null, 2));
-      
+      console.log(`🔍 Starting regeneration polling for execution: ${executionId}`);
+
+      // Update section with execution ID
       handleSectionUpdate(section.id, {
-        ...newSectionData,
-        framework: section.framework, // Preserve the original framework
-        isLoading: false,
-        status: 'draft',
-        generatedAt: new Date().toISOString(),
-        source: 'framework-agent-regenerated'
+        generationStatus: 'in_progress',
+        phaseName: 'Polling for regeneration progress...',
+        executionId,
+        statusTimeline: [{
+          id: `regen_polling_${Date.now()}`,
+          type: 'info',
+          message: `Started regeneration polling ${executionId}`,
+          timestamp: new Date().toISOString()
+        }]
       });
+
+      // Step 2: Poll for completion with live updates
+      const pollForRegenCompletion = async () => {
+        let attempts = 0;
+        const maxAttempts = 60;
+        let delay = 3000;
+        const maxDelay = 10000;
+
+        while (attempts < maxAttempts) {
+          try {
+            const statusResponse = await fetch(`/api/ai/direct/status/${executionId}`);
+            
+            if (!statusResponse.ok) {
+              throw new Error(`Status check failed: ${statusResponse.status}`);
+            }
+
+            const statusData = await statusResponse.json();
+            const status = statusData.status;
+            const progress = statusData.progress || 0;
+            const narratives = statusData.data?.narrative || [];
+            
+            console.log(`📊 Regeneration Poll ${attempts + 1}: ${status} (${progress}%)`);
+
+            // Update section with live progress - filter repetitive messages
+            const filteredNarratives = narratives.filter(narrative => 
+              !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 2') &&
+              !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 3') &&
+              !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 4')
+            );
+            
+            const currentNarratives = filteredNarratives.map((narrative, index) => ({
+              id: `regen_narrative_${index}`,
+              type: 'progress',
+              message: narrative,
+              timestamp: new Date().toISOString()
+            }));
+
+            handleSectionUpdate(section.id, {
+              progress,
+              narratives: currentNarratives,
+              phaseName: narratives.length > 0 ? narratives[narratives.length - 1] : 'Regenerating...',
+              statusTimeline: [{
+                id: `regen_progress_${Date.now()}`,
+                type: 'progress',
+                message: `Regeneration Progress: ${progress}% - ${narratives.length > 0 ? narratives[narratives.length - 1] : 'Processing...'}`,
+                timestamp: new Date().toISOString()
+              }]
+            });
+
+            // Check for completion
+            if (status === 'completed' || status === 'complete') {
+              console.log(`✅ Section ${section.id} regeneration completed`);
+              
+              console.log(`📋 REGENERATION Full statusData structure:`, JSON.stringify(statusData, null, 2));
+              console.log(`📋 REGENERATION statusData.data:`, statusData.data);
+              console.log(`📋 REGENERATION statusData.data.result:`, statusData.data?.result);
+              console.log(`📋 REGENERATION statusData.data.result.response:`, statusData.data?.result?.response);
+              
+              const result = statusData.data?.result || statusData.data;
+              let sectionData = result || {};
+              
+              console.log(`📋 REGENERATION Extracted result:`, result);
+              console.log(`📋 REGENERATION result.response type:`, typeof result?.response);
+              
+              // Handle cases where content is in result.response as JSON string
+              if (result?.response && typeof result.response === 'string') {
+                console.log(`🔍 REGENERATION Found result.response as string, parsing JSON...`);
+                console.log(`📋 REGENERATION Raw response string:`, result.response.substring(0, 200) + '...');
+                
+                try {
+                  const parsedResponse = JSON.parse(result.response);
+                  console.log(`✅ REGENERATION Successfully parsed JSON response:`, parsedResponse);
+                  
+                  // Handle different response formats
+                  let frameworkData;
+                  
+                  if (parsedResponse[section.framework]) {
+                    // Expected format: {framework: {slide_content: ...}}
+                    frameworkData = parsedResponse[section.framework];
+                    console.log(`📋 REGENERATION Found framework-specific data for ${section.framework}:`, frameworkData);
+                  } else if (parsedResponse.slides && Array.isArray(parsedResponse.slides)) {
+                    // Alternative format: {slides: [{title, content}...]}
+                    console.log(`📋 REGENERATION Found slides array format, converting to slide_content structure`);
+                    frameworkData = {
+                      slide_content: {
+                        title: `${section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                        slides: parsedResponse.slides,
+                        sections: parsedResponse.slides.map((slide, index) => ({
+                          id: `slide_${index}`,
+                          title: slide.title,
+                          content: Array.isArray(slide.content) ? slide.content : [slide.content]
+                        }))
+                      },
+                      insights: parsedResponse.insights || parsedResponse.key_insights || [],
+                      citations: parsedResponse.citations || parsedResponse.sources || []
+                    };
+                  } else {
+                    // Fallback: use entire parsed response
+                    frameworkData = parsedResponse;
+                    console.log(`📋 REGENERATION Using entire parsed response as framework data`);
+                  }
+                  
+                  sectionData = frameworkData;
+                  console.log(`📋 REGENERATION Final extracted framework data for ${section.framework}:`, frameworkData);
+                } catch (parseError) {
+                  console.warn(`⚠️ REGENERATION Failed to parse response JSON for ${section.framework}:`, parseError);
+                  console.warn(`📋 REGENERATION Raw response content (first 200 chars):`, result.response.substring(0, 200));
+                  
+                  // Handle plain text responses by creating proper structure
+                  sectionData = {
+                    slide_content: {
+                      title: `${section.framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                      content: result.response,
+                      text: result.response
+                    },
+                    insights: [],
+                    citations: [],
+                    rawResponse: result.response
+                  };
+                  console.log(`📋 REGENERATION Created slide_content structure from plain text response`);
+                }
+              } else {
+                console.log(`📋 REGENERATION No result.response string found, using result directly:`, result);
+              }
+              
+              // Update section with final regenerated content
+              console.log(`🔄 REGENERATION Starting section content conversion for ${section.framework}`);
+              console.log(`📋 REGENERATION Raw sectionData to convert:`, JSON.stringify(sectionData, null, 2));
+              console.log(`📋 REGENERATION sectionData keys:`, Object.keys(sectionData));
+              
+              // Extract content with multiple fallback paths
+              const extractedSlideContent = sectionData.slide_content || 
+                                           sectionData.content || 
+                                           sectionData.slideContent ||
+                                           sectionData.section_content ||
+                                           section.slide_content; // fallback to existing
+              
+              const extractedInsights = sectionData.insights || 
+                                      sectionData.key_insights || 
+                                      sectionData.summary_insights ||
+                                      section.insights || []; // fallback to existing
+              
+              console.log(`📋 REGENERATION Extracted slide_content:`, extractedSlideContent);
+              console.log(`📋 REGENERATION Extracted insights:`, extractedInsights);
+              
+              const regeneratedContent = {
+                ...sectionData,
+                framework: section.framework, // Preserve the original framework
+                title: extractedSlideContent?.title || section.title,
+                slide_content: extractedSlideContent,
+                insights: extractedInsights,
+                citations: sectionData.citations || sectionData.sources || section.citations || [],
+                isLoading: false,
+                status: 'draft',
+                generationStatus: 'completed',
+                progress: 100,
+                phaseName: 'Regeneration Completed',
+                generatedAt: new Date().toISOString(),
+                source: 'framework-agent-regenerated-async',
+                statusTimeline: [{
+                  id: `regen_completed_${Date.now()}`,
+                  type: 'success',
+                  message: 'Section regeneration completed successfully',
+                  timestamp: new Date().toISOString()
+                }]
+              };
+              
+              console.log(`✅ REGENERATION Final regenerated section for ${section.framework}:`, JSON.stringify(regeneratedContent, null, 2));
+              console.log(`📋 REGENERATION Final section title:`, regeneratedContent.title);
+              console.log(`📋 REGENERATION Final section slide_content:`, regeneratedContent.slide_content);
+              console.log(`📋 REGENERATION Final section insights:`, regeneratedContent.insights);
+              
+              handleSectionUpdate(section.id, regeneratedContent);
+
+              return;
+            }
+
+            // Check for failure
+            if (status === 'failed' || status === 'error') {
+              const errorMessage = statusData.data?.error || statusData.error || 'Regeneration failed';
+              
+              handleSectionUpdate(section.id, {
+                isLoading: false,
+                generationStatus: 'failed',
+                progress: 0,
+                phaseName: 'Regeneration Failed',
+                statusTimeline: [{
+                  id: `regen_failed_${Date.now()}`,
+                  type: 'error',
+                  message: `Regeneration failed: ${errorMessage}`,
+                  timestamp: new Date().toISOString()
+                }]
+              });
+
+              throw new Error(`Regeneration failed: ${errorMessage}`);
+            }
+
+            // Continue polling
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 1.2, maxDelay);
+
+          } catch (error) {
+            console.warn(`⚠️ Regeneration poll attempt ${attempts + 1} failed:`, error.message);
+            
+            if (attempts >= maxAttempts - 1) {
+              throw new Error(`Regeneration polling timeout after ${maxAttempts} attempts: ${error.message}`);
+            }
+            
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay = Math.min(delay * 1.2, maxDelay);
+          }
+        }
+
+        throw new Error(`Regeneration polling timeout after ${maxAttempts} attempts`);
+      };
+
+      // Start polling
+      await pollForRegenCompletion();
       
-      console.log(`✅ Section ${section.id} regenerated successfully`);
+      console.log(`✅ Section ${section.id} regenerated successfully with async polling`);
       
     } catch (error) {
       console.error(`❌ Error regenerating section ${section.id}:`, error);
       
       // Set section to error state
+      const currentSection = generatedStoryline?.sections?.find(s => s.id === section.id);
+      const previousTimeline = Array.isArray(currentSection?.statusTimeline) ? currentSection.statusTimeline : [];
+      const errorEntry = {
+        id: `timeline-error-${Date.now()}`,
+        message: `Error regenerating section: ${error.message}`,
+        type: 'error',
+        timestamp: new Date().toISOString()
+      };
       handleSectionUpdate(section.id, {
         isLoading: false,
         status: 'error',
+        generationStatus: 'error',
         error: error.message,
-        source: 'error-fallback'
+        source: 'error-fallback',
+        statusTimeline: [...previousTimeline, errorEntry]
       });
     }
   };
@@ -1608,45 +2351,49 @@ export default function ContentPart({
 
     setIsSavingStoryline(true);
     try {
-      const sanitizedStoryline = sanitizeStorylineForApi(generatedStoryline);
-      if (!sanitizedStoryline) {
+      const payload = prepareStorylinePayload(generatedStoryline);
+      if (!payload) {
         throw new Error('Unable to prepare storyline data for saving.');
       }
 
-      const sectionCount = sanitizedStoryline.sections?.length || 0;
+      const sectionCount = payload.sections?.length || 0;
       console.log('🔍 Sanitized storyline sections count:', sectionCount);
 
       const ALLOWED_PRESENTATION_STYLES = ['consulting', 'academic', 'sales', 'technical', 'strategic'];
       const ALLOWED_COMPLEXITY = ['beginner', 'intermediate', 'advanced', 'expert'];
 
-      const normalizedObjectives = Array.isArray(sanitizedStoryline.objectives)
-        ? sanitizedStoryline.objectives.filter(Boolean).join('; ')
-        : typeof sanitizedStoryline.objectives === 'string'
-          ? sanitizedStoryline.objectives
-          : '';
+      const normalizedObjectives = Array.isArray(payload.objectives)
+        ? payload.objectives.filter(Boolean).map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+        : payload.objectives
+          ? [payload.objectives].map(item => (typeof item === 'string' ? item.trim() : String(item).trim()))
+          : [];
 
-      const normalizedPresentationStyle = ALLOWED_PRESENTATION_STYLES.includes(sanitizedStoryline.presentationStyle)
-        ? sanitizedStoryline.presentationStyle
+      const normalizedPresentationStyle = ALLOWED_PRESENTATION_STYLES.includes(payload.presentationStyle)
+        ? payload.presentationStyle
         : 'consulting';
 
-      const normalizedComplexity = ALLOWED_COMPLEXITY.includes(sanitizedStoryline.complexity)
-        ? sanitizedStoryline.complexity
+      const normalizedComplexity = ALLOWED_COMPLEXITY.includes(payload.complexity)
+        ? payload.complexity
         : 'intermediate';
 
-      const payload = {
-        title: sanitizedStoryline.title || `Strategic Analysis - ${sectionCount} Framework${sectionCount === 1 ? '' : 's'}`,
-        executiveSummary: sanitizedStoryline.executiveSummary || '',
-        presentationFlow: sanitizedStoryline.presentationFlow || '',
-        callToAction: sanitizedStoryline.callToAction || '',
-        topic: sanitizedStoryline.topic || '',
-        industry: sanitizedStoryline.industry || '',
-        audience: sanitizedStoryline.audience || [],
-        objectives: normalizedObjectives,
-        presentationStyle: normalizedPresentationStyle,
-        complexity: normalizedComplexity,
-        status: sanitizedStoryline.status || 'draft',
-        sections: sanitizedStoryline.sections || []
-      };
+      payload.title = payload.title || `Strategic Analysis - ${sectionCount} Framework${sectionCount === 1 ? '' : 's'}`;
+      payload.executiveSummary = payload.executiveSummary || '';
+      payload.presentationFlow = payload.presentationFlow || '';
+      payload.callToAction = payload.callToAction || '';
+      payload.topic = payload.topic || '';
+      payload.industry = payload.industry || '';
+      payload.audience = (payload.audience || []).map(item => (typeof item === 'string' ? item.trim() : String(item).trim())).filter(Boolean);
+      payload.objectives = normalizedObjectives.join('; ');
+      payload.presentationStyle = normalizedPresentationStyle;
+      payload.complexity = normalizedComplexity;
+      payload.status = payload.status || 'draft';
+
+      // Normalize section metadata timestamps
+      payload.sections = (payload.sections || []).map(section => ({
+        ...section,
+        isLoading: false,
+        updated_at: new Date().toISOString()
+      }));
 
       console.log('🔍 Payload prepared:', {
         title: payload.title,
@@ -2751,7 +3498,7 @@ export default function ContentPart({
         console.warn('⚠️ No valid project ID found, using fallback values for testing');
       }
 
-      // Create ENHANCED sections with 9 frameworks (brief_scorer is internal, not part of storyline)
+      // Create ENHANCED sections with taxonomy + 9 frameworks (brief_scorer is internal, not part of storyline)
       const enhancedSections = [
         {
           id: 'framework-1',
@@ -2760,10 +3507,11 @@ export default function ContentPart({
           framework: 'market_sizing',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 1,
           phase: 1,
-          phaseName: 'Phase 1: Market Analysis (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate market sizing analysis',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2777,10 +3525,11 @@ export default function ContentPart({
           framework: 'competitive_landscape',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 2,
           phase: 2,
-          phaseName: 'Phase 2: Competitive Analysis (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate competitive landscape analysis',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2794,10 +3543,11 @@ export default function ContentPart({
           framework: 'key_industry_trends',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 3,
           phase: 3,
-          phaseName: 'Phase 3: Industry Trends (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate industry trends analysis',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2811,10 +3561,11 @@ export default function ContentPart({
           framework: 'capabilities_assessment',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 4,
           phase: 4,
-          phaseName: 'Phase 4: Capabilities Assessment (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate capabilities assessment',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2828,10 +3579,11 @@ export default function ContentPart({
           framework: 'competitor_deep_dive',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 5,
           phase: 5,
-          phaseName: 'Phase 5: Competitor Deep Dive (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate competitor deep dive',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2845,10 +3597,11 @@ export default function ContentPart({
           framework: 'strategic_options',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 6,
           phase: 6,
-          phaseName: 'Phase 6: Strategic Options (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate strategic options',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2862,10 +3615,11 @@ export default function ContentPart({
           framework: 'deep_dive_strategic_option',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 7,
           phase: 7,
-          phaseName: 'Phase 7: Strategic Deep Dive (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate strategic deep dive',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2879,10 +3633,11 @@ export default function ContentPart({
           framework: 'buy_vs_build',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 8,
           phase: 8,
-          phaseName: 'Phase 8: Buy vs Build (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate buy vs build analysis',
           keyPoints: [],
           takeaway: '',
           charts: [],
@@ -2896,19 +3651,23 @@ export default function ContentPart({
           framework: 'product_roadmap',
           status: 'draft',
           isLoading: false,
-          generationStatus: 'waiting',
+          generationStatus: 'preparing',
           order: 9,
           phase: 9,
-          phaseName: 'Phase 9: Product Roadmap (Waiting)',
+          phaseName: 'Generation will start soon...',
+          statusMessage: '🔄 Preparing to generate product roadmap',
           keyPoints: [],
           takeaway: '',
           charts: [],
           markdown: '',
-          html: ''
-        }
-      ];
+        html: ''
+      }
+      ].map(section => ({
+        ...section,
+        statusTimeline: Array.isArray(section.statusTimeline) ? section.statusTimeline : []
+      }));
 
-      // Create initial storyline with waiting sections
+      // Create initial storyline with preparing sections
       const initialStoryline = {
         title: 'Strategic Analysis Framework',
         sections: enhancedSections,
@@ -2920,7 +3679,8 @@ export default function ContentPart({
         generatedAt: new Date().toISOString(),
         source: 'enhanced-framework-orchestrator',
         currentPhase: 0,
-        phaseStatus: 'initializing'
+        phaseStatus: 'preparing',
+        globalStatus: 'Preparing to generate sections'
       };
 
       setGeneratedStoryline(initialStoryline);
@@ -2951,159 +3711,502 @@ export default function ContentPart({
       
       console.log('📋 Context Data prepared:', contextData);
       
-      // Generate section content function
+      // Generate section content function with async polling for storyline generation
       const generateSectionContent = async (framework, dependencies, sectionIndex, contextData) => {
+        const shouldUpdateStoryline = typeof sectionIndex === 'number' && sectionIndex >= 0;
         try {
-          console.log(`🔄 Generating content for ${framework}...`);
+          console.log(`🚀 ===== ASYNC STORYLINE GENERATION: ${framework} =====`);
 
-          // Mark section as in-progress so the UI shows generating status
-          setGeneratedStoryline(prev => {
-            if (!prev) return prev;
-            const updatedSections = prev.sections.map(section => {
-              if (section.framework !== framework) {
-                return section;
-              }
+          // Mark section as starting async generation
+          if (shouldUpdateStoryline) {
+            setGeneratedStoryline(prev => {
+              if (!prev) return prev;
+              const updatedSections = prev.sections.map(section => {
+                if (section.framework !== framework) {
+                  return section;
+                }
 
-              const nextPhaseName = section.phaseName
-                ? section.phaseName.replace(' (Waiting)', ' (In Progress)')
-                : 'Generating...';
+                return {
+                  ...section,
+                  isLoading: true,
+                  generationStatus: 'starting',
+                  phaseName: 'Starting async storyline generation...',
+                  progress: 0,
+                  narratives: [],
+                  statusTimeline: [{
+                    id: `storyline_start_${Date.now()}`,
+                    type: 'info',
+                    message: `Starting async generation for ${framework}...`,
+                    timestamp: new Date().toISOString()
+                  }]
+                };
+              });
 
-              return {
-                ...section,
-                isLoading: true,
-                generationStatus: 'in_progress',
-                phaseName: nextPhaseName
-              };
+              return { ...prev, sections: updatedSections };
             });
-
-            return { ...prev, sections: updatedSections };
-          });
+          }
           
           // Build dependency data for this framework (use current storyline state)
-          const dependencies = buildDependencyData(framework, generatedStoryline?.sections || []);
-          
-          // Call the generate-section API
-          const response = await fetch('/api/ai/generate-section', {
+          const computedDependencies = buildDependencyData(framework, generatedStoryline?.sections || []);
+          const dependencyPayload = {
+            ...computedDependencies,
+            ...dependencies
+          };
+
+          if (framework !== 'taxonomy' && taxonomyDataRef.current && TAXONOMY_DEPENDENT_FRAMEWORKS.has(framework) && !dependencyPayload.taxonomy) {
+            dependencyPayload.taxonomy = taxonomyDataRef.current;
+          }
+
+          console.log(`🔗 Merged dependencies for ${framework}:`, Object.keys(dependencyPayload));
+
+          // Get framework-specific agent ID
+          const agentId = FRAMEWORK_AGENT_MAPPING[framework];
+          if (!agentId) {
+            throw new Error(`No agent configured for framework: ${framework}`);
+          }
+
+          // Build proper orchestrator payload for storyline generation
+          const projectData = {
+            name: contextData.projectName,
+            description: contextData.projectDescription,
+            industry: contextData.industry,
+            id: contextData.projectId || 'project-1',
+            client_name: contextData.clientName
+          };
+
+          const deliverableData = {
+            brief: contextData.projectDescription,
+            brief_quality: formData.brief_quality,
+            title: contextData.deliverableName,
+            type: formData.type,
+            industry: contextData.industry,
+            audience: formData.audience,
+            objectives: formData.objectives,
+            name: contextData.deliverableName || 'Strategic Analysis'
+          };
+
+          const clientData = {
+            name: contextData.clientName,
+            industry: contextData.industry,
+            geography: contextData.geography || 'Switzerland'
+          };
+
+          const orchestratorPayload = buildOrchestratorPayload(
+            framework, 
+            dependencyPayload, 
+            projectData, 
+            deliverableData, 
+            clientData, 
+            contextData.projectDescription
+          );
+
+          console.log(`🤖 Using agent ID for ${framework} storyline:`, agentId);
+          console.log(`📋 Storyline orchestrator payload:`, JSON.stringify(orchestratorPayload, null, 2));
+
+          // Step 1: Start async execution with direct agent call
+          const asyncResponse = await fetch('/api/ai/direct/async-execute', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              framework,
-              sectionId: `framework-${sectionIndex + 1}`,
-              sectionIndex,
-              dependencies, // Add dependency data
-              deliverableData: {
-                brief: contextData.projectDescription,
-                brief_quality: formData.brief_quality,
-                title: contextData.deliverableName,
-                type: formData.type,
-                industry: contextData.industry,
-                audience: formData.audience,
-                objectives: formData.objectives
-              },
-              projectData: {
-                name: contextData.projectName,
-                description: contextData.projectDescription,
-                industry: contextData.industry
-              },
-              clientData: {
-                name: contextData.clientName,
-                industry: contextData.industry
-              }
+              agentId: agentId,
+              ...orchestratorPayload
             })
           });
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Failed to generate section: ${response.status}`);
+          if (!asyncResponse.ok) {
+            const errorData = await asyncResponse.json();
+            throw new Error(errorData.error || `Failed to start async storyline generation for ${framework}: ${asyncResponse.status}`);
           }
 
-          const result = await response.json();
+          const asyncResult = await asyncResponse.json();
+          const executionId = asyncResult.executionId;
           
-          if (!result.success) {
-            throw new Error(result.error || 'Section generation failed');
+          if (!executionId) {
+            throw new Error('No execution ID returned from async storyline generation start');
           }
 
-          // Log the raw agent response for debugging purposes
-          if (result.rawAgentResponse) {
-            try {
-              console.log(`🧠 Raw agent response for ${framework}:`, JSON.stringify(result.rawAgentResponse, null, 2));
-            } catch (rawLogError) {
-              console.log(`🧠 Raw agent response for ${framework} (non-serializable):`, result.rawAgentResponse);
-            }
-          }
+          console.log(`🔍 Starting storyline polling for ${framework} execution: ${executionId}`);
 
-          if (result.source === 'fallback-data') {
-            console.warn(`⚠️ ${framework} used fallback content`, {
-              aiReturnedPlainText: result.aiReturnedPlainText,
-              aiExplicitlyFailed: result.aiExplicitlyFailed,
-              sectionIndex,
-              framework
+          // Update section with execution ID and polling status
+          if (shouldUpdateStoryline) {
+            setGeneratedStoryline(prev => {
+              if (!prev) return prev;
+              const updatedSections = prev.sections.map(section => {
+                if (section.framework === framework) {
+                  return {
+                    ...section,
+                    generationStatus: 'in_progress',
+                    phaseName: 'Polling for storyline progress...',
+                    executionId,
+                    progress: 0,
+                    narratives: [],
+                    statusTimeline: [{
+                      id: `storyline_polling_${Date.now()}`,
+                      type: 'info',
+                      message: `Started storyline polling ${executionId}`,
+                      timestamp: new Date().toISOString()
+                    }]
+                  };
+                }
+                return section;
+              });
+              return { ...prev, sections: updatedSections };
             });
           }
 
-          // Update the section with the generated content
-          const sectionData = result.data;
-          console.log(`✅ Generated content for ${framework}:`, sectionData);
-          
-          // Update the storyline with the new section data
-          setGeneratedStoryline(prev => {
-            if (!prev) return null;
-            const updatedSections = prev.sections.map(section => {
-              if (section.framework === framework) {
-                const computedTitle = sectionData?.sectionContent?.title
-                  || sectionData?.slideContent?.title
-                  || sectionData?.title
-                  || section.title;
-                return {
-                  ...section,
-                  ...sectionData,
-                  title: computedTitle,
-                  isLoading: false,
-                  generationStatus: 'completed',
-                  status: 'draft',
-                  phaseName: section.phaseName?.replace(' (Waiting)', ' (Completed)') || 'Completed',
-                  source: result.source || 'framework-agent',
-                  debugInfo: {
-                    rawAgentResponse: result.rawAgentResponse || null,
-                    fallback: result.source === 'fallback-data',
-                    aiReturnedPlainText: result.aiReturnedPlainText ?? null,
-                    aiExplicitlyFailed: result.aiExplicitlyFailed ?? null,
-                    agentId: result.agentId,
-                    framework,
-                    sectionIndex,
-                    timestamp: new Date().toISOString()
+          // Step 2: Poll for completion with live storyline updates
+          const pollForStorylineCompletion = async () => {
+            let attempts = 0;
+            const maxAttempts = 60;
+            let delay = 3000;
+            const maxDelay = 10000;
+
+            while (attempts < maxAttempts) {
+              try {
+                const statusResponse = await fetch(`/api/ai/direct/status/${executionId}`);
+                
+                if (!statusResponse.ok) {
+                  throw new Error(`Storyline status check failed: ${statusResponse.status}`);
+                }
+
+                const statusData = await statusResponse.json();
+                const status = statusData.status;
+                const progress = statusData.progress || 0;
+                const narratives = statusData.data?.narrative || [];
+                
+                console.log(`📊 Storyline Poll ${attempts + 1} for ${framework}: ${status} (${progress}%)`);
+                console.log(`📖 Storyline Narratives:`, narratives);
+
+                // Update section with live progress and narratives
+                if (shouldUpdateStoryline) {
+                  setGeneratedStoryline(prev => {
+                    if (!prev) return prev;
+                    const updatedSections = prev.sections.map(section => {
+                      if (section.framework === framework) {
+                        // Filter repetitive AI iteration messages for storyline
+                        const filteredNarratives = narratives.filter(narrative => 
+                          !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 2') &&
+                          !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 3') &&
+                          !narrative.includes('Calling Openai (openai/gpt-4.1) - Iteration 4')
+                        );
+                        
+                        const currentNarratives = filteredNarratives.map((narrative, index) => ({
+                          id: `storyline_narrative_${index}`,
+                          type: 'progress',
+                          message: narrative,
+                          timestamp: new Date().toISOString()
+                        }));
+
+                        return {
+                          ...section,
+                          progress,
+                          narratives: currentNarratives,
+                          phaseName: narratives.length > 0 ? narratives[narratives.length - 1] : `Generating ${framework}...`,
+                          statusTimeline: [{
+                            id: `storyline_progress_${Date.now()}`,
+                            type: 'progress',
+                            message: `Storyline Progress: ${progress}% - ${narratives.length > 0 ? narratives[narratives.length - 1] : 'Processing...'}`,
+                            timestamp: new Date().toISOString()
+                          }]
+                        };
+                      }
+                      return section;
+                    });
+                    return { ...prev, sections: updatedSections };
+                  });
+                }
+
+                // Check for completion
+                if (status === 'completed' || status === 'complete') {
+                  console.log(`✅ Storyline generation completed for ${framework}`);
+                  
+                  console.log(`📋 STORYLINE Full statusData structure:`, JSON.stringify(statusData, null, 2));
+                  console.log(`📋 STORYLINE statusData.data:`, statusData.data);
+                  console.log(`📋 STORYLINE statusData.data.result:`, statusData.data?.result);
+                  console.log(`📋 STORYLINE statusData.data.result.response:`, statusData.data?.result?.response);
+                  
+                  const result = statusData.data?.result || statusData.data;
+                  let sectionData = result || {};
+                  
+                  console.log(`📋 STORYLINE Extracted result:`, result);
+                  console.log(`📋 STORYLINE result.response type:`, typeof result?.response);
+                  
+                  // Handle cases where content is in result.response as JSON string
+                  if (result?.response && typeof result.response === 'string') {
+                    console.log(`🔍 STORYLINE Found result.response as string, parsing JSON...`);
+                    console.log(`📋 STORYLINE Raw response string:`, result.response.substring(0, 200) + '...');
+                    
+                    try {
+                      const parsedResponse = JSON.parse(result.response);
+                      console.log(`✅ STORYLINE Successfully parsed JSON response:`, parsedResponse);
+                      
+                      // Handle different response formats
+                      let frameworkData;
+                      
+                      if (parsedResponse[framework]) {
+                        // Expected format: {framework: {slide_content: ...}}
+                        frameworkData = parsedResponse[framework];
+                        console.log(`📋 STORYLINE Found framework-specific data for ${framework}:`, frameworkData);
+                      } else if (parsedResponse.storyline && Array.isArray(parsedResponse.storyline)) {
+                        // Storyline array format: {storyline: [{title, content}...]}
+                        console.log(`📋 STORYLINE Found storyline array format, converting to slide_content structure`);
+                        frameworkData = {
+                          slide_content: {
+                            title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                            slides: parsedResponse.storyline,
+                            sections: parsedResponse.storyline.map((slide, index) => ({
+                              id: `slide_${index}`,
+                              title: slide.title || slide.name || `Section ${index + 1}`,
+                              content: Array.isArray(slide.content) ? slide.content : [slide.content || slide.text || slide.description || '']
+                            }))
+                          },
+                          insights: parsedResponse.insights || parsedResponse.key_insights || [],
+                          citations: parsedResponse.citations || parsedResponse.sources || []
+                        };
+                      } else if (parsedResponse.slides && Array.isArray(parsedResponse.slides)) {
+                        // Alternative format: {slides: [{title, content}...]}
+                        console.log(`📋 STORYLINE Found slides array format, converting to slide_content structure`);
+                        frameworkData = {
+                          slide_content: {
+                            title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                            slides: parsedResponse.slides,
+                            sections: parsedResponse.slides.map((slide, index) => ({
+                              id: `slide_${index}`,
+                              title: slide.title,
+                              content: Array.isArray(slide.content) ? slide.content : [slide.content]
+                            }))
+                          },
+                          insights: parsedResponse.insights || parsedResponse.key_insights || [],
+                          citations: parsedResponse.citations || parsedResponse.sources || []
+                        };
+                      } else {
+                        // Fallback: use entire parsed response
+                        frameworkData = parsedResponse;
+                        console.log(`📋 STORYLINE Using entire parsed response as framework data`);
+                      }
+                      
+                      sectionData = frameworkData;
+                      console.log(`📋 STORYLINE Final extracted framework data for ${framework}:`, frameworkData);
+                    } catch (parseError) {
+                      console.warn(`⚠️ STORYLINE Failed to parse response JSON for ${framework}:`, parseError);
+                      console.warn(`📋 STORYLINE Raw response content (first 200 chars):`, result.response.substring(0, 200));
+                      
+                      // Handle plain text responses by creating proper structure
+                      sectionData = {
+                        slide_content: {
+                          title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+                          content: result.response,
+                          text: result.response
+                        },
+                        insights: [],
+                        citations: [],
+                        rawResponse: result.response
+                      };
+                    }
+                  } else {
+                    console.log(`📋 STORYLINE No result.response string found, using result directly:`, result);
                   }
-                };
+                  
+                  // Update taxonomy ref for dependencies
+                  if (framework === 'taxonomy') {
+                    taxonomyDataRef.current = sectionData;
+                  }
+
+                  // Update section with final storyline content
+                  if (shouldUpdateStoryline) {
+                    console.log(`🔄 STORYLINE Starting section content conversion for ${framework}`);
+                    console.log(`📋 STORYLINE Raw sectionData to convert:`, JSON.stringify(sectionData, null, 2));
+                    console.log(`📋 STORYLINE sectionData keys:`, Object.keys(sectionData));
+                    
+                    setGeneratedStoryline(prev => {
+                      if (!prev) return prev;
+                      const updatedSections = prev.sections.map(section => {
+                        if (section.framework === framework) {
+                          console.log(`📋 STORYLINE Converting section for framework ${framework}`);
+                          console.log(`📋 STORYLINE Original section before update:`, section);
+                          
+                          // Extract content with multiple fallback paths
+                          const extractedSlideContent = sectionData.slide_content || 
+                                                       sectionData.content || 
+                                                       sectionData.slideContent ||
+                                                       sectionData.sectionContent ||
+                                                       sectionData.section_content ||
+                                                       section.slide_content;
+                          
+                          const extractedInsights = sectionData.insights || 
+                                                  sectionData.key_insights || 
+                                                  sectionData.summary_insights ||
+                                                  section.insights || [];
+                          
+                          const computedTitle = sectionData?.sectionContent?.title
+                            || sectionData?.slideContent?.title
+                            || sectionData?.slide_content?.title
+                            || sectionData?.title
+                            || extractedSlideContent?.title
+                            || section.title;
+                          
+                          console.log(`📋 STORYLINE Extracted slide_content:`, extractedSlideContent);
+                          console.log(`📋 STORYLINE Extracted insights:`, extractedInsights);
+                          console.log(`📋 STORYLINE Computed title:`, computedTitle);
+                          
+                          const convertedSection = {
+                            ...section,
+                            ...sectionData,
+                            title: computedTitle,
+                            isLoading: false,
+                            generationStatus: 'completed',
+                            status: 'draft',
+                            progress: 100,
+                            phaseName: 'Storyline Completed',
+                            source: 'framework-agent-async-storyline',
+                            slide_content: extractedSlideContent,
+                            slideContent: extractedSlideContent, // Add camelCase version for compatibility
+                            sectionContent: {
+                              slideContent: extractedSlideContent // Add nested structure for layout view
+                            },
+                            insights: extractedInsights,
+                           citations: sectionData.citations || sectionData.sources || section.citations || [],
+                           charts: sectionData.charts || section.charts || [],
+                           takeaway: sectionData.takeaway || sectionData.summary || section.takeaway || '',
+                           notes: sectionData.notes || section.notes || '',
+                           rawAgentResponse: result,
+                           rawResponse: result?.response,
+                            statusTimeline: [],
+                            debugInfo: {
+                              executionId,
+                              framework,
+                              sectionIndex,
+                              timestamp: new Date().toISOString(),
+                              source: 'async_storyline_polling'
+                            }
+                          };
+                          
+                      console.log(`✅ STORYLINE Final converted section for ${framework}:`, JSON.stringify(convertedSection, null, 2));
+                      console.log(`📋 STORYLINE Final section title:`, convertedSection.title);
+                      console.log(`📋 STORYLINE Final section slide_content:`, convertedSection.slide_content);
+                      console.log(`📋 STORYLINE Final section slideContent:`, convertedSection.slideContent);
+                      console.log(`📋 STORYLINE Final section sectionContent:`, convertedSection.sectionContent);
+                      console.log(`📋 STORYLINE Final section insights:`, convertedSection.insights);
+                          
+                          return convertedSection;
+                        }
+                        return section;
+                      });
+                      
+                      console.log(`📋 STORYLINE Updated sections array:`, updatedSections.map(s => ({ 
+                        id: s.id, 
+                        framework: s.framework, 
+                        title: s.title,
+                        hasSlideContent: !!s.slide_content,
+                        hasSlideContentCamel: !!s.slideContent,
+                        hasSectionContent: !!s.sectionContent?.slideContent,
+                        insightsCount: s.insights?.length || 0
+                      })));
+                      
+                      const updatedStoryline = { ...prev, sections: updatedSections };
+                      console.log(`📋 STORYLINE Final updated storyline:`, updatedStoryline);
+                      
+                      // Auto-save the storyline after successful generation
+                      setTimeout(() => {
+                        console.log(`💾 Auto-saving storyline after ${framework} completion...`);
+                        handleSaveStoryline();
+                      }, 1000);
+                      
+                      return updatedStoryline;
+                    });
+                  }
+
+                  return sectionData;
+                }
+
+                // Check for failure
+                if (status === 'failed' || status === 'error') {
+                  const errorMessage = statusData.data?.error || statusData.error || 'Storyline generation failed';
+                  
+                  if (shouldUpdateStoryline) {
+                    setGeneratedStoryline(prev => {
+                      if (!prev) return prev;
+                      const updatedSections = prev.sections.map(section => {
+                        if (section.framework === framework) {
+                          return {
+                            ...section,
+                            isLoading: false,
+                            generationStatus: 'failed',
+                            progress: 0,
+                            phaseName: 'Storyline Generation Failed',
+                            statusTimeline: [{
+                              id: `storyline_failed_${Date.now()}`,
+                              type: 'error',
+                              message: `Storyline generation failed for ${framework}: ${errorMessage}`,
+                              timestamp: new Date().toISOString()
+                            }]
+                          };
+                        }
+                        return section;
+                      });
+                      return { ...prev, sections: updatedSections };
+                    });
+                  }
+
+                  throw new Error(`Storyline generation failed for ${framework}: ${errorMessage}`);
+                }
+
+                // Continue polling
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay = Math.min(delay * 1.2, maxDelay);
+
+              } catch (error) {
+                console.warn(`⚠️ Storyline poll attempt ${attempts + 1} failed for ${framework}:`, error.message);
+                
+                if (attempts >= maxAttempts - 1) {
+                  throw new Error(`Storyline polling timeout after ${maxAttempts} attempts for ${framework}: ${error.message}`);
+                }
+                
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay = Math.min(delay * 1.2, maxDelay);
               }
-              return section;
-            });
-            return { ...prev, sections: updatedSections };
-          });
-          
-          return sectionData;
+            }
+
+            throw new Error(`Storyline polling timeout after ${maxAttempts} attempts for ${framework}`);
+          };
+
+          // Start polling and return the result
+          return await pollForStorylineCompletion();
         } catch (error) {
           console.error(`❌ Error generating content for ${framework}:`, error);
           
           // Update section with error state
-          setGeneratedStoryline(prev => {
-            if (!prev) return null;
-            const updatedSections = prev.sections.map(section => {
-              if (section.framework === framework) {
-                return {
-                  ...section,
-                  isLoading: false,
-                  generationStatus: 'error',
-                  status: 'error',
-                  error: error.message,
-                  source: 'error-fallback'
-                };
-              }
-              return section;
+          if (shouldUpdateStoryline) {
+            setGeneratedStoryline(prev => {
+              if (!prev) return null;
+              const updatedSections = prev.sections.map(section => {
+                if (section.framework === framework) {
+                  const previousTimeline = Array.isArray(section.statusTimeline) ? section.statusTimeline : [];
+                  const errorEntry = {
+                    id: `timeline-error-${Date.now()}`,
+                    message: `Error generating section: ${error.message}`,
+                    type: 'error',
+                    timestamp: new Date().toISOString()
+                  };
+                  return {
+                    ...section,
+                    isLoading: false,
+                    generationStatus: 'error',
+                    status: 'error',
+                    error: error.message,
+                    source: 'error-fallback',
+                    statusTimeline: [...previousTimeline, errorEntry]
+                  };
+                }
+                return section;
+              });
+              return { ...prev, sections: updatedSections };
             });
-            return { ...prev, sections: updatedSections };
-          });
+          }
           
           throw error;
         }
@@ -3112,74 +4215,86 @@ export default function ContentPart({
       // Start ENHANCED generation with improved dependency logic
       console.log('🎭 Starting ENHANCED framework generation with improved dependencies...');
       
-      // Phase 1: Market Sizing (no dependencies)
+      // Phase 0: Taxonomy (no dependencies)
+      console.log('📊 === PHASE 0: TAXONOMY ===');
+      
+      // Update global status for taxonomy generation (taxonomy is not part of sections array)
+      setGeneratedStoryline(prev => prev ? {
+        ...prev,
+        globalStatus: 'Generating taxonomy'
+      } : prev);
+      
+      const taxonomyResult = await generateSectionContent('taxonomy', {}, -1, contextData);
+      taxonomyDataRef.current = taxonomyResult;
+      setGeneratedStoryline(prev => (prev ? { ...prev, taxonomy: taxonomyResult } : prev));
+
+      // Update taxonomy completion status
+      setGeneratedStoryline(prev => prev ? {
+        ...prev,
+        globalStatus: 'Taxonomy generated'
+      } : prev);
+
+      // Update global status to show generation is now starting
+      setGeneratedStoryline(prev => prev ? {
+        ...prev,
+        globalStatus: 'Generating sections',
+        sections: prev.sections.map(section => ({
+          ...section,
+          generationStatus: 'starting',
+          statusMessage: ''
+        }))
+      } : prev);
+
+      // Phase 1: Market Sizing (depends on taxonomy)
       console.log('📊 === PHASE 1: MARKET SIZING ===');
-      const marketSizingPromise = generateSectionContent('market_sizing', {}, 0, contextData);
-      const marketResult = await marketSizingPromise;
+      const marketResult = await generateSectionContent('market_sizing', { taxonomy: taxonomyResult }, 0, contextData);
       
-      // Phase 2: Competitive Landscape (depends on market_sizing)
+      // Phase 2: Competitive Landscape (depends on taxonomy + market_sizing)
       console.log('📊 === PHASE 2: COMPETITIVE LANDSCAPE ===');
-      const competitiveLandscapePromise = generateSectionContent('competitive_landscape', { market_sizing: marketResult }, 1, contextData);
-      const competitiveResult = await competitiveLandscapePromise;
+      const competitiveResult = await generateSectionContent('competitive_landscape', { taxonomy: taxonomyResult, market_sizing: marketResult }, 1, contextData);
       
-      // Phase 3: Key Industry Trends (depends on market_sizing + competitive_landscape)
+      // Phase 3: Key Industry Trends (no dependencies)
       console.log('📊 === PHASE 3: KEY INDUSTRY TRENDS ===');
-      const keyTrendsPromise = generateSectionContent('key_industry_trends', { 
-        market_sizing: marketResult, 
-        competitive_landscape: competitiveResult 
-      }, 2, contextData);
-      const trendsResult = await keyTrendsPromise;
+      const trendsResult = await generateSectionContent('key_industry_trends', {}, 2, contextData);
       
-      // Phase 4: Capabilities Assessment (depends on market_sizing + competitive_landscape + key_industry_trends)
+      // Phase 4: Capabilities Assessment (depends on market_sizing + competitive_landscape)
       console.log('📊 === PHASE 4: CAPABILITIES ASSESSMENT ===');
-      const capabilitiesPromise = generateSectionContent('capabilities_assessment', { 
-        market_sizing: marketResult, 
-        competitive_landscape: competitiveResult,
-        key_industry_trends: trendsResult
+      const capabilitiesResult = await generateSectionContent('capabilities_assessment', {
+        market_sizing: marketResult,
+        competitive_landscape: competitiveResult
       }, 3, contextData);
-      const capabilitiesResult = await capabilitiesPromise;
       
-      // Phase 5: Competitor Deep Dive (depends on market_sizing + competitive_landscape + capabilities_assessment)
+      // Phase 5: Competitor Deep Dive (depends on capabilities_assessment + competitive_landscape)
       console.log('📊 === PHASE 5: COMPETITOR DEEP DIVE ===');
-      const competitorDeepDivePromise = generateSectionContent('competitor_deep_dive', { 
-        market_sizing: marketResult, 
-        competitive_landscape: competitiveResult,
-        capabilities_assessment: capabilitiesResult
-      }, 4, contextData);
-      const competitorResult = await competitorDeepDivePromise;
-      
-      // Phase 6: Strategic Options (depends on capabilities_assessment + competitor_deep_dive + key_industry_trends)
-      console.log('📊 === PHASE 6: STRATEGIC OPTIONS ===');
-      const strategicOptionsPromise = generateSectionContent('strategic_options', {
+      const competitorResult = await generateSectionContent('competitor_deep_dive', {
         capabilities_assessment: capabilitiesResult,
-        competitor_deep_dive: competitorResult,
-        key_industry_trends: trendsResult
+        competitive_landscape: competitiveResult
+      }, 4, contextData);
+      
+      // Phase 6: Strategic Options (depends on key_industry_trends + capabilities_assessment)
+      console.log('📊 === PHASE 6: STRATEGIC OPTIONS ===');
+      const strategicResult = await generateSectionContent('strategic_options', {
+        key_industry_trends: trendsResult,
+        capabilities_assessment: capabilitiesResult
       }, 5, contextData);
-      const strategicResult = await strategicOptionsPromise;
       
       // Phase 7: Deep Dive Strategic Option (depends on strategic_options)
       console.log('📊 === PHASE 7: DEEP DIVE STRATEGIC OPTION ===');
-      const deepDivePromise = generateSectionContent('deep_dive_strategic_option', { 
-        strategic_options: strategicResult 
-      }, 6, contextData);
-      const deepDiveResult = await deepDivePromise;
-      
-      // Phase 8: Buy vs Build (depends on capabilities_assessment + strategic_options)
-      console.log('📊 === PHASE 8: BUY VS BUILD ===');
-      const buyVsBuildPromise = generateSectionContent('buy_vs_build', { 
-        capabilities_assessment: capabilitiesResult,
+      const deepDiveResult = await generateSectionContent('deep_dive_strategic_option', {
         strategic_options: strategicResult
-      }, 7, contextData);
-      const buyVsBuildResult = await buyVsBuildPromise;
+      }, 6, contextData);
       
-      // Phase 9: Product Roadmap (depends on buy_vs_build + strategic_options + deep_dive_strategic_option)
-      console.log('📊 === PHASE 9: PRODUCT ROADMAP ===');
-      const productRoadmapPromise = generateSectionContent('product_roadmap', { 
-        buy_vs_build: buyVsBuildResult,
-        strategic_options: strategicResult,
+      // Phase 8: Buy vs Build (depends on deep_dive_strategic_option)
+      console.log('📊 === PHASE 8: BUY VS BUILD ===');
+      const buyVsBuildResult = await generateSectionContent('buy_vs_build', {
         deep_dive_strategic_option: deepDiveResult
+      }, 7, contextData);
+      
+      // Phase 9: Product Roadmap (depends on buy_vs_build)
+      console.log('📊 === PHASE 9: PRODUCT ROADMAP ===');
+      const roadmapResult = await generateSectionContent('product_roadmap', {
+        buy_vs_build: buyVsBuildResult
       }, 8, contextData);
-      const roadmapResult = await productRoadmapPromise;
       
       console.log('✅ All ENHANCED framework sections completed');
       
@@ -3191,9 +4306,14 @@ export default function ContentPart({
           isLoading: false,
           generationStatus: 'completed',
           status: 'draft', // Keep as draft, user will lock when satisfied
-          phaseName: section.phaseName?.replace(' (Waiting)', ' (Completed)') || 'Completed'
+          phaseName: section.phaseName?.replace('Generation will start soon...', 'Completed') || 'Completed',
+          statusMessage: `✅ ${section.title} generation completed successfully`
         }));
-        return { ...prev, sections: updatedSections };
+        return { 
+          ...prev, 
+          sections: updatedSections,
+          globalStatus: '✅ All sections generated successfully! Ready for review.'
+        };
       });
       
       setStorylineDirty(true);
@@ -3366,8 +4486,8 @@ export default function ContentPart({
         throw new Error('Please save the storyline before regenerating so it has a valid ID.');
       }
 
-      const sanitizedStoryline = sanitizeStorylineForApi(generatedStoryline);
-      const { lockedSections, draftSections } = filterSectionsForRegeneration(sanitizedStoryline);
+      const storylinePayload = prepareStorylinePayload(generatedStoryline);
+      const { lockedSections, draftSections } = filterSectionsForRegeneration(storylinePayload);
 
       if (draftSections.length === 0) {
         alert('All sections are locked or final. Unlock sections before regenerating.');
@@ -3376,12 +4496,12 @@ export default function ContentPart({
       }
 
       const regenerationPayload = createRegenerationPayload(
-        sanitizedStoryline,
+        storylinePayload,
         draftSections,
         lockedSections
       );
 
-      const backup = createStorylineBackup(sanitizedStoryline);
+      const backup = createStorylineBackup(storylinePayload);
 
       const response = await fetch('/api/storyline/regenerate', {
         method: 'POST',

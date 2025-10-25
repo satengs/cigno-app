@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { scoreBriefWithAgent } from '../../../../lib/ai/scoreBriefAgent';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
 
 function convertToHTML(text) {
   if (!text || typeof text !== 'string') {
@@ -142,7 +143,7 @@ export async function POST(request) {
     // AI Configuration - using brief improvement agent
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-      apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17',
+      apiKey: getRequiredAiApiKey(),
       briefAgentId: process.env.AI_BRIEF_AGENT_ID || '68dde123c1b3b5cc990ad5f1' // Default agent ID
     };
 

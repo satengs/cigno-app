@@ -13,7 +13,7 @@ export const BackendConfig = {
   healthEndpoint: process.env.BACKEND_HEALTH_ENDPOINT || '/health',
   
   // Authentication - set to null for internal calls, or provide your backend's API key
-  apiKey: process.env.BACKEND_API_KEY || 'd4abe60bb87d3f6156285c0e0341ccb7965b387638cab06ed4f7d8566e9b3111', // Test API key
+  apiKey: process.env.BACKEND_API_KEY || null,
   
   // Refresh token for authentication
   refreshToken: process.env.REFRESH_TOKEN || null,

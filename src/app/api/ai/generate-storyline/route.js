@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
+import aiLogger from '../../../../lib/logging/aiLogger.js';
 
 export async function POST(request) {
   try {
@@ -49,6 +51,23 @@ export async function POST(request) {
     console.log('📤 Context sent to storyline agent:', JSON.stringify(agentPayload.context, null, 2));
     console.log('🚀 Storyline agent payload:', JSON.stringify(agentPayload, null, 2));
 
+    // Log the AI request
+    const requestId = aiLogger.logAIRequest({
+      url: `${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.storylineAgentId}/execute`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': '[REDACTED]'
+      },
+      payload: agentPayload,
+      agentId: AI_CONFIG.storylineAgentId,
+      requestType: 'generate_storyline',
+      projectId: projectId,
+      userId: 'cigno-platform-user'
+    });
+
+    const startTime = Date.now();
+
     try {
       // Try custom agent first
       const customAgentResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${AI_CONFIG.storylineAgentId}/execute`, {
@@ -81,6 +100,16 @@ export async function POST(request) {
       const agentResult = await customAgentResponse.json();
       console.log('✅ Storyline generated via custom agent', agentResult);
 
+      // Log successful response
+      aiLogger.logAIResponse(requestId, {
+        status: customAgentResponse.status,
+        success: true,
+        duration: Date.now() - startTime,
+        responseSize: JSON.stringify(agentResult).length,
+        agentId: AI_CONFIG.storylineAgentId,
+        source: 'custom-agent'
+      });
+
       return NextResponse.json({
         success: true,
         source: 'custom-agent',
@@ -92,6 +121,16 @@ export async function POST(request) {
       const diagnostic = summariseAgentFailure(agentError);
 
       console.warn('❌ Storyline agent call failed. No fallback available.', diagnostic);
+
+      // Log failed response
+      aiLogger.logAIResponse(requestId, {
+        status: diagnostic.status || agentError.status || 502,
+        success: false,
+        duration: Date.now() - startTime,
+        error: diagnostic.message,
+        agentId: AI_CONFIG.storylineAgentId,
+        source: 'custom-agent'
+      });
 
       const wrappedError = new Error('CUSTOM_AGENT_ERROR');
       wrappedError.status = diagnostic.status || agentError.status || 502;

@@ -500,7 +500,7 @@ export default function ClientDetailView({
               {formData.clientName || client.name || client.title || 'Unnamed Client'}
             </h1>
             <p className="text-base text-gray-600 leading-relaxed">
-              UBS is a leading global wealth manager and universal bank in Switzerland
+              {client.description || client.metadata?.description || 'Client information'}
             </p>
           </div>
           <button
@@ -532,11 +532,7 @@ export default function ClientDetailView({
                   className="w-full h-full object-contain rounded p-2"
                 />
               ) : (
-                <img 
-                  src="/ubs-logo.png" 
-                  alt="UBS Logo" 
-                  className="w-full h-full object-contain p-2"
-                />
+                <Building2 className="w-8 h-8 text-gray-400" />
               )}
             </div>
             <div>

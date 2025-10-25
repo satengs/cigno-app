@@ -1498,6 +1498,21 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
         citations = responseData[framework].citations || [];
         console.log(`📊 Extracted slideContent:`, slideContent);
       }
+      // Check for storyline array format (responseData.storyline)
+      else if (responseData.storyline && Array.isArray(responseData.storyline)) {
+        console.log('📊 Found storyline array format, converting to slide_content structure');
+        slideContent = {
+          title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+          slides: responseData.storyline,
+          sections: responseData.storyline.map((slide, index) => ({
+            id: `slide_${index}`,
+            title: slide.title || slide.name || `Section ${index + 1}`,
+            content: Array.isArray(slide.content) ? slide.content : [slide.content || slide.text || slide.description || '']
+          }))
+        };
+        insights = responseData.insights || responseData.key_insights || [];
+        citations = responseData.citations || responseData.sources || [];
+      }
       // Check for direct structure (responseData.slide_content)
       else if (responseData.slide_content) {
         console.log('📊 Found direct slide_content structure');
@@ -1590,6 +1605,19 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
           slideContent = extractedData[framework].slide_content;
           insights = extractedData[framework].insights || [];
           citations = extractedData[framework].citations || [];
+        } else if (extractedData.storyline && Array.isArray(extractedData.storyline)) {
+          console.log('📊 Found storyline array format in extracted JSON, converting to slide_content structure');
+          slideContent = {
+            title: `${framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Analysis`,
+            slides: extractedData.storyline,
+            sections: extractedData.storyline.map((slide, index) => ({
+              id: `slide_${index}`,
+              title: slide.title || slide.name || `Section ${index + 1}`,
+              content: Array.isArray(slide.content) ? slide.content : [slide.content || slide.text || slide.description || '']
+            }))
+          };
+          insights = extractedData.insights || extractedData.key_insights || [];
+          citations = extractedData.citations || extractedData.sources || [];
         } else if (extractedData.slide_content) {
           console.log('📊 Found direct slide_content in extracted JSON');
           slideContent = extractedData.slide_content;
@@ -1659,11 +1687,11 @@ export function parseSectionResponse(agentResult, framework, sectionIndex = 0) {
       parsedData.description = contentText.substring(0, 500);
       parsedData.status = 'partial';
     } else {
-      // Truly no data - use fallback
-      console.log('❌ No data found anywhere in agent response. Marking for fallback.');
+      // Truly no data - mark as failed, don't use fallback
+      console.log('❌ No data found anywhere in agent response. Marking as failed.');
       parsedData.title = framework.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      parsedData.status = 'fallback_used';
-      parsedData.notes = 'No data returned from AI agent. Using fallback content.';
+      parsedData.status = 'failed';
+      parsedData.notes = 'No data returned from AI agent. Generation failed.';
     }
   }
   

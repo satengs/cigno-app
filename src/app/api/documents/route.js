@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import getRequiredAiApiKey from '../../../lib/ai/getRequiredAiApiKey.js';
 
 // Ensure this endpoint is always resolved at request time. Using request.url in
 // the handler forces dynamic rendering, so we mark it explicitly to avoid
@@ -9,7 +10,7 @@ export const revalidate = 0;
 // AI Configuration matching other working endpoints
 const AI_CONFIG = {
   baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-  apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17'
+  apiKey: getRequiredAiApiKey()
 };
 
 /**

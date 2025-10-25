@@ -182,7 +182,8 @@ export function createSkeletonSections(frameworks) {
       isLoading: true,
       generationStatus,
       generatedAt: null,
-      source: 'skeleton'
+      source: 'skeleton',
+      statusTimeline: []
     };
   });
   

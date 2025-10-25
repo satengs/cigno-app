@@ -15,17 +15,40 @@ export class MenuManager {
    * Initialize the default menu structure
    */
   initializeDefaultMenu() {
+    // Create Cigno Organization as top-level non-clickable item
+    const cignoOrganization = new MenuItem({
+      id: 'cigno-org',
+      title: 'Cigno Organization',
+      type: 'organization',
+      icon: 'building-2',
+      isCollapsible: true,
+      isCollapsed: false,
+      permissions: {
+        canView: true,
+        canAdd: false,
+        canEdit: false,
+        canRemove: false,
+        canCollapse: true
+      }
+    });
+
     // Create empty root sections
     const clientSection = MenuItem.createSection('CLIENT', 'users');
     const projectSection = MenuItem.createSection('PROJECT', 'folder');
     const deliverableSection = MenuItem.createSection('DELIVERABLE', 'file-text');
 
-    // Set root items with no default children
-    this.rootItems = [clientSection, projectSection, deliverableSection];
+    // Set root items with Cigno Organization as parent
+    cignoOrganization.children = [clientSection, projectSection, deliverableSection];
+    this.rootItems = [cignoOrganization];
     
     // Expand all sections by default
     this.rootItems.forEach(item => {
       this.expandedItems.add(item.id);
+      if (item.children) {
+        item.children.forEach(child => {
+          this.expandedItems.add(child.id);
+        });
+      }
     });
 
     return this.rootItems;

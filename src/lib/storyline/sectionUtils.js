@@ -484,6 +484,9 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     generatedAt: section.generatedAt
       ? new Date(section.generatedAt)
       : (section.generated_at ? new Date(section.generated_at) : undefined),
+    slide_content: cloneMixedValue(section.slide_content || section.slideContent || parsedSectionContent?.slideContent, {}),
+    slideContent: cloneMixedValue(section.slideContent || section.slide_content || parsedSectionContent?.slideContent, {}),
+    sectionContent: cloneMixedValue(section.sectionContent || parsedSectionContent, undefined),
     slides: normalizeSlides(rawSlides, section.layout || options.defaultLayout || 'full-width'),
     slidesGeneratedAt: section.slidesGeneratedAt
       ? new Date(section.slidesGeneratedAt)
@@ -495,9 +498,16 @@ export const createSectionRecord = (sectionData = {}, options = {}) => {
     markdown,
     html,
     charts: sanitizeCharts(charts),
-    sectionContent: section.sectionContent || parsedSectionContent || undefined,
-    slideContent: cloneMixedValue(section.slideContent || parsedSectionContent?.slideContent, {}),
     citations: section.citations || parsedSectionContent?.citations || [],
+    rawAgentResponse: cloneMixedValue(section.rawAgentResponse || section.raw_agent_response, null),
+    rawResponse: cloneMixedValue(section.rawResponse || section.raw_response, null),
+    progress: typeof section.progress === 'number' ? section.progress : undefined,
+    generationStatus: section.generationStatus || section.generation_status,
+    statusMessage: section.statusMessage || section.status_message || '',
+    isLoading: !!section.isLoading,
+    statusTimeline: Array.isArray(section.statusTimeline)
+      ? cloneMixedValue(section.statusTimeline, [])
+      : [],
     created_at: createdAt,
     updated_at: updatedAt
   };

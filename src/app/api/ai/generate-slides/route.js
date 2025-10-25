@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
 
 const DEFAULT_BASE_URL = process.env.AI_API_BASE_URL || 'https://ai.vave.ch';
-const DEFAULT_API_KEY = process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17';
+const DEFAULT_API_KEY = getRequiredAiApiKey();
 const DEFAULT_AGENT_ID = process.env.AI_SLIDE_AGENT_ID || '68ef99a05a1a64c93c601056';
 
 const toArray = (value) => {

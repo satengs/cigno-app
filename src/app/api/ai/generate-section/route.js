@@ -1,44 +1,211 @@
 import { NextResponse } from 'next/server';
 import { parseSectionResponse } from '../../../../lib/frameworkRenderer';
+import getRequiredAiApiKey from '../../../../lib/ai/getRequiredAiApiKey.js';
 
-// Framework to Agent ID mapping - Updated with new dependency structure and actual agent IDs
+// Framework to Agent ID mapping – matches synchronous orchestration defaults
 const FRAMEWORK_AGENT_MAPPING = {
-  // Phase 1: Market sizing (no dependencies)
+  taxonomy: process.env.TAXONOMY_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
   'market_sizing': process.env.AI_MARKET_SIZING_AGENT_ID || '68f3a191dfc921b68ec3e83a',
-  
-  // Phase 2: Market + Competitive dependent
   'competitive_landscape': process.env.AI_COMPETITIVE_LANDSCAPE_AGENT_ID || '68f3a9a5dfc921b68ec3e959',
-  
-  // Phase 3: Market + Competitive + Industry dependent
   'key_industry_trends': process.env.AI_KEY_INDUSTRY_TRENDS_AGENT_ID || '68f3f71fdfc921b68ec3ea8d',
-  
-  // Phase 4: Market + Competitive + Industry + Capabilities dependent
   'capabilities_assessment': process.env.AI_CAPABILITIES_ASSESSMENT_AGENT_ID || '68f3f817dfc921b68ec3ea8e',
-  
-  // Phase 5: Market + Competitive + Capabilities dependent
   'competitor_deep_dive': process.env.AI_COMPETITOR_DEEP_DIVE_AGENT_ID || '68f4a393dfc921b68ec3ec36',
-  
-  // Phase 6: Capabilities + Competitor + Industry dependent
   'strategic_options': process.env.AI_STRATEGIC_OPTIONS_AGENT_ID || '68f4a655dfc921b68ec3ec37',
-  
-  // Phase 7: Strategic options dependent
   'deep_dive_strategic_option': process.env.AI_DEEP_DIVE_STRATEGIC_OPTION_AGENT_ID || '68f4a8dfdfc921b68ec3ec38',
-  
-  // Phase 8: Capabilities + Strategic dependent
   'buy_vs_build': process.env.AI_BUY_VS_BUILD_AGENT_ID || '68f4ae2fdfc921b68ec3ec39',
-  
-  // Phase 9: Buy vs Build + Strategic + Deep dive dependent
   'product_roadmap': process.env.AI_PRODUCT_ROADMAP_AGENT_ID || '68f4b112dfc921b68ec3ec3a',
-  
-  // Legacy frameworks (keep for backward compatibility)
   'capability_benchmark': process.env.AI_CAPABILITY_BENCHMARK_AGENT_ID || '68f22f36330210e8b8f60a51',
   'partnerships': process.env.AI_PARTNERSHIPS_AGENT_ID || '68f23be77e8d5848f9404847',
   'competition_analysis': process.env.AI_COMPETITION_ANALYSIS_AGENT_ID || '68f22dc0330210e8b8f60a43',
-  'client_segments': process.env.AI_CLIENT_SEGMENTS_AGENT_ID || 'default_agent_id',
-  'product_landscape': process.env.AI_PRODUCT_LANDSCAPE_AGENT_ID || 'default_agent_id',
+  'client_segments': process.env.AI_CLIENT_SEGMENTS_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
+  'product_landscape': process.env.AI_PRODUCT_LANDSCAPE_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0',
   'gap_analysis': process.env.AI_GAP_ANALYSIS_AGENT_ID || '68f1825bd9092e63f8d3ee17',
   'industry_trends': process.env.AI_INDUSTRY_TRENDS_AGENT_ID || '68f17297d9092e63f8d3edf6',
-  'recommendations': process.env.AI_RECOMMENDATIONS_AGENT_ID || 'default_agent_id'
+  'recommendations': process.env.AI_RECOMMENDATIONS_AGENT_ID || '68dddd9ac1b3b5cc990ad5f0'
+};
+
+const DEFAULT_POLL_DELAYS = [1000, 2000, 3000, 5000];
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const resolvePollDelays = () => {
+  const configured = process.env.FRAMEWORK_AGENT_POLL_DELAYS;
+  if (!configured) return DEFAULT_POLL_DELAYS;
+  const parsed = configured
+    .split(',')
+    .map(value => parseInt(value.trim(), 10))
+    .filter(Number.isFinite);
+  return parsed.length ? parsed : DEFAULT_POLL_DELAYS;
+};
+
+const extractResponseText = (agentResult) => {
+  if (!agentResult) return '';
+  if (typeof agentResult === 'string') return agentResult;
+  if (typeof agentResult.content === 'string') return agentResult.content;
+  if (typeof agentResult.response === 'string') return agentResult.response;
+  if (typeof agentResult.data === 'string') return agentResult.data;
+  if (Array.isArray(agentResult.response)) {
+    return agentResult.response.join('\n');
+  }
+  try {
+    return JSON.stringify(agentResult);
+  } catch (error) {
+    console.log('⚠️ Failed to stringify agent result:', error.message);
+    return '';
+  }
+};
+
+const normalizeNarrativeType = (rawType, message) => {
+  if (!rawType && message) {
+    const normalizedMessage = message.toLowerCase();
+    if (/[✅✔️🎉]/u.test(message) || /\b(done|completed|success|ready|delivered)\b/.test(normalizedMessage)) {
+      return 'success';
+    }
+    if (/[⚠️🚧]/u.test(message) || /\b(warning|caution|wait|pending)\b/.test(normalizedMessage)) {
+      return 'warning';
+    }
+    if (/[❌⛔️🔥]/u.test(message) || /\b(error|failed|failure|issue|problem|unable)\b/.test(normalizedMessage)) {
+      return 'error';
+    }
+    if (/[⏳⌛️🔄]/u.test(message) || /\b(progress|running|processing|generating|starting|queued|updating)\b/.test(normalizedMessage)) {
+      return 'progress';
+    }
+    return 'info';
+  }
+
+  if (!rawType) return 'info';
+
+  const normalized = String(rawType).toLowerCase();
+  if (['success', 'completed', 'complete', 'done', 'finished'].includes(normalized)) {
+    return 'success';
+  }
+  if (['error', 'failed', 'failure', 'fatal'].includes(normalized)) {
+    return 'error';
+  }
+  if (['warning', 'warn', 'caution'].includes(normalized)) {
+    return 'warning';
+  }
+  if (['progress', 'running', 'in_progress', 'processing', 'queued', 'starting', 'info'].includes(normalized)) {
+    return normalized === 'info' ? 'info' : 'progress';
+  }
+
+  return 'info';
+};
+
+const createNarrativeCollector = () => {
+  const entries = [];
+  const seen = new Set();
+  let sequence = 0;
+
+  const toIsoTimestamp = (value) => {
+    if (!value) return new Date().toISOString();
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'number') {
+      try {
+        return new Date(value).toISOString();
+      } catch (error) {
+        return new Date().toISOString();
+      }
+    }
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.valueOf())) {
+        return parsed.toISOString();
+      }
+    }
+    return new Date().toISOString();
+  };
+
+  const extractMessage = (item) => {
+    if (typeof item === 'string') return item.trim();
+    if (!item || typeof item !== 'object') return '';
+    const candidates = [
+      item.message,
+      item.text,
+      item.description,
+      item.content,
+      item.summary,
+      item.status,
+      item.title
+    ];
+    const found = candidates.find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (found) return found.trim();
+    try {
+      return JSON.stringify(item);
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const addEntry = (item, origin) => {
+    const message = extractMessage(item);
+    if (!message) return;
+
+    const type = normalizeNarrativeType(item?.type || item?.status || item?.level || item?.severity, message);
+    const timestamp = toIsoTimestamp(item?.timestamp || item?.time || item?.updated_at || item?.updatedAt || item?.created_at || item?.createdAt);
+    const key = `${origin}|${message}|${type}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const currentSequence = sequence;
+    sequence += 1;
+
+    entries.push({
+      id: `${origin}-${currentSequence}`,
+      origin,
+      message,
+      type,
+      timestamp,
+      sequence: currentSequence
+    });
+  };
+
+  const collect = (payload, origin) => {
+    if (!payload) return;
+    if (Array.isArray(payload)) {
+      payload.forEach((item) => addEntry(item, origin));
+      return;
+    }
+    addEntry(payload, origin);
+  };
+
+  return {
+    collectFromStatus(statusPayload) {
+      if (!statusPayload || typeof statusPayload !== 'object') return;
+      collect(statusPayload.narratives, 'status');
+      collect(statusPayload.narrativeHistory, 'status');
+      collect(statusPayload.progressHistory, 'status');
+      collect(statusPayload.statusHistory, 'status');
+      collect(statusPayload.timeline, 'status');
+      collect(statusPayload.events, 'status');
+      collect(statusPayload.messages, 'status');
+      if (statusPayload.metadata && typeof statusPayload.metadata === 'object') {
+        collect(statusPayload.metadata.narratives, 'status');
+        collect(statusPayload.metadata.statuses, 'status');
+        collect(statusPayload.metadata.messages, 'status');
+      }
+    },
+    collectFromResult(resultPayload) {
+      if (!resultPayload || typeof resultPayload !== 'object') return;
+      collect(resultPayload.narratives, 'result');
+      collect(resultPayload.narrativeHistory, 'result');
+      collect(resultPayload.progressHistory, 'result');
+      collect(resultPayload.statusHistory, 'result');
+      collect(resultPayload.timeline, 'result');
+      collect(resultPayload.events, 'result');
+      collect(resultPayload.messages, 'result');
+      if (resultPayload.metadata && typeof resultPayload.metadata === 'object') {
+        collect(resultPayload.metadata.narratives, 'result');
+        collect(resultPayload.metadata.statuses, 'result');
+        collect(resultPayload.metadata.messages, 'result');
+      }
+    },
+    getEntries() {
+      return entries
+        .sort((a, b) => a.sequence - b.sequence)
+        .map(({ sequence, ...rest }) => rest);
+    }
+  };
 };
 
 export async function POST(request) {
@@ -80,7 +247,7 @@ export async function POST(request) {
     // AI Configuration
     const AI_CONFIG = {
       baseUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
-      apiKey: process.env.AI_API_KEY || 'b51b67b2924988b88809a421bd3cfb09d9a58d19ac746053f358e11b2895ac17'
+      apiKey: getRequiredAiApiKey()
     };
 
     console.log(`🎯 Generating section for framework: ${framework}`);
@@ -111,9 +278,9 @@ export async function POST(request) {
           industry: deliverableData.industry || []
         },
         client: {
-          name: clientData.name || 'UBS',
-          geography: clientData.geography || 'Switzerland',
-          industry: clientData.industry || ['Financial Services']
+          name: clientData.name,
+          geography: clientData.geography,
+          industry: clientData.industry
         }
       };
 
@@ -151,132 +318,107 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
+    const narrativeCollector = createNarrativeCollector();
+
     try {
-      // Call the specific agent for this framework
-      console.log(`🚀 ===== CALLING EXTERNAL AI AGENT =====`);
-      console.log(`🌐 URL: ${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`);
-      console.log(`🔑 API Key: ${AI_CONFIG.apiKey ? 'Present' : 'Missing'}`);
-      console.log(`📦 Payload:`, JSON.stringify(agentPayload, null, 2));
-      
-      // Add timeout and better error handling (allow more time for real agent responses)
-      const controller = new AbortController();
-      const frameworkRequestTimeout = parseInt(process.env.FRAMEWORK_AGENT_TIMEOUT_MS || process.env.BACKEND_TIMEOUT || '100000');
-      const timeoutId = setTimeout(() => controller.abort(), frameworkRequestTimeout);
-      
-      const response = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute`, {
+      console.log('🚀 ===== START ASYNC EXECUTION =====');
+
+      const startResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/${agentId}/execute-async`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': AI_CONFIG.apiKey
         },
-        body: JSON.stringify(agentPayload),
-        signal: controller.signal
+        body: JSON.stringify(agentPayload)
       });
-      
-      clearTimeout(timeoutId);
 
-      console.log(`📊 Response Status: ${response.status} ${response.statusText}`);
-      console.log(`📋 Response Headers:`, Object.fromEntries(response.headers.entries()));
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text();
+        throw new Error(`Failed to start agent execution (${startResponse.status}): ${errorText}`);
+      }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ ===== EXTERNAL API FAILED =====`);
-        console.error(`Status: ${response.status} ${response.statusText}`);
-        console.error(`Error Response:`, errorText);
-        console.error(`❌ ===== END EXTERNAL API ERROR =====`);
-        
-        // Use fallback data when agent calls fail
-        console.log(`🔄 ===== USING FALLBACK DATA =====`);
-        console.log(`Framework: ${framework}`);
-        console.log(`Reason: External API failed with status ${response.status}`);
-        console.log(`Error: ${errorText}`);
-        
-        const fallbackJson = generateFallbackContent(framework, errorText);
-        const fallbackData = JSON.parse(fallbackJson);
-        
-        console.log(`📊 Fallback Data Generated:`, JSON.stringify(fallbackData, null, 2));
-        
-        // Parse fallback data using the same parser
-        const sectionData = parseSectionResponse({
-          response: fallbackJson,
-          success: true,
-          source: 'fallback-data'
-        }, framework, sectionIndex);
-        
-        console.log(`📦 Parsed Fallback Section Data:`, JSON.stringify(sectionData, null, 2));
-        console.log(`🔄 ===== END FALLBACK DATA =====`);
-        
+      const startPayload = await startResponse.json();
+      const executionId = startPayload.executionId || startPayload.execution_id;
+      if (!executionId) {
+        throw new Error('Agent execution did not return an executionId');
+      }
+
+      const maxWaitMs = parseInt(process.env.FRAMEWORK_AGENT_TIMEOUT_MS || '300000', 10);
+      const pollDelays = resolvePollDelays();
+
+      let attempt = 0;
+      let agentResult = null;
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWaitMs) {
+        const statusResponse = await fetch(`${AI_CONFIG.baseUrl}/api/custom-agents/executions/${executionId}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': AI_CONFIG.apiKey
+          }
+        });
+
+        if (!statusResponse.ok) {
+          const errorText = await statusResponse.text();
+          throw new Error(`Failed to poll agent execution (${statusResponse.status}): ${errorText}`);
+        }
+
+        const status = await statusResponse.json();
+        console.log(`📊 Poll ${attempt + 1}:`, status.status, status.progress ?? 0);
+        narrativeCollector.collectFromStatus(status);
+
+        if (status.status === 'completed') {
+          agentResult = status.result;
+          console.log('📦 Agent result from polling:', JSON.stringify(agentResult, null, 2));
+          break;
+        }
+
+        if (status.status === 'failed') {
+          throw new Error(status.error || `Agent ${framework} execution failed`);
+        }
+
+        if (status.status === 'cancelled') {
+          throw new Error(`Agent ${framework} execution was cancelled`);
+        }
+
+        const delay = pollDelays[Math.min(attempt, pollDelays.length - 1)];
+        await wait(delay);
+        attempt += 1;
+      }
+
+      if (!agentResult) {
+        throw new Error(`Agent ${framework} execution timed out after ${attempt} polls`);
+      }
+
+      narrativeCollector.collectFromResult(agentResult);
+      const narrativeEntries = narrativeCollector.getEntries();
+
+      if (framework === 'taxonomy') {
+        console.log('🌐 Taxonomy result received:', agentResult);
         return NextResponse.json({
           success: true,
-          source: 'fallback-data',
           framework,
-          agentId: 'fallback',
-          data: sectionData
+          agentId,
+          data: agentResult,
+          source: 'taxonomy-agent',
+          narratives: narrativeEntries
         });
       }
 
-      const agentResult = await response.json();
-      
-      // LOG RAW AI AGENT RESPONSE FOR DEBUGGING
-      console.log('');
-      console.log('🤖 ========== RAW AI AGENT RESPONSE START ==========');
-      console.log(`Framework: ${framework}`);
-      console.log(`Agent ID: ${agentId}`);
-      console.log(`✅ EXTERNAL API SUCCESS - Using actual AI response`);
-      try {
-        console.log('Raw Response JSON:', JSON.stringify(agentResult, null, 2));
-      } catch (stringifyError) {
-        console.log('Raw Response (non-serializable):', agentResult);
+      const responseText = extractResponseText(agentResult);
+      if (!responseText) {
+        throw new Error('Agent returned empty response payload');
       }
-      console.log('Response Type:', typeof agentResult);
-      console.log('Response Keys:', Object.keys(agentResult || {}));
-      console.log('Has "data" field:', 'data' in (agentResult || {}));
-      console.log('Has "response" field:', 'response' in (agentResult || {}));
-      console.log('Has "content" field:', 'content' in (agentResult || {}));
-      console.log('🤖 ========== RAW AI AGENT RESPONSE END ==========');
-      console.log('');
 
-      // Parse and normalize the response
-      const sectionData = parseSectionResponse(agentResult, framework, sectionIndex);
-      
-      // Check if we need to use fallback - ONLY if AI explicitly failed
-      if (sectionData.status === 'fallback_used') {
-        console.log('⚠️ AI explicitly indicated failure, using fallback content with charts');
-        
-        // Use the fallback content generator to get proper structured data with charts
-        const fallbackJson = generateFallbackContent(framework, agentResult.response);
-        const fallbackData = JSON.parse(fallbackJson);
-        const fallbackSectionData = parseSectionResponse({
-          response: fallbackJson,
-          success: true,
-          source: 'fallback-data'
-        }, framework, sectionIndex);
-        
-        return NextResponse.json({
-          success: true,
-          source: 'fallback-data',
-          framework,
-          agentId: 'fallback',
-          sectionIndex,
-          rawAgentResponse: agentResult,
-          aiReturnedPlainText: true,
-          aiExplicitlyFailed: true,
-          data: fallbackSectionData
-        });
+      const parsedSection = parseSectionResponse(
+        { response: responseText, raw: agentResult },
+        framework,
+        typeof sectionIndex === 'number' && sectionIndex >= 0 ? sectionIndex : 0
+      );
+
+      if (narrativeEntries.length && typeof parsedSection === 'object' && parsedSection !== null) {
+        parsedSection.statusTimeline = narrativeEntries;
       }
-      
-      // If status is 'partial' or 'generated', use what we have from AI
-      console.log(`ℹ️ Using AI data with status: ${sectionData.status}`);
-      
-      console.log('');
-      console.log('📦 ========== PARSED SECTION DATA ==========');
-      try {
-        console.log('Parsed Section Data:', JSON.stringify(sectionData, null, 2));
-      } catch (stringifyError) {
-        console.log('Parsed Section Data (non-serializable):', sectionData);
-      }
-      console.log('📦 ========== PARSED SECTION DATA END ==========');
-      console.log('');
 
       return NextResponse.json({
         success: true,
@@ -284,68 +426,53 @@ export async function POST(request) {
         framework,
         agentId,
         sectionIndex,
-        rawAgentResponse: agentResult, // Include raw response for debugging
-        data: sectionData
+        rawAgentResponse: agentResult,
+        data: parsedSection,
+        narratives: narrativeEntries
       });
 
     } catch (agentError) {
       console.error(`❌ Section generation agent error for ${framework}:`, agentError);
-      
-      // Check if it's a network/timeout error
-      if (agentError.name === 'AbortError') {
-        console.error(`⏰ Request timeout for ${framework} - using fallback data`);
-        
-        // Use fallback data for timeout errors
-        const fallbackJson = generateFallbackContent(framework, 'Request timeout');
-        const fallbackData = JSON.parse(fallbackJson);
-        const sectionData = parseSectionResponse({
-          response: fallbackJson,
-          success: true,
-          source: 'fallback-data'
-        }, framework, sectionIndex);
-        
-        return NextResponse.json({
-          success: true,
-          source: 'fallback-data',
-          framework,
-          agentId: 'timeout-fallback',
-          data: sectionData
-        });
-      }
-      
-      // Check if it's a network connection error
-      if (agentError.code === 'ECONNREFUSED' || agentError.code === 'ENOTFOUND' || agentError.message.includes('fetch')) {
-        console.error(`🌐 Network error for ${framework} - using fallback data`);
-        
-        // Use fallback data for network errors
-        const fallbackJson = generateFallbackContent(framework, `Network error: ${agentError.message}`);
-        const fallbackData = JSON.parse(fallbackJson);
-        const sectionData = parseSectionResponse({
-          response: fallbackJson,
-          success: true,
-          source: 'fallback-data'
-        }, framework, sectionIndex);
-        
-        return NextResponse.json({
-          success: true,
-          source: 'fallback-data',
-          framework,
-          agentId: 'network-fallback',
-          data: sectionData
-        });
-      }
-      
-      return NextResponse.json(
-        {
-          error: `Failed to generate section for ${framework}`,
-          details: agentError.message,
-          framework,
-          sectionIndex
-        },
-        { status: 502 }
-      );
-    }
 
+      if (framework === 'taxonomy') {
+        const fallbackJson = generateFallbackContent(framework, agentError.message);
+        const fallbackData = JSON.parse(fallbackJson);
+        const fallbackNarratives = narrativeCollector.getEntries();
+
+        return NextResponse.json({
+          success: true,
+          source: 'fallback-data',
+          framework,
+          agentId: 'taxonomy-fallback',
+          data: fallbackData,
+          error: agentError.message,
+          narratives: fallbackNarratives
+        });
+      }
+
+      const fallbackJson = generateFallbackContent(framework, agentError.message);
+      const fallbackSection = parseSectionResponse({
+        response: fallbackJson,
+        success: true,
+        source: 'fallback-data'
+      }, framework, typeof sectionIndex === 'number' && sectionIndex >= 0 ? sectionIndex : 0);
+
+      const fallbackNarratives = narrativeCollector.getEntries();
+      if (fallbackNarratives.length && typeof fallbackSection === 'object' && fallbackSection !== null) {
+        fallbackSection.statusTimeline = fallbackNarratives;
+      }
+
+      return NextResponse.json({
+        success: true,
+        source: 'fallback-data',
+        framework,
+        agentId: 'fallback',
+        sectionIndex,
+        data: fallbackSection,
+        error: agentError.message,
+        narratives: fallbackNarratives
+      });
+    }
   } catch (error) {
     console.error('❌ Section generation error:', error);
     
@@ -361,6 +488,47 @@ export async function POST(request) {
 
 function generateFallbackContent(framework, originalResponse) {
   const fallbackData = {
+    taxonomy: {
+      slide_content: {
+        title: 'Swiss Pension Market Taxonomy',
+        overview: 'Structured taxonomy of the Swiss pension market covering pillars, products, and participant segments.',
+        pillars: [
+          {
+            name: '1st Pillar – AHV/AVS',
+            description: 'State-run pay-as-you-go pension providing basic coverage.',
+            sub_segments: ['Old-age pension', 'Survivor benefits', 'Disability insurance'],
+            key_actors: ['AHV/AVS Administration', 'Compenswiss']
+          },
+          {
+            name: '2nd Pillar – BVG/LPP',
+            description: 'Occupational pension funds combining employer and employee contributions.',
+            sub_segments: ['Collective pension funds', '1e plans', 'Freizügigkeit accounts'],
+            key_actors: ['Company pension funds', 'Insurance-backed collective funds', 'Index providers']
+          },
+          {
+            name: '3rd Pillar – Private Provision',
+            description: 'Voluntary, tax-advantaged individual savings products.',
+            sub_segments: ['Pillar 3a (restricted)', 'Pillar 3b (flexible)'],
+            key_actors: ['Retail banks', 'Insurance companies', 'Fintech wealth platforms']
+          }
+        ],
+        client_segments: [
+          {
+            segment: 'Mass Affluent',
+            needs: ['Tax optimisation', 'Retirement planning automation', 'Flexible withdrawal options']
+          },
+          {
+            segment: 'SME Employers',
+            needs: ['Competitive employee benefits', 'Cost transparency', 'Digital administration']
+          },
+          {
+            segment: 'High Net Worth Individuals',
+            needs: ['Alternative investment access', 'Global portability', 'Custom risk management']
+          }
+        ],
+        data_sources: ['Swiss Pension Fund Association (ASIP)', 'Swiss Federal Statistical Office', 'Industry disclosures']
+      }
+    },
     market_sizing: {
       slide_content: {
         title: "Swiss pension market sizing by product line",

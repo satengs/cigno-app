@@ -38,9 +38,22 @@ export function useMenuManager() {
           console.log('📥 Existing data found:', existingData);
           
           if (existingData && existingData.rootItems && existingData.rootItems.length > 0) {
-            // Use existing data from database
-            console.log('✅ Using existing data from database');
-            setMenuStructure(existingData.rootItems);
+            // Wrap existing data in organization structure
+            console.log('✅ Using existing data from database, wrapping in organization structure');
+            
+            // Create Cigno Organization wrapper
+            const cignoOrganization = {
+              id: 'cigno-org',
+              _id: 'cigno-org',
+              title: 'Cigno Organization',
+              type: 'organization',
+              icon: 'building-2',
+              isCollapsible: true,
+              isCollapsed: false,
+              children: existingData.rootItems
+            };
+            
+            setMenuStructure([cignoOrganization]);
             setIsLoading(false);
             return;
           }
@@ -193,8 +206,19 @@ export function useMenuManager() {
         console.log('📥 Refreshed data from database:', existingData);
         
         if (existingData && existingData.rootItems && existingData.rootItems.length > 0) {
-          // Update the menu structure with fresh data from database
-          setMenuStructure(existingData.rootItems);
+          // Wrap existing data in organization structure to match the expected format
+          const cignoOrganization = {
+            id: 'cigno-org',
+            _id: 'cigno-org',
+            title: 'Cigno Organization',
+            type: 'organization',
+            icon: 'building-2',
+            isCollapsible: true,
+            isCollapsed: false,
+            children: existingData.rootItems
+          };
+          
+          setMenuStructure([cignoOrganization]);
           console.log('✅ Menu structure refreshed from database');
         }
       }
@@ -429,8 +453,29 @@ export function useMenuManager() {
       
       console.log('Successfully updated collapse state in database');
       
-      // Refresh the menu structure from database
-      await refreshFromDatabase();
+      // Update the local menu structure immediately instead of refreshing from database
+      const updatedStructure = menuStructure.map(item => {
+        if (item.id === itemId || item._id === itemId) {
+          return { ...item, isCollapsed: newCollapsedState };
+        }
+        if (item.children) {
+          const updateChildren = (children) => {
+            return children.map(child => {
+              if (child.id === itemId || child._id === itemId) {
+                return { ...child, isCollapsed: newCollapsedState };
+              }
+              if (child.children) {
+                return { ...child, children: updateChildren(child.children) };
+              }
+              return child;
+            });
+          };
+          return { ...item, children: updateChildren(item.children) };
+        }
+        return item;
+      });
+      
+      setMenuStructure(updatedStructure);
       
     } catch (error) {
       console.error('Error toggling collapse state:', error);

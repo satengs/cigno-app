@@ -3,9 +3,6 @@
  * Handles all document-related API calls to the knowledge base
  */
 
-const API_BASE_URL = 'https://ai.vave.ch';
-const API_KEY = 'd4abe60bb87d3f6156285c0e0341ccb7965b387638cab06ed4f7d8566e9b3111';
-
 // Knowledge Base IDs
 export const KNOWLEDGE_BASE_IDS = {
   INTERNAL: '68f39475dfc921b68ec3e7c5',
@@ -14,8 +11,7 @@ export const KNOWLEDGE_BASE_IDS = {
 
 class DocumentService {
   constructor() {
-    this.apiKey = API_KEY;
-    this.baseUrl = API_BASE_URL;
+    this.baseUrl = '';
   }
 
   /**
@@ -23,7 +19,6 @@ class DocumentService {
    */
   getHeaders() {
     return {
-      'x-api-key': this.apiKey,
       'Content-Type': 'application/json'
     };
   }
@@ -96,7 +91,7 @@ class DocumentService {
    * @returns {string} Thumbnail URL
    */
   getThumbnailUrl(docId) {
-    return `${this.baseUrl}/api/documents/${docId}/thumbnail?apiKey=${this.apiKey}`;
+    return `${this.baseUrl}/api/documents/${docId}/thumbnail`;
   }
 
   /**
@@ -105,7 +100,7 @@ class DocumentService {
    * @returns {string} View URL
    */
   getViewUrl(docId) {
-    return `${this.baseUrl}/api/documents/${docId}/view?apiKey=${this.apiKey}`;
+    return `${this.baseUrl}/api/documents/${docId}/view`;
   }
 
   /**
@@ -197,4 +192,3 @@ class DocumentService {
 // Export singleton instance
 const documentService = new DocumentService();
 export default documentService;
-

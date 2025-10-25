@@ -14,7 +14,7 @@ const chatService = new ChatService();
 const backendProvider = new BackendProvider({
   backendUrl: process.env.AI_API_BASE_URL || 'https://ai.vave.ch',
   endpoint: '/api/chat/send-streaming',
-  apiKey: process.env.AI_API_KEY || '53e53331a91f51237307407ee976d19ccd1be395a96f7931990a326772b12bae',
+  apiKey: process.env.BACKEND_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || null,
   timeout: 30000
 });
 const openAIProvider = new OpenAIProvider(); // Keep as fallback

@@ -20,6 +20,18 @@ const sectionSchema = new mongoose.Schema({
   html: {
     type: String
   },
+  slide_content: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({})
+  },
+  slideContent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({})
+  },
+  sectionContent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   charts: [{
     id: {
       type: String
@@ -59,6 +71,27 @@ const sectionSchema = new mongoose.Schema({
     trim: true,
     maxlength: 1000
   }],
+  statusMessage: {
+    type: String,
+    maxlength: 500
+  },
+  generationStatus: {
+    type: String,
+    trim: true
+  },
+  progress: {
+    type: Number,
+    min: 0,
+    max: 100
+  },
+  isLoading: {
+    type: Boolean,
+    default: false
+  },
+  statusTimeline: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: () => []
+  },
   status: {
     type: String,
     enum: ['not_started', 'draft', 'in_review', 'final', 'locked'],
@@ -149,6 +182,14 @@ const sectionSchema = new mongoose.Schema({
   source: {
     type: String,
     trim: true
+  },
+  rawAgentResponse: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  rawResponse: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
   },
   created_at: {
     type: Date,
