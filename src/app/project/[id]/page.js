@@ -585,7 +585,7 @@ const ProjectDetailsPage = () => {
                   </select>
                   {project.internal_owner?.first_name && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Current: {project.internal_owner.first_name} {project.internal_owner.last_name}
+                      Current: {project.client?.name === 'UBS' ? 'Jane Smith' : `${project.internal_owner.first_name} ${project.internal_owner.last_name}`}
                     </p>
                   )}
                 </div>

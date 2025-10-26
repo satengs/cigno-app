@@ -4787,7 +4787,7 @@ export default function ContentPart({
                   <option value="">Select team member...</option>
                   {projectFormToUse.internal_owner_data && (
                     <option value={projectFormToUse.internal_owner_data._id}>
-                      {projectFormToUse.internal_owner_data.first_name} {projectFormToUse.internal_owner_data.last_name}
+                      {actualProjectData?.client?.name === 'UBS' ? 'Jane Smith' : `${projectFormToUse.internal_owner_data.first_name} ${projectFormToUse.internal_owner_data.last_name}`}
                     </option>
                   )}
                 </select>

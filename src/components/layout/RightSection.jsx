@@ -251,7 +251,7 @@ export default function RightSection({
       } catch (error) {
         console.error('❌ Failed to fetch current user:', error);
         // Fallback to default user
-        setCurrentUser({ _id: 'admin-user', name: 'Admin User', email: 'admin@cigno.app' });
+        setCurrentUser({ _id: 'admin-user', name: 'Philippe Reynier', email: 'philippe.reynier@cigno.app' });
       }
     };
 

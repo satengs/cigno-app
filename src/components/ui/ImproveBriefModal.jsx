@@ -306,7 +306,7 @@ export default function ImproveBriefModal({
       console.log('deliverable.brief_improvements:', deliverable?.brief_improvements);
       console.log('currentBrief:', typeof currentBrief, currentBrief);
       
-      setEditableBrief(currentBriefText);
+      setEditableBrief('');
       setCurrentBriefDraft(currentBriefText);
       
       // Load current quality score from deliverable

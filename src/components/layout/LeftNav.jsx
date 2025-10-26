@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { ChevronLeft, ChevronRight, ChevronDown, Building2, Target, Plus, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Building2, Target, Plus, MoreHorizontal, Filter } from 'lucide-react';
 import { UnifiedAddModal } from '../ui';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ThemeToggle from '../theme/ThemeToggle';
@@ -187,7 +187,7 @@ export default function LeftNav({
         const clients = [];
         const projects = [];
         const users = [
-          { id: 'user1', first_name: 'Sarah', last_name: 'Johnson', name: 'Sarah Johnson' },
+          { id: 'user1', first_name: 'Philippe', last_name: 'Reynier', name: 'Philippe Reynier' },
           { id: 'user2', first_name: 'Michael', last_name: 'Chen', name: 'Michael Chen' },
           { id: 'user3', first_name: 'Emma', last_name: 'Williams', name: 'Emma Williams' },
           { id: 'user4', first_name: 'David', last_name: 'Brown', name: 'David Brown' },
@@ -815,31 +815,16 @@ export default function LeftNav({
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-3 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
-          {/* CIGNO ORGANIZATION Section */}
-          {filteredMenuStructure && filteredMenuStructure.length > 0 && filteredMenuStructure[0]?.type === 'organization' && (
-            <div>
-              <div className="w-full flex items-center justify-between mb-2 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <div className="flex items-center space-x-2 flex-1">
-                  <Building2 className="h-4 w-4" style={{ color: 'var(--text-primary)' }} />
-                  <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {filteredMenuStructure[0].title}
-                  </h2>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
+          {/* Organization Divider */}
+          <div className="px-2 py-2 flex items-center space-x-2 mb-1">
+            <Filter className="h-4 w-4" style={{ color: 'var(--text-primary)' }} />
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Cigno's organization</span>
+          </div>
 
           {/* CLIENT Section */}
           <div>
-            <div className="w-full flex items-center justify-between mb-2 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-secondary)' }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'var(--bg-secondary)';
-              }}
-            >
+            <div className="w-full flex items-center justify-between mb-2 px-2 py-1.5 rounded">
               <button
                 data-testid="client-collapse-button"
                 onClick={() => toggleSection('client')}
@@ -850,7 +835,7 @@ export default function LeftNav({
                 ) : (
                   <ChevronRight className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                 )}
-                <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>CLIENT</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>CLIENT</h3>
               </button>
               <div className="flex items-center space-x-1">
                 <button 
@@ -927,11 +912,12 @@ export default function LeftNav({
                       : filteredMenuStructure.filter(item => item.type === 'client');
                     
                     return clients.map(client => (
-                      <div key={client._id || client.id} className="group">
+                      <div key={client._id || client.id} className="group ml-1">
                         <div 
-                          className="group flex items-center justify-between p-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
+                          className="group flex items-center justify-between p-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer border-l-2" 
                           style={{ 
-                            backgroundColor: selectedItem?.id === client._id || selectedItem?.id === client.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                            backgroundColor: selectedItem?.id === client._id || selectedItem?.id === client.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
+                            borderLeftColor: 'var(--border-primary)'
                           }}
                           onClick={() => handleItemClick({ ...client, type: 'client' })}
                           onMouseEnter={(e) => {
@@ -1079,23 +1065,16 @@ export default function LeftNav({
 
                         {/* PROJECT Section */}
                         {client.children && client.children.length > 0 && !client.isCollapsed && (
-                          <div className="ml-6 mt-2 space-y-1">
-                            <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-tertiary)' }}
-                              onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = 'var(--bg-secondary)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = 'var(--bg-tertiary)';
-                              }}
-                            >
+                          <div className="ml-1 mt-2 space-y-1">
+                            <div className="w-full flex items-center justify-between mb-1 px-2 py-1.5 rounded">
                               <button
                                 onClick={() => toggleSection('project')}
                                 className="flex items-center space-x-2 flex-1 text-left"
                               >
                                 {expandedSections.project ? (
-                                  <ChevronDown className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                  <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                                 ) : (
-                                  <ChevronRight className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                  <ChevronRight className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                                 )}
                                 <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>PROJECT</h4>
                               </button>
@@ -1115,15 +1094,16 @@ export default function LeftNav({
                             </div>
 
                             {expandedSections.project && (
-                              <div className="ml-4 space-y-0.5">
+                              <div className="ml-1 space-y-0.5">
                                 {client.children
                                   .filter(item => item.type === 'project')
                                   .map(project => (
                                     <div key={project._id || project.id} className="group">
                                       <div 
-                                        className="group flex items-center justify-between py-1 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer" 
+                                        className="group flex items-center justify-between py-1 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer border-l-2" 
                                         style={{ 
-                                          backgroundColor: selectedItem?.id === project._id || selectedItem?.id === project.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)'
+                                          backgroundColor: selectedItem?.id === project._id || selectedItem?.id === project.id ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
+                                          borderLeftColor: 'var(--border-primary)'
                                         }}
                                         onClick={() => handleItemClick({ ...project, type: 'project' })}
                                         onMouseEnter={(e) => {
@@ -1271,25 +1251,18 @@ export default function LeftNav({
 
                                       {/* DELIVERABLE Section */}
                                       {project.children && project.children.length > 0 && !project.isCollapsed && (
-                                        <div className="ml-4 mt-1 space-y-1">
-                                          <div className="w-full flex items-center justify-between mb-1 p-1 rounded transition-colors" style={{ backgroundColor: 'var(--bg-tertiary)' }}
-                                            onMouseEnter={(e) => {
-                                              e.target.style.backgroundColor = 'var(--bg-secondary)';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              e.target.style.backgroundColor = 'var(--bg-tertiary)';
-                                            }}
-                                          >
+                                        <div className="ml-1 mt-1 space-y-1">
+                                          <div className="w-full flex items-center justify-between mb-1 px-2 py-1.5 rounded">
                                             <button
                                               onClick={() => toggleSection('deliverable')}
                                               className="flex items-center space-x-2 flex-1 text-left"
                                             >
                                               {expandedSections.deliverable ? (
-                                                <ChevronDown className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                                <ChevronDown className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                                               ) : (
-                                                <ChevronRight className="h-2 w-2" style={{ color: 'var(--text-secondary)' }} />
+                                                <ChevronRight className="h-3 w-3" style={{ color: 'var(--text-secondary)' }} />
                                               )}
-                                              <h5 className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>DELIVERABLE</h5>
+                                              <h5 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>DELIVERABLE</h5>
                                             </button>
                                             <button
                                               onClick={() => handleAddItem('deliverable', project._id || project.id)}
@@ -1307,16 +1280,17 @@ export default function LeftNav({
                                           </div>
 
                                           {expandedSections.deliverable && (
-                                            <div className="ml-6 space-y-1 mt-1">
+                                            <div className="ml-1 space-y-1 mt-1">
                                               {project.children
                                                 .filter(item => item.type === 'deliverable')
                                                 .map(deliverable => (
                                                   <div key={deliverable._id || deliverable.id} className="group">
                                                     <div 
-                                                      className="flex items-start justify-between py-1.5 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer"
+                                                      className="flex items-start justify-between py-1.5 px-2 rounded transition-colors hover:bg-opacity-10 cursor-pointer border-l-2"
                                                       style={{ 
                                                         backgroundColor: selectedItem?.id === deliverable._id || selectedItem?.id === deliverable.id ? 'var(--bg-tertiary)' : 'transparent',
-                                                        border: selectedItem?.id === deliverable._id || selectedItem?.id === deliverable.id ? '1px solid var(--border-primary)' : '1px solid transparent'
+                                                        border: selectedItem?.id === deliverable._id || selectedItem?.id === deliverable.id ? '1px solid var(--border-primary)' : '1px solid transparent',
+                                                        borderLeftColor: 'var(--border-primary)'
                                                       }}
                                                       onClick={() => handleItemClick({ ...deliverable, type: 'deliverable' })}
                                                       onMouseEnter={(e) => {
@@ -1523,11 +1497,11 @@ export default function LeftNav({
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>SJ</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>PR</span>
               </div>
               {!isCollapsed && (
                 <div>
-                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>Sarah Johnson</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>Philippe Reynier</p>
                 </div>
               )}
             </div>

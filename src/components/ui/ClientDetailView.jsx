@@ -173,6 +173,12 @@ export default function ClientDetailView({
   // Helper function to get owner display name
   const getOwnerDisplayName = (ownerId) => {
     if (!ownerId) return 'Not specified';
+    
+    // Special case for UBS client - show Jane Smith as owner
+    if (client?.name === 'UBS' || client?.title === 'UBS') {
+      return 'Jane Smith';
+    }
+    
     const user = availableUsers.find(user => (user.id || user._id) === ownerId);
     if (user) {
       return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || user.username || 'Unknown User';
@@ -697,7 +703,7 @@ export default function ClientDetailView({
                         <p className="text-sm font-medium text-gray-900">{project.name || project.title}</p>
                         <p className="text-xs text-gray-500">
                           Status: {project.status || 'Active'} | 
-                          Owner: {project.internal_owner?.first_name && project.internal_owner?.last_name ? `${project.internal_owner.first_name} ${project.internal_owner.last_name}` : 'Philippe Reynier'}
+                          Owner: {project.internal_owner?.first_name && project.internal_owner?.last_name ? `${project.internal_owner.first_name} ${project.internal_owner.last_name}` : (client?.name === 'UBS' || client?.title === 'UBS' ? 'Jane Smith' : 'Philippe Reynier')}
                         </p>
                       </div>
                     </div>
