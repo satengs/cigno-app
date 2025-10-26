@@ -354,45 +354,59 @@ export async function DELETE(request) {
       );
     }
 
-    const deliverable = await Deliverable.findByIdAndDelete(id);
+    let deliverable = await Deliverable.findByIdAndDelete(id);
+    let menuItemRemoved = false;
+    let deliverableRemoved = false;
 
-    if (!deliverable) {
-      return NextResponse.json(
-        { success: false, error: 'Deliverable not found' },
-        { status: 404 }
-      );
+    if (deliverable) {
+      deliverableRemoved = true;
+      console.log('✅ Deliverable removed from database:', id);
+    } else {
+      console.warn('⚠️ Deliverable not found in database, proceeding to clean up menu item:', id);
     }
 
-    // Also remove the corresponding menu item
     try {
       const menuItem = await MenuItemModel.findOne({
-        'metadata.deliverableId': id
+        $or: [
+          { 'metadata.deliverableId': id },
+          { 'metadata.deliverable_id': id },
+          { 'metadata.business_entity_id': id }
+        ]
       });
 
       if (menuItem) {
         console.log('🗑️ Found corresponding menu item to delete:', menuItem._id);
-        
-        // Remove from parent's children array if it has a parent
+
         if (menuItem.parentId) {
           await MenuItemModel.findByIdAndUpdate(
             menuItem.parentId,
             { $pull: { children: menuItem._id } }
           );
         }
-        
-        // Delete the menu item
+
         await MenuItemModel.findByIdAndDelete(menuItem._id);
         console.log('✅ Menu item deleted successfully');
+        menuItemRemoved = true;
       } else {
-        console.log('⚠️ No corresponding menu item found for deliverable:', id);
+        console.log('ℹ️ No corresponding menu item found for deliverable:', id);
       }
     } catch (menuError) {
-      console.log('⚠️ Failed to delete menu item, but deliverable was deleted:', menuError.message);
+      console.error('⚠️ Failed to delete menu item:', menuError.message);
+    }
+
+    if (!deliverableRemoved && !menuItemRemoved) {
+      return NextResponse.json(
+        { success: false, error: 'Deliverable not found' },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Deliverable deleted'
+      message: deliverableRemoved
+        ? 'Deliverable deleted'
+        : 'Deliverable not found, but menu entry was removed',
+      menuItemRemoved
     });
 
   } catch (error) {

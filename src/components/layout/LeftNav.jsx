@@ -7,20 +7,36 @@ import { UnifiedAddModal } from '../ui';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ThemeToggle from '../theme/ThemeToggle';
 import dataService from '@/lib/services/DataService';
+import { useMenuManager } from '@/lib/hooks/useMenuManager';
 
 export default function LeftNav({ 
   onToggle, 
-  menuStructure, 
-  isLoading, 
-  refreshFromDatabase, 
-  toggleCollapse: toggleItemCollapse,
-  expandItem,
-  collapseItem,
+  menuStructure: menuStructureProp, 
+  isLoading: isLoadingProp, 
+  refreshFromDatabase: refreshFromDatabaseProp, 
+  toggleCollapse: toggleCollapseProp,
+  expandItem: expandItemProp,
+  collapseItem: collapseItemProp,
   onItemSelect, 
   onModalStateChange 
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const {
+    menuStructure: internalMenuStructure,
+    isLoading: internalIsLoading,
+    refreshFromDatabase: internalRefreshFromDatabase,
+    toggleCollapse: internalToggleCollapse,
+    expandItem: internalExpandItem,
+    collapseItem: internalCollapseItem
+  } = useMenuManager();
+
+  const menuStructure = menuStructureProp ?? internalMenuStructure;
+  const isLoading = typeof isLoadingProp === 'undefined' ? internalIsLoading : isLoadingProp;
+  const refreshFromDatabase = refreshFromDatabaseProp ?? internalRefreshFromDatabase;
+  const toggleItemCollapse = toggleCollapseProp ?? internalToggleCollapse;
+  const expandItem = expandItemProp ?? internalExpandItem;
+  const collapseItem = collapseItemProp ?? internalCollapseItem;
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(280);

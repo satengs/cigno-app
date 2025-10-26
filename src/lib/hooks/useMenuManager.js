@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { MenuManager } from '../models/MenuManager';
 
+let sharedMenuManager = null;
+let sharedMenuStructure = [];
+let sharedInitialized = false;
+
 // Helper function to map project status to valid menu status
 const mapProjectStatusToMenuStatus = (projectStatus) => {
   const statusMap = {
@@ -17,8 +21,8 @@ const mapProjectStatusToMenuStatus = (projectStatus) => {
 
 export function useMenuManager() {
   const [menuManager] = useState(() => new MenuManager());
-  const [menuStructure, setMenuStructure] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [menuStructure, setMenuStructureState] = useState(() => sharedMenuStructure);
+  const [isLoading, setIsLoading] = useState(!sharedInitialized);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -29,6 +33,13 @@ export function useMenuManager() {
     
     const initializeMenu = async () => {
       try {
+        if (sharedInitialized && sharedMenuStructure.length > 0) {
+          console.log('✅ Using cached menu structure');
+          setMenuStructureState(sharedMenuStructure);
+          setIsLoading(false);
+          return;
+        }
+
         // First, try to fetch existing data from database
         console.log('🔍 Fetching existing menu data from database...');
         const response = await fetch('/api/menu');
@@ -53,7 +64,9 @@ export function useMenuManager() {
               children: existingData.rootItems
             };
             
-            setMenuStructure([cignoOrganization]);
+      sharedMenuStructure = [cignoOrganization];
+      sharedInitialized = true;
+      setMenuStructureState(sharedMenuStructure);
             setIsLoading(false);
             return;
           }
@@ -65,7 +78,9 @@ export function useMenuManager() {
         console.log('Default menu created:', defaultMenu);
         
         // Set the menu structure
-        setMenuStructure(defaultMenu);
+        sharedMenuStructure = defaultMenu;
+        sharedInitialized = true;
+        setMenuStructureState(sharedMenuStructure);
         console.log('Menu structure set');
         
         // Set loading to false
@@ -218,7 +233,9 @@ export function useMenuManager() {
             children: existingData.rootItems
           };
           
-          setMenuStructure([cignoOrganization]);
+          sharedMenuStructure = [cignoOrganization];
+          sharedInitialized = true;
+          setMenuStructureState(sharedMenuStructure);
           console.log('✅ Menu structure refreshed from database');
         }
       }
@@ -349,7 +366,9 @@ export function useMenuManager() {
       
       // Remove the item from the local menu manager for immediate UI update
       menuManager.removeItem(itemId);
-      setMenuStructure(menuManager.getRootItems());
+      sharedMenuStructure = menuManager.getRootItems();
+      sharedInitialized = true;
+      setMenuStructureState(sharedMenuStructure);
       if (selectedItemId === itemId) {
         setSelectedItemId(null);
       }
@@ -390,7 +409,9 @@ export function useMenuManager() {
       
       // Now update the local menu manager for immediate UI update
       menuManager.updateItem(itemId, updates);
-      setMenuStructure(menuManager.getRootItems());
+      sharedMenuStructure = menuManager.getRootItems();
+      sharedInitialized = true;
+      setMenuStructureState(sharedMenuStructure);
       
       console.log('✅ Item updated locally successfully');
       
@@ -402,7 +423,9 @@ export function useMenuManager() {
 
   const moveItem = useCallback((itemId, newParentId, newOrder) => {
     menuManager.moveItem(itemId, newParentId, newOrder);
-    setMenuStructure(menuManager.getRootItems());
+    sharedMenuStructure = menuManager.getRootItems();
+    sharedInitialized = true;
+    setMenuStructureState(sharedMenuStructure);
   }, [menuManager]);
 
   // Collapse/Expand Operations
@@ -475,7 +498,8 @@ export function useMenuManager() {
         return item;
       });
       
-      setMenuStructure(updatedStructure);
+      sharedMenuStructure = updatedStructure;
+      setMenuStructureState(sharedMenuStructure);
       
     } catch (error) {
       console.error('Error toggling collapse state:', error);
@@ -484,12 +508,14 @@ export function useMenuManager() {
 
   const expandItem = useCallback((itemId) => {
     menuManager.expandItem(itemId);
-    setMenuStructure(menuManager.getRootItems());
+    sharedMenuStructure = menuManager.getRootItems();
+    setMenuStructureState(sharedMenuStructure);
   }, [menuManager]);
 
   const collapseItem = useCallback((itemId) => {
     menuManager.collapseItem(itemId);
-    setMenuStructure(menuManager.getRootItems());
+    sharedMenuStructure = menuManager.getRootItems();
+    setMenuStructureState(sharedMenuStructure);
   }, [menuManager]);
 
   // Selection Operations
@@ -549,7 +575,9 @@ export function useMenuManager() {
 
   const importMenu = useCallback((jsonData) => {
     menuManager.importFromJSON(jsonData);
-    setMenuStructure(menuManager.getRootItems());
+    sharedMenuStructure = menuManager.getRootItems();
+    sharedInitialized = true;
+    setMenuStructureState(sharedMenuStructure);
   }, [menuManager]);
 
   return {

@@ -4,6 +4,7 @@ import Project from '../../../../lib/models/Project';
 import Deliverable from '../../../../lib/models/Deliverable';
 import Client from '../../../../lib/models/Client';
 import User from '../../../../lib/models/User';
+import '../../../../lib/models/Contact';
 import mongoose from 'mongoose';
 
 export async function GET(request, { params }) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectDB from '../../../lib/db/mongoose';
 import MenuItemModel from '../../../lib/models/MenuItemModel';
-import { formatForAPI, isValidObjectId } from '../../../lib/utils/idUtils';
+import { formatForAPI, isValidObjectId, getIdString } from '../../../lib/utils/idUtils';
 
 export async function GET() {
   try {
@@ -79,11 +79,11 @@ export async function GET() {
         } else {
           titleMap.set(key, itemId);
         }
-      }
     }
-    
-    // Remove duplicate items from both itemMap and database
-    for (const itemId of duplicateItems) {
+  }
+
+  // Remove duplicate items from both itemMap and database
+  for (const itemId of duplicateItems) {
       itemMap.delete(itemId);
       console.log(`✅ Removed duplicate menu item from display: ${itemId}`);
       
@@ -98,8 +98,155 @@ export async function GET() {
     
     // No auto-generation - only use existing menu items from database
     console.log(`Skipping auto-generation - using only existing menu items from database`);
-    
-    // Third pass: build the hierarchy for all menu items (including auto-generated ones)
+
+    const deliverableStatusMap = new Map();
+    const mapDeliverableStatusToMenuStatus = (status) => {
+      switch ((status || '').toLowerCase()) {
+        case 'draft':
+          return 'not-started';
+        case 'in_progress':
+        case 'in-progress':
+        case 'in_review':
+        case 'in-review':
+          return 'in-progress';
+        case 'approved':
+        case 'completed':
+        case 'delivered':
+          return 'completed';
+        case 'rejected':
+          return 'inactive';
+        default:
+          return 'active';
+      }
+    };
+
+    allDeliverables.forEach(deliverable => {
+      const id = getIdString(deliverable._id);
+      if (id) {
+        deliverableStatusMap.set(id, deliverable.status);
+      }
+    });
+
+    const existingDeliverableIds = new Set();
+    for (const item of itemMap.values()) {
+      if (item.type !== 'deliverable') continue;
+
+      const meta = item.metadata || {};
+      const linkedId = getIdString(
+        meta.deliverableId ||
+        meta.deliverable_id ||
+        meta.business_entity_id ||
+        item.deliverable ||
+        item.deliverableId
+      );
+
+      if (linkedId) {
+        existingDeliverableIds.add(linkedId);
+      } else {
+        const fallback = getIdString(item._id || item.id);
+        if (fallback) {
+          existingDeliverableIds.add(fallback);
+        }
+      }
+    }
+
+    const projectIndex = new Map();
+    const addProjectIndexEntry = (rawId, item) => {
+      const projectId = getIdString(rawId);
+      if (!projectId || projectIndex.has(projectId)) return;
+      projectIndex.set(projectId, item);
+    };
+
+    for (const item of itemMap.values()) {
+      if (item.type !== 'project') continue;
+
+      const meta = item.metadata || {};
+      addProjectIndexEntry(meta.project_id, item);
+      addProjectIndexEntry(meta.business_entity_id, item);
+      addProjectIndexEntry(item.project, item);
+      addProjectIndexEntry(item.projectId, item);
+      addProjectIndexEntry(item._id, item);
+      addProjectIndexEntry(item.id, item);
+    }
+
+    const virtualDeliverableItems = [];
+
+    for (const deliverable of allDeliverables) {
+      const deliverableId = getIdString(deliverable._id);
+      if (!deliverableId || existingDeliverableIds.has(deliverableId)) {
+        continue;
+      }
+
+      const projectId = getIdString(deliverable.project);
+      if (!projectId) {
+        continue;
+      }
+
+      const parentProject = projectIndex.get(projectId);
+      if (!parentProject) {
+        continue;
+      }
+
+      const virtualDeliverableItem = {
+        _id: deliverableId,
+        id: deliverableId,
+        title: deliverable.name || 'Untitled Deliverable',
+        description: deliverable.brief || '',
+        type: 'deliverable',
+        status: mapDeliverableStatusToMenuStatus(deliverable.status),
+        parentId: getIdString(parentProject._id) || getIdString(parentProject.id),
+        order: 0,
+        isCollapsible: true,
+        metadata: {
+          deliverableId,
+          deliverable_id: deliverableId,
+          business_entity_id: deliverableId,
+          project_id: projectId,
+          type: deliverable.type,
+          due_date: deliverable.due_date,
+          priority: deliverable.priority,
+          isVirtual: true
+        },
+        brief: deliverable.brief || '',
+        dueDate: deliverable.due_date || null,
+        priority: deliverable.priority || 'medium',
+        children: []
+      };
+
+      itemMap.set(virtualDeliverableItem._id.toString(), virtualDeliverableItem);
+      virtualDeliverableItems.push(virtualDeliverableItem);
+    }
+
+    if (virtualDeliverableItems.length > 0) {
+      console.log(`➕ Added ${virtualDeliverableItems.length} virtual deliverable menu items to maintain consistency`);
+    }
+
+    for (const item of itemMap.values()) {
+      if (item.type === 'deliverable') {
+        const meta = item.metadata || {};
+        const deliverableId = getIdString(
+          meta.deliverableId ||
+          meta.deliverable_id ||
+          meta.business_entity_id ||
+          item.deliverable ||
+          item.deliverableId
+        );
+
+        if (deliverableId && deliverableStatusMap.has(deliverableId)) {
+          const actualStatus = deliverableStatusMap.get(deliverableId);
+          item.status = mapDeliverableStatusToMenuStatus(actualStatus);
+          item.metadata = {
+            ...meta,
+            deliverableId,
+            deliverable_id: deliverableId,
+            business_entity_id: deliverableId,
+            deliverableStatus: actualStatus
+          };
+        }
+      }
+    }
+
+  // Third pass: build the hierarchy for all menu items (including auto-generated ones)
     // Process all items in the itemMap, not just the original allItems
     const processedItems = new Set();
     Array.from(itemMap.values()).forEach(item => {

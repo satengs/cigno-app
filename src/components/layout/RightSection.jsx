@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
+import {
   ChevronDown, 
   ChevronUp, 
   MoreHorizontal, 
@@ -40,7 +40,9 @@ export default function RightSection({
   onLayoutChange,
   storyline = null,
   onApplyLayoutToAll,
-  availableLayouts = ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']
+  availableLayouts = ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow'],
+  layoutAISuggestion = null,
+  onAISuggestionClick
 }) {
   // State for collapsible sections - chat closed by default
   const [expandedSections, setExpandedSections] = useState({
@@ -798,6 +800,42 @@ export default function RightSection({
 
   const relatedInsights = getRelatedInsights(selectedItem);
 
+  const aiSuggestionStatus = layoutAISuggestion?.status || 'idle';
+  const aiSuggestionMessage = layoutAISuggestion?.statusMessage || '';
+  const aiSuggestedLayoutId = layoutAISuggestion?.recommendedLayout || null;
+  const aiSuggestedLayoutName = aiSuggestedLayoutId
+    ? (LAYOUT_OPTIONS.find(option => option.id === aiSuggestedLayoutId)?.name || aiSuggestedLayoutId)
+    : null;
+  const aiSuggestionDisabled = aiSuggestionStatus === 'loading';
+  const aiSuggestionMessageColor = aiSuggestionStatus === 'error'
+    ? 'var(--status-error, #ef4444)'
+    : aiSuggestionStatus === 'success'
+      ? 'var(--status-success, #047857)'
+      : 'var(--text-secondary)';
+
+  const aiSuggestionOption = layoutAISuggestion ? (() => {
+    const previewSource = aiSuggestedLayoutId
+      ? LAYOUT_OPTIONS.find(option => option.id === aiSuggestedLayoutId)?.preview
+      : LAYOUT_OPTIONS[0]?.preview;
+
+    return {
+      id: 'ai-suggested-layout-option',
+      name: layoutAISuggestion.title || 'Cigno AI Suggested',
+      description: layoutAISuggestion.description || (aiSuggestedLayoutName
+        ? `Apply the ${aiSuggestedLayoutName} layout recommended by Cigno AI.`
+        : 'Apply the latest layout styling suggested by Cigno AI.'),
+      preview: previewSource,
+      isAISuggestion: true,
+      statusMessage: aiSuggestionMessage,
+      designGuidelines: layoutAISuggestion.designGuidelines || null,
+      recommendedLayoutId: layoutAISuggestion.recommendedLayout || null
+    };
+  })() : null;
+
+  const computedLayoutOptions = aiSuggestionOption
+    ? [aiSuggestionOption, ...LAYOUT_OPTIONS]
+    : LAYOUT_OPTIONS;
+
   return (
     <div 
       className="flex flex-col h-full relative overflow-hidden border-l"
@@ -853,51 +891,95 @@ export default function RightSection({
           
           {expandedSections.layoutOptions && (
             <div className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
-              {LAYOUT_OPTIONS.map((layout) => {
-                const isEnabled = availableLayouts.includes(layout.id);
-                const isSelected = selectedLayout === layout.id;
+              {computedLayoutOptions.map((layout) => {
+                const isAISuggestion = layout.isAISuggestion;
+                const layoutId = isAISuggestion ? layout.recommendedLayoutId || null : layout.id;
+                const hasRecommendation = isAISuggestion && !!layout.recommendedLayoutId;
+                const isEnabled = isAISuggestion
+                  ? hasRecommendation || (!!onAISuggestionClick && !aiSuggestionDisabled)
+                  : (layoutId ? availableLayouts.includes(layoutId) : false);
+                const isSelected = isAISuggestion
+                  ? hasRecommendation && selectedLayout === layout.recommendedLayoutId
+                  : layoutId
+                    ? selectedLayout === layoutId
+                    : false;
+                const isAISuggestedLayout = !isAISuggestion
+                  ? (layoutId && aiSuggestedLayoutId && aiSuggestedLayoutId === layoutId)
+                  : false;
+
+                const effectivePreview = layout.preview || (isAISuggestion && aiSuggestedLayoutId
+                  ? LAYOUT_OPTIONS.find(option => option.id === aiSuggestedLayoutId)?.preview
+                  : layout.preview);
+
+                const handleClick = () => {
+                  if (isAISuggestion) {
+                    if (hasRecommendation && onLayoutChange) {
+                      onLayoutChange(layout.recommendedLayoutId);
+                      return;
+                    }
+                    if (!aiSuggestionDisabled && onAISuggestionClick) {
+                      onAISuggestionClick();
+                    }
+                    return;
+                  }
+                  if (!layoutId || !availableLayouts.includes(layoutId)) return;
+                  if (onLayoutChange) {
+                    onLayoutChange(layoutId);
+                  }
+                };
 
                 return (
                   <div
                   key={layout.id}
-                  onClick={() => {
-                    if (!isEnabled) return;
-                    onLayoutChange && onLayoutChange(layout.id);
-                  }}
-                  title={!isEnabled ? `${layout.name} is not available for the current section type` : layout.name}
+                  onClick={handleClick}
+                  title={isAISuggestion
+                    ? (layout.statusMessage || 'Apply the latest Cigno AI suggestion')
+                    : (!isEnabled ? `${layout.name} is not available for the current section type` : layout.name)}
                   className={`relative p-3 border rounded-lg transition-all ${
-                    isEnabled
-                      ? 'cursor-pointer'
-                      : 'cursor-not-allowed opacity-50'
+                    isAISuggestion
+                      ? (aiSuggestionDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer')
+                      : isEnabled
+                        ? 'cursor-pointer'
+                        : 'cursor-not-allowed opacity-50'
                   } ${
-                    isSelected ? 'shadow-sm' : isEnabled ? 'hover:shadow-sm' : ''
+                    isSelected ? 'shadow-sm' : (!isAISuggestion && isEnabled) ? 'hover:shadow-sm' : ''
                   }`}
                   style={{
-                    borderColor: isSelected ? 'var(--text-primary)' : 'var(--border-primary)',
+                    borderColor: isSelected
+                      ? 'var(--text-primary)'
+                      : isAISuggestion && aiSuggestionStatus === 'success'
+                        ? 'var(--accent-primary)'
+                        : 'var(--border-primary)',
                     backgroundColor: 'var(--bg-primary)'
                   }}
                   onMouseEnter={(e) => {
-                    if (!isEnabled) return;
-                    if (!isSelected) {
-                      e.currentTarget.style.borderColor = 'var(--border-secondary)';
-                    }
+                    if ((isAISuggestion && (aiSuggestionDisabled || !onAISuggestionClick)) || (!isAISuggestion && !isEnabled) || isSelected) return;
+                    e.currentTarget.style.borderColor = 'var(--border-secondary)';
                   }}
                   onMouseLeave={(e) => {
-                    if (!isEnabled) return;
-                    if (!isSelected) {
-                      e.currentTarget.style.borderColor = 'var(--border-primary)';
-                    }
+                    if ((isAISuggestion && (aiSuggestionDisabled || !onAISuggestionClick)) || (!isAISuggestion && !isEnabled) || isSelected) return;
+                    e.currentTarget.style.borderColor = 'var(--border-primary)';
                   }}
                 >
-                  {layout.recommended && (
+                  {layout.recommended && !isAISuggestion && (
                     <div className="absolute -top-2 -right-2 text-white text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--text-primary)' }}>
                       Recommended
                     </div>
                   )}
-                  
+                  {isAISuggestion && aiSuggestionStatus === 'success' && (
+                    <div className="absolute -top-2 -right-2 text-white text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)' }}>
+                      Suggested
+                    </div>
+                  )}
+                  {isAISuggestedLayout && (
+                    <div className="absolute -top-2 -left-2 text-white text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--accent-primary)' }}>
+                      Cigno AI
+                    </div>
+                  )}
+
                   <div className="flex items-start space-x-3">
                     <div className="w-16 h-12 flex-shrink-0">
-                      {layout.preview}
+                      {effectivePreview || layout.preview}
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -905,14 +987,19 @@ export default function RightSection({
                         <h3 className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                           {layout.name}
                         </h3>
-                        {isSelected && (
+                        {!isAISuggestion && isSelected && (
                           <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-primary)' }} />
                         )}
                       </div>
                       <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
                         {layout.description}
                       </p>
-                      {!isEnabled && (
+                      {isAISuggestion && layout.statusMessage && (
+                        <p className="text-xs mt-1" style={{ color: aiSuggestionMessageColor }}>
+                          {layout.statusMessage}
+                        </p>
+                      )}
+                      {!isAISuggestion && layoutId && !availableLayouts.includes(layoutId) && (
                         <p className="text-xs mt-1 text-red-500 font-medium">
                           Not available for current section type
                         </p>

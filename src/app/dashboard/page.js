@@ -194,12 +194,16 @@ function DashboardWithSearchParams() {
     }
   };
 
+  const isDeliverable = selectedItem?.type === 'deliverable';
+  const shouldShowRightSection = !!selectedItem && selectedItem.type !== 'client';
+  const showLayoutOptions = isDeliverable && currentContentView === 'layout';
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Left Navigation */}
       <LeftNav 
-        menuStructure={menuStructure}
-        isLoading={isLoading}
+        menuStructure={menuStructure && menuStructure.length > 0 ? menuStructure : undefined}
+        isLoading={typeof isLoading === 'boolean' ? isLoading : undefined}
         refreshFromDatabase={refreshFromDatabase}
         toggleCollapse={toggleCollapse}
         expandItem={expandItem}
@@ -217,25 +221,28 @@ function DashboardWithSearchParams() {
             selectedItem={selectedItem}
             onItemSelect={handleItemSelect}
             onItemDeleted={refreshFromDatabase}
-            onDeliverableNavigate={handleDeliverableNavigate}
-            refreshFromDatabase={refreshFromDatabase}
-            onViewChange={handleViewChange}
-            selectedLayout={selectedLayout}
-            onStorylineChange={handleStorylineChange}
-          />
+          onDeliverableNavigate={handleDeliverableNavigate}
+          refreshFromDatabase={refreshFromDatabase}
+          onViewChange={handleViewChange}
+          selectedLayout={selectedLayout}
+          onLayoutChange={handleLayoutChange}
+          onStorylineChange={handleStorylineChange}
+        />
         </div>
 
         {/* Right Section */}
-        <RightSection 
-          isModalOpen={isModalOpen} 
-          selectedItem={selectedItem} 
-          showLayoutOptions={selectedItem?.type === 'deliverable' && (currentContentView === 'layout' || currentContentView === 'storyline')}
-          selectedLayout={selectedLayout}
-          onLayoutChange={handleLayoutChange}
-          storyline={currentStoryline}
-          onApplyLayoutToAll={handleApplyLayoutToAll}
-          availableLayouts={['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']}
-        />
+        {shouldShowRightSection && (
+          <RightSection 
+            isModalOpen={isModalOpen} 
+            selectedItem={selectedItem} 
+            showLayoutOptions={showLayoutOptions}
+            selectedLayout={selectedLayout}
+            onLayoutChange={handleLayoutChange}
+            storyline={currentStoryline}
+            onApplyLayoutToAll={handleApplyLayoutToAll}
+            availableLayouts={['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']}
+          />
+        )}
       </div>
     </div>
   );

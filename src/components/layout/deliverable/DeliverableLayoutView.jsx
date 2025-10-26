@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Check, ChevronDown, ChevronUp, Sparkles, Loader2, Plus, X } from 'lucide-react';
 import { normalizeScoreValue } from '../../../utils/scoreUtils';
 import { renderFrameworkContent } from '../../../lib/frameworkRenderer';
@@ -163,6 +163,7 @@ const LAYOUT_OPTIONS = [
 ];
 
 const ALL_LAYOUT_IDS = LAYOUT_OPTIONS.map(option => option.id);
+const MARKET_SIZING_DESIGN_AGENT_ID = process.env.NEXT_PUBLIC_MARKET_SIZING_DESIGN_AGENT_ID || '68fbb8654d9fb46a6dc33c62';
 
 const FRAMEWORK_LAYOUT_SUPPORT = {
   // Market analysis frameworks
@@ -214,6 +215,140 @@ const getSupportedLayoutsForSection = (section) => {
   return hasStructuredContent ? ALL_LAYOUT_IDS : ['full-width', 'title-2-columns'];
 };
 
+const normalizeLayoutId = (layoutId) => {
+  if (!layoutId || typeof layoutId !== 'string') {
+    return null;
+  }
+
+  const normalized = layoutId.trim().toLowerCase();
+  if (ALL_LAYOUT_IDS.includes(normalized)) {
+    return normalized;
+  }
+
+  if (normalized === 'two-columns' || normalized === '2-columns' || normalized === 'two_column') {
+    return 'title-2-columns';
+  }
+
+  if (normalized.includes('timeline')) {
+    return 'timeline';
+  }
+
+  if (normalized.includes('process')) {
+    return 'process-flow';
+  }
+
+  if (normalized.includes('matrix') || normalized.includes('bcg')) {
+    return 'bcg-matrix';
+  }
+
+  if (normalized.includes('three') || normalized.includes('3-col')) {
+    return 'three-columns';
+  }
+
+  if (normalized.includes('full')) {
+    return 'full-width';
+  }
+
+  if (normalized === 'default') {
+    return 'default';
+  }
+
+  return null;
+};
+
+const getLayoutNameForId = (layoutId) => {
+  if (!layoutId) {
+    return null;
+  }
+
+  const layout = LAYOUT_OPTIONS.find(option => option.id === layoutId);
+  return layout ? layout.name : layoutId;
+};
+
+const safeSerialize = (value) => {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (error) {
+    console.warn('⚠️ Failed to serialize value for AI payload:', error);
+    return value;
+  }
+};
+
+const tryParseJson = (value) => {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('⚠️ Failed to parse JSON string from market sizing design agent:', error.message);
+    return null;
+  }
+};
+
+const normalizeAgentSectionForPreview = (section = {}, fallback = {}) => {
+  if (!section || typeof section !== 'object') {
+    return {
+      ...fallback,
+      layoutPreview: fallback.layoutPreview
+    };
+  }
+
+  const slideContent = section.slideContent || section.slide_content || fallback.slideContent;
+  const sectionContent = section.sectionContent || section.section_content || fallback.sectionContent || {};
+
+  const combinedSectionContent = {
+    ...sectionContent,
+    slideContent: sectionContent.slideContent || slideContent,
+    marketSegments: sectionContent.marketSegments || section.marketSegments || slideContent?.market_segments,
+    totalMarket: sectionContent.totalMarket || section.totalMarket || slideContent?.total_market
+  };
+
+  const normalizedSection = {
+    ...fallback,
+    ...section,
+    slideContent,
+    sectionContent: combinedSectionContent,
+    citations: section.citations || section.sources || fallback.citations || fallback.sources,
+    insights: section.insights || fallback.insights,
+    layout: section.layout || fallback.layout
+  };
+
+  delete normalizedSection.slide_content;
+  delete normalizedSection.section_content;
+  delete normalizedSection.sources;
+  delete normalizedSection.marketSegments; // ensure nested version used
+  delete normalizedSection.totalMarket;
+
+  return normalizedSection;
+};
+
+const extractAgentSuggestionPayload = (agentData = {}) => {
+  if (!agentData || typeof agentData !== 'object') {
+    return {
+      section: null,
+      layoutRecommendation: null,
+      designGuidelines: null,
+      raw: agentData
+    };
+  }
+
+  const parsedResponse =
+    tryParseJson(agentData.response) ||
+    tryParseJson(agentData.data) ||
+    tryParseJson(agentData.result) ||
+    null;
+  const base = parsedResponse || agentData;
+
+  return {
+    section: base.section || agentData.section || null,
+    layoutRecommendation: base.layoutRecommendation || agentData.layoutRecommendation || null,
+    designGuidelines: base.designGuidelines || agentData.designGuidelines || null,
+    raw: agentData
+  };
+};
+
 export default function DeliverableLayoutView({
   hasStoryline,
   onGenerateStoryline,
@@ -225,11 +360,17 @@ export default function DeliverableLayoutView({
   onApplyLayoutToAll,
   briefQuality = null,
   onSupportedLayoutsChange,
-  onLayoutChange
+  onLayoutChange,
+  onAISuggestionChange
 }) {
   const [previewSection, setPreviewSection] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const [slideGenerationState, setSlideGenerationState] = useState({});
+  const [aiSuggestionState, setAiSuggestionState] = useState({
+    status: 'idle',
+    message: '',
+    recommendation: null
+  });
 
   const normalizeSlideData = (slide, index = 0, fallbackLayout = selectedLayout) => {
     if (!slide) {
@@ -289,23 +430,141 @@ export default function DeliverableLayoutView({
     };
   };
 
+
   // Get the first section or use selected section for preview
-  const currentSection = previewSection 
+  const baseSection = previewSection 
     ? storyline?.sections?.find(s => s.id === previewSection)
     : storyline?.sections?.[0];
   
-  const currentSectionIndex = storyline?.sections?.findIndex(s => s.id === currentSection?.id) ?? 0;
+  const currentSectionIndex = storyline?.sections?.findIndex(s => s.id === baseSection?.id) ?? 0;
+
+  const currentSection = useMemo(() => {
+    if (!baseSection) return null;
+    const previewData = baseSection.layoutPreview?.data || baseSection.layoutPreview?.section;
+    if (previewData && typeof previewData === 'object') {
+      return {
+        ...baseSection,
+        ...previewData,
+        layout: previewData.layout || baseSection.layout,
+        sectionContent: previewData.sectionContent || baseSection.sectionContent,
+        slides: previewData.slides || baseSection.slides,
+        keyPoints: previewData.keyPoints || baseSection.keyPoints,
+        contentBlocks: previewData.contentBlocks || baseSection.contentBlocks,
+        charts: previewData.charts || baseSection.charts,
+        insights: previewData.insights || baseSection.insights,
+        citations: previewData.citations || baseSection.citations,
+        layoutPreview: baseSection.layoutPreview
+      };
+    }
+    return baseSection;
+  }, [baseSection]);
+  
+  useEffect(() => {
+    if (!baseSection?.id) {
+      setAiSuggestionState({ status: 'idle', message: '', recommendation: null });
+      return;
+    }
+
+    const preview = baseSection?.layoutPreview;
+    if (preview?.agentId === MARKET_SIZING_DESIGN_AGENT_ID && preview?.data) {
+      const layoutId = normalizeLayoutId(preview.layout || preview.data?.layout);
+      const layoutName = preview.layoutName || getLayoutNameForId(layoutId);
+      setAiSuggestionState(prev => {
+        if (prev.status === 'loading') {
+          return prev;
+        }
+        return {
+          status: 'success',
+          message: layoutName ? `Recommended layout: ${layoutName}` : (preview.reason || 'Using saved Cigno AI styling preview.'),
+          recommendation: {
+            layout: layoutId || preview.layout || null,
+            layoutLabel: layoutName || preview.layout,
+            reason: preview.reason || null,
+            agentId: preview.agentId,
+            rawLayoutId: preview.layout || null,
+            designGuidelines: Array.isArray(preview.designGuidelines) ? preview.designGuidelines : null,
+            cached: true
+          }
+        };
+      });
+    } else {
+      setAiSuggestionState({ status: 'idle', message: '', recommendation: null });
+    }
+  }, [baseSection?.id, baseSection?.layoutPreview]);
   
   // Debug logging
   console.log('🔧 DeliverableLayoutView - storyline:', storyline);
   console.log('🔧 DeliverableLayoutView - sections count:', storyline?.sections?.length || 0);
   console.log('🔧 DeliverableLayoutView - sections:', storyline?.sections);
 
-const chartsForSection = Array.isArray(currentSection?.charts) && currentSection.charts.length > 0
-    ? currentSection.charts
-    : Array.isArray(currentSection?.sectionContent?.charts)
-      ? currentSection.sectionContent.charts
-      : [];
+  const chartsForSection = useMemo(() => {
+    if (!currentSection) return [];
+
+    const selectBestChartConfig = (chart) => {
+      if (!chart) return null;
+      if (chart.config) return chart.config;
+      if (chart.chartConfig) return chart.chartConfig;
+
+      if (chart.configJson) {
+        try {
+          return typeof chart.configJson === 'string' ? JSON.parse(chart.configJson) : chart.configJson;
+        } catch (error) {
+          console.warn('⚠️ Failed to parse chart.configJson:', error);
+        }
+      }
+
+      if (chart.config_json) {
+        try {
+          return typeof chart.config_json === 'string' ? JSON.parse(chart.config_json) : chart.config_json;
+        } catch (error) {
+          console.warn('⚠️ Failed to parse chart.config_json:', error);
+        }
+      }
+
+      return null;
+    };
+
+    const normalizeChart = (chart, index, sourceLabel) => {
+      if (!chart) return null;
+
+      const config = selectBestChartConfig(chart);
+      if (!config) {
+        console.warn('⚠️ Skipping chart without usable config', { chart, sourceLabel });
+        return null;
+      }
+
+      const fallbackId =
+        chart.id ||
+        chart.chartId ||
+        `${currentSection.id || currentSection.title || 'chart'}-${sourceLabel || 'src'}-${index}`;
+
+      return {
+        ...chart,
+        id: fallbackId,
+        title: chart.title || chart.name || chart.heading || `Chart ${index + 1}`,
+        description: chart.description || chart.subtitle || '',
+        config
+      };
+    };
+
+    const candidateSources = [
+      { charts: currentSection.sectionContent?.charts, label: 'sectionContent.charts' },
+      { charts: currentSection.charts, label: 'currentSection.charts' },
+      { charts: currentSection.chartData?.charts, label: 'chartData.charts' },
+      { charts: currentSection.sectionContent?.chartData?.charts, label: 'sectionContent.chartData.charts' }
+    ];
+
+    for (const { charts, label } of candidateSources) {
+      if (Array.isArray(charts) && charts.length > 0) {
+        const normalized = charts.map((chart, index) => normalizeChart(chart, index, label)).filter(Boolean);
+        if (normalized.length > 0) {
+          return normalized;
+        }
+      }
+    }
+
+    return [];
+  }, [currentSection]);
 
   const citationsForSection = Array.isArray(currentSection?.citations) && currentSection.citations.length > 0
     ? currentSection.citations
@@ -330,12 +589,19 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
     return getSupportedLayoutsForSection(currentSection);
   }, [currentSection]);
 
+  const isMarketSizingSection = useMemo(() => {
+    if (!baseSection) return false;
+    const framework = (baseSection.framework || '').toLowerCase();
+    if (framework.includes('market_sizing')) return true;
+    const title = (baseSection.title || baseSection.sectionContent?.title || '').toLowerCase();
+    return title.includes('market sizing');
+  }, [baseSection]);
+
   useEffect(() => {
     if (typeof onSupportedLayoutsChange === 'function') {
       onSupportedLayoutsChange(supportedLayouts);
     }
   }, [supportedLayouts, onSupportedLayoutsChange]);
-
 
   // Helper function to render framework content with full data from sectionContent
   const renderFrameworkSection = () => {
@@ -389,31 +655,14 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
 
   // Helper function to render charts with full data in layout view
   const renderCharts = () => {
-    console.log('🔍 renderCharts called with currentSection:', currentSection);
-    console.log('🔍 currentSection?.framework:', currentSection?.framework);
-    console.log('🔍 currentSection?.charts:', currentSection?.charts);
-    console.log('🔍 currentSection?.sectionContent?.charts:', currentSection?.sectionContent?.charts);
-    
-    // Prioritize sectionContent charts for layout view to get full data
-    const charts = Array.isArray(currentSection?.sectionContent?.charts) && currentSection.sectionContent.charts.length > 0
-      ? currentSection.sectionContent.charts
-      : chartsForSection;
-
-    if (!currentSection?.framework || charts.length === 0) {
-      console.log('❌ No charts found for currentSection');
+    if (!currentSection?.framework) {
       return null;
     }
 
-    // Check if we have any chart data (real or fallback)
-    const chartDataSource = currentSection.sectionContent?.chartData || currentSection.chartData;
-    const hasChartData = chartDataSource || charts.length > 0;
-    
-    console.log('🔍 hasChartData:', hasChartData);
-    console.log('🔍 currentSection.sectionContent?.chartData:', currentSection.sectionContent?.chartData);
-    console.log('🔍 charts[0]?.config?.data:', charts[0]?.config?.data);
-    
-    if (!hasChartData) {
-      console.log('❌ No chart data found');
+    const charts = chartsForSection;
+
+    if (!currentSection?.framework || charts.length === 0) {
+      console.log('❌ No charts found for currentSection');
       return null;
     }
 
@@ -459,6 +708,132 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
             );
           })}
         </div>
+      </div>
+    );
+  };
+
+  const renderMarketSizingPreview = () => {
+    const marketSegments = currentSection?.sectionContent?.marketSegments;
+    const totalMarket = currentSection?.sectionContent?.totalMarket;
+    const guidelines = currentSection?.layoutPreview?.designGuidelines;
+
+    if (!Array.isArray(marketSegments) || marketSegments.length === 0) {
+      return null;
+    }
+
+    const renderTimeSeries = (series = {}) => {
+      const entries = Object.entries(series || {});
+      if (!entries.length) {
+        return null;
+      }
+
+      return (
+        <table className="w-full text-xs border" style={{ borderColor: 'var(--border-secondary)' }}>
+          <thead>
+            <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+              {entries.map(([year]) => (
+                <th key={year} className="px-2 py-1 text-left" style={{ color: 'var(--text-secondary)' }}>
+                  {year}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {entries.map(([year, value]) => (
+                <td key={year} className="px-2 py-1" style={{ color: 'var(--text-primary)' }}>
+                  {typeof value === 'number' ? `${value.toLocaleString()} bn` : value}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      );
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          {marketSegments.map((segment, segmentIndex) => {
+            const products = Array.isArray(segment.products) ? segment.products : [];
+
+            return (
+              <div key={segmentIndex} className="border rounded-lg p-4 space-y-3" style={{ borderColor: 'var(--border-primary)' }}>
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {segment.pillar || `Segment ${segmentIndex + 1}`}
+                  </h3>
+                  {segment.segment_total && (
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      Total: {segment.segment_total}
+                    </p>
+                  )}
+                </div>
+
+                {products.map((product, productIndex) => (
+                  <div key={productIndex} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {product.product_name || product.productName || `Product ${productIndex + 1}`}
+                      </p>
+                      {product.cagr_2019_2030 && (
+                        <span className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>
+                          CAGR 19-30: {product.cagr_2019_2030}
+                        </span>
+                      )}
+                    </div>
+
+                    {renderTimeSeries(product.market_size_local_bn || product.time_series)}
+
+                    {Array.isArray(product.growth_drivers) && product.growth_drivers.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                          Growth drivers
+                        </p>
+                        <ul className="list-disc pl-4 space-y-1">
+                          {product.growth_drivers.map((driver, driverIndex) => (
+                            <li key={driverIndex} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              {driver}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+
+          {totalMarket && (
+            <div className="border rounded-lg p-4 space-y-3" style={{ borderColor: 'var(--border-primary)' }}>
+              <div>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Total Market Evolution
+                </h3>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Switzerland pension market value (CHF bn)
+                </p>
+              </div>
+              {renderTimeSeries(totalMarket)}
+            </div>
+          )}
+        </div>
+
+        {Array.isArray(guidelines) && guidelines.length > 0 && (
+          <div className="border rounded-lg p-4" style={{ borderColor: 'var(--border-primary)' }}>
+            <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+              Design guidelines from Cigno AI
+            </h3>
+            <ul className="list-disc pl-4 space-y-1">
+              {guidelines.map((guideline, index) => (
+                <li key={index} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {guideline}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     );
   };
@@ -796,6 +1171,17 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
       
       if (frameworkCitations) {
         contentItems.push({ type: 'citations', content: frameworkCitations, priority: 4 });
+      }
+
+      if (currentSection?.framework === 'market_sizing') {
+        const marketSizingPreview = renderMarketSizingPreview();
+        if (marketSizingPreview) {
+          contentItems.push({
+            type: 'market_sizing_preview',
+            content: marketSizingPreview,
+            priority: 1.5
+          });
+        }
       }
       
       // Add fallback content if no framework content
@@ -1463,24 +1849,74 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
       return;
     }
     
-    // Update the storyline with the layout for this specific section
+    const normalizedSelectedLayout = normalizeLayoutId(selectedLayout) || selectedLayout;
+
     const updatedStoryline = {
       ...storyline,
       sections: storyline.sections?.map(section => {
         if (section.id === sectionId || section.title === sectionId) {
+          const layoutPreview = section.layoutPreview;
+          const previewLayout = normalizeLayoutId(layoutPreview?.layout || layoutPreview?.data?.layout);
+          const shouldApplyPreview =
+            layoutPreview?.agentId === MARKET_SIZING_DESIGN_AGENT_ID &&
+            layoutPreview?.data &&
+            previewLayout &&
+            previewLayout === normalizedSelectedLayout;
+
+          if (shouldApplyPreview) {
+            const mergedSection = normalizeAgentSectionForPreview(layoutPreview.data, section);
+            const appliedAt = new Date().toISOString();
+            return {
+              ...mergedSection,
+              layout: normalizedSelectedLayout,
+              layoutAppliedAt: appliedAt,
+              layoutPreview: {
+                ...layoutPreview,
+                appliedAt,
+                lastAppliedAt: appliedAt,
+                lastAppliedLayout: normalizedSelectedLayout
+              },
+              designAgentMetadata: {
+                ...(section.designAgentMetadata || {}),
+                marketSizing: {
+                  agentId: MARKET_SIZING_DESIGN_AGENT_ID,
+                  appliedAt,
+                  layout: normalizedSelectedLayout,
+                  reason: layoutPreview.reason || null,
+                  appliedFromCache: true
+                }
+              }
+            };
+          }
+
           return {
             ...section,
-            layout: selectedLayout,
+            layout: normalizedSelectedLayout,
             layoutAppliedAt: new Date().toISOString()
           };
         }
         return section;
       }) || []
     };
-    
+
     // Propagate the change up to parent
     onStorylineChange(updatedStoryline);
-    console.log(`✅ Applied layout ${selectedLayout} to section: ${sectionId}`);
+    console.log(`✅ Applied layout ${normalizedSelectedLayout} to section: ${sectionId}`);
+
+    if ((baseSection?.id === sectionId || baseSection?.title === sectionId) && baseSection?.layoutPreview) {
+      const layoutName = baseSection.layoutPreview.layoutName || getLayoutNameForId(normalizedSelectedLayout);
+      setAiSuggestionState(prev => ({
+        status: 'success',
+        message: layoutName ? `Applied layout: ${layoutName}` : 'Applied Cigno AI suggested layout.',
+        recommendation: prev.recommendation
+          ? {
+              ...prev.recommendation,
+              layout: normalizedSelectedLayout,
+              cached: true
+            }
+          : prev.recommendation
+      }));
+    }
   };
 
   const handleResetSectionLayout = (sectionId) => {
@@ -1553,6 +1989,263 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
 
     onStorylineChange(updatedStoryline);
   };
+
+  const handleMarketSizingDesignSuggestion = useCallback(async () => {
+    if (!currentSection || !isMarketSizingSection) {
+      setAiSuggestionState({
+        status: 'error',
+        message: 'AI layout suggestions are only available for Market Sizing sections.',
+        recommendation: null
+      });
+      return;
+    }
+
+    const baseSectionId = baseSection?.id || baseSection?.title;
+    const existingPreview = baseSection?.layoutPreview;
+
+    if (existingPreview?.agentId === MARKET_SIZING_DESIGN_AGENT_ID && existingPreview?.data) {
+      const layoutId = normalizeLayoutId(existingPreview.layout || existingPreview.data?.layout);
+      const layoutName = existingPreview.layoutName || getLayoutNameForId(layoutId);
+      setAiSuggestionState({
+        status: 'success',
+        message: layoutName ? `Recommended layout: ${layoutName}` : (existingPreview.reason || 'Using saved Cigno AI styling preview.'),
+        recommendation: {
+          layout: layoutId || existingPreview.layout || null,
+          layoutLabel: layoutName || existingPreview.layout,
+          reason: existingPreview.reason || null,
+          agentId: existingPreview.agentId,
+          rawLayoutId: existingPreview.layout || null,
+          designGuidelines: Array.isArray(existingPreview.designGuidelines) ? existingPreview.designGuidelines : null,
+          cached: true
+        }
+      });
+      return;
+    }
+
+    if (!baseSectionId) {
+      setAiSuggestionState({
+        status: 'error',
+        message: 'Unable to identify this section for AI styling. Try refreshing.',
+        recommendation: null
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    setAiSuggestionState({
+      status: 'loading',
+      message: 'Asking Cigno AI to style this market sizing section…',
+      recommendation: null
+    });
+
+    try {
+      const response = await fetch('/api/ai/layout/market-sizing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          section: safeSerialize(currentSection),
+          storyline: safeSerialize(storyline),
+          project: safeSerialize(storyline?.project || null),
+          userId: storyline?.ownerId || storyline?.userId || null
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || result?.details || 'Cigno AI design agent failed to respond.');
+      }
+
+      const agentData = result?.data || {};
+      const suggestionPayload = extractAgentSuggestionPayload(agentData);
+
+      const suggestedSection = suggestionPayload.section;
+      const designGuidelines = suggestionPayload.designGuidelines;
+
+      const layoutRecommendationRaw =
+        suggestionPayload.layoutRecommendation ||
+        agentData?.recommendedLayout ||
+        agentData?.layout ||
+        agentData?.suggestion?.layout ||
+        (suggestedSection?.layout ? { id: suggestedSection.layout } : null);
+
+      let recommendedLayoutId = null;
+      let recommendationReason = null;
+      let recommendationName = null;
+
+      if (typeof layoutRecommendationRaw === 'string') {
+        recommendedLayoutId = normalizeLayoutId(layoutRecommendationRaw);
+      } else if (layoutRecommendationRaw && typeof layoutRecommendationRaw === 'object') {
+        recommendedLayoutId = normalizeLayoutId(
+          layoutRecommendationRaw.id ||
+          layoutRecommendationRaw.layout ||
+          layoutRecommendationRaw.key ||
+          layoutRecommendationRaw.identifier ||
+          layoutRecommendationRaw.name
+        );
+        recommendationReason =
+          layoutRecommendationRaw.reason ||
+          layoutRecommendationRaw.rationale ||
+          layoutRecommendationRaw.description ||
+          null;
+        recommendationName = layoutRecommendationRaw.name || null;
+      }
+
+      if (!recommendedLayoutId && suggestedSection?.layout) {
+        recommendedLayoutId = normalizeLayoutId(suggestedSection.layout);
+      }
+
+      if (!recommendedLayoutId) {
+        recommendedLayoutId = 'full-width';
+        recommendationName = recommendationName || getLayoutNameForId('full-width');
+      }
+
+      if (recommendedLayoutId && typeof onLayoutChange === 'function') {
+        onLayoutChange(recommendedLayoutId);
+      }
+
+      if (suggestedSection && baseSectionId) {
+        updateStorylineSection(baseSectionId, (section) => {
+          const resolvedLayout =
+            normalizeLayoutId(suggestedSection.layout) ||
+            recommendedLayoutId ||
+            section.layout ||
+            section.selectedLayout ||
+            'full-width';
+
+          const previewSection = normalizeAgentSectionForPreview(suggestedSection, section);
+
+          if (Array.isArray(suggestedSection.slides)) {
+            previewSection.slides = suggestedSection.slides.map((slide, index) =>
+              normalizeSlideData(slide, index, resolvedLayout)
+            );
+          }
+
+          const updatedSection = {
+            ...section,
+            layoutPreview: {
+              appliedAt: now,
+              layout: resolvedLayout,
+              agentId: MARKET_SIZING_DESIGN_AGENT_ID,
+              reason: recommendationReason || layoutRecommendationRaw?.reason || null,
+              layoutName: recommendationName || getLayoutNameForId(resolvedLayout),
+              designGuidelines: Array.isArray(designGuidelines) ? designGuidelines : null,
+              data: {
+                ...previewSection,
+                layout: resolvedLayout
+              },
+              raw: suggestionPayload.raw
+            },
+            designAgentMetadata: {
+              ...(section.designAgentMetadata || {}),
+              marketSizing: {
+                agentId: MARKET_SIZING_DESIGN_AGENT_ID,
+                appliedAt: now,
+                layout: resolvedLayout,
+                reason: recommendationReason || null
+              }
+            }
+          };
+
+          if (!updatedSection.title && previewSection.title) {
+            updatedSection.title = previewSection.title;
+          }
+
+          return updatedSection;
+        });
+      }
+
+      if (!baseSectionId) {
+        console.warn('⚠️ Market sizing suggestion received but base section is missing identifier');
+        setAiSuggestionState({
+          status: 'error',
+          message: 'Unable to attach AI layout preview to this section. Please try again.',
+          recommendation: null
+        });
+        return;
+      }
+
+      const layoutName = recommendationName || (recommendedLayoutId ? getLayoutNameForId(recommendedLayoutId) : null);
+      const message = layoutName
+        ? `Recommended layout: ${layoutName}`
+        : 'Cigno AI styling applied to this section.';
+
+      setAiSuggestionState({
+        status: 'success',
+        message,
+        recommendation: {
+          layout: recommendedLayoutId || layoutRecommendationRaw?.id || null,
+          layoutLabel: layoutName,
+          reason: recommendationReason || null,
+          agentId: MARKET_SIZING_DESIGN_AGENT_ID,
+          rawLayoutId: layoutRecommendationRaw?.id || null,
+          designGuidelines: Array.isArray(designGuidelines) ? designGuidelines : null
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to retrieve Cigno AI layout suggestion:', error);
+      setAiSuggestionState({
+        status: 'error',
+        message: error.message || 'Unable to fetch design suggestion.',
+        recommendation: null
+      });
+    }
+  }, [
+    currentSection,
+    isMarketSizingSection,
+    storyline,
+    onLayoutChange,
+    updateStorylineSection,
+    normalizeSlideData,
+    baseSection
+  ]);
+
+  useEffect(() => {
+    if (typeof onAISuggestionChange !== 'function') {
+      return;
+    }
+
+    const currentSectionId = baseSection?.id || baseSection?.title || null;
+
+    if (!isMarketSizingSection || !currentSectionId) {
+      onAISuggestionChange(null, null);
+      return;
+    }
+
+    const { status, message, recommendation } = aiSuggestionState;
+    const layoutLabel = recommendation?.layoutLabel;
+    const suggestionTitle = layoutLabel
+      ? `Cigno AI Suggested · ${layoutLabel}`
+      : 'Cigno AI Suggested';
+    const suggestionDescription = recommendation?.reason
+      || (layoutLabel ? `Recommended layout: ${layoutLabel}` : 'Let Cigno AI restyle this Market Sizing section with a dedicated layout.');
+
+    onAISuggestionChange(
+      {
+        id: 'market-sizing-design-suggestion',
+        title: suggestionTitle,
+        description: suggestionDescription,
+        status,
+        statusMessage: message,
+        recommendedLayout: recommendation?.layout || null,
+        layoutLabel,
+        designGuidelines: recommendation?.designGuidelines || null
+      },
+      handleMarketSizingDesignSuggestion
+    );
+  }, [
+    aiSuggestionState,
+    isMarketSizingSection,
+    currentSection?.id,
+    currentSection?.title,
+    onAISuggestionChange,
+    baseSection?.id,
+    baseSection?.title,
+    handleMarketSizingDesignSuggestion
+  ]);
 
   const handleGenerateSlidesForSection = async (sectionId) => {
     if (!storyline) {
@@ -1918,6 +2611,31 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
                     const sectionId = section.id || section.title || `section-${index}`;
                     const slideState = slideGenerationState[sectionId] || {};
                     const hasSlides = Array.isArray(section.slides) && section.slides.length > 0;
+                    const normalizedSectionLayout = normalizeLayoutId(section.layout || selectedLayout || 'full-width');
+                    const layoutPreviewMeta = section.layoutPreview?.agentId === MARKET_SIZING_DESIGN_AGENT_ID
+                      ? section.layoutPreview
+                      : null;
+                    const previewLayoutId = layoutPreviewMeta
+                      ? normalizeLayoutId(layoutPreviewMeta.layout || layoutPreviewMeta.data?.layout)
+                      : null;
+                    const layoutBadgeLabel = layoutPreviewMeta
+                      ? (layoutPreviewMeta.layoutName || getLayoutNameForId(previewLayoutId) || getLayoutNameForId(normalizedSectionLayout) || normalizedSectionLayout)
+                      : (section.layout
+                          ? (getLayoutNameForId(normalizedSectionLayout) || normalizedSectionLayout)
+                          : null);
+                    const layoutBadgeText = layoutBadgeLabel
+                      ? (layoutBadgeLabel.split(' ')[0] || layoutBadgeLabel)
+                      : null;
+                    const layoutBadgeStyles = layoutPreviewMeta
+                      ? {
+                          backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                          color: 'rgb(5, 122, 85)'
+                        }
+                      : {
+                          backgroundColor: 'var(--bg-secondary)',
+                          color: 'var(--text-secondary)'
+                        };
+                    const selectedLayoutName = getLayoutNameForId(selectedLayout) || aiSuggestionState.recommendation?.layoutLabel || selectedLayout;
 
                     return (
                     <div key={sectionId} className="relative">
@@ -1975,7 +2693,7 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
                                     handleApplyLayoutToSection(sectionId);
                                   }}
                                   className="w-4 h-4 bg-blue-100 hover:bg-blue-200 rounded-full flex items-center justify-center transition-colors"
-                                  title={`Apply "${LAYOUT_OPTIONS.find(l => l.id === selectedLayout)?.name || selectedLayout}" layout to this section`}
+                                  title={`Apply "${selectedLayoutName || 'Selected layout'}" to this section`}
                                 >
                                   <Check className="w-2.5 h-2.5 text-blue-600" />
                                 </button>
@@ -2001,9 +2719,15 @@ const chartsForSection = Array.isArray(currentSection?.charts) && currentSection
                               {!collapsedSections.has(sectionId) && (
                                 <div className="text-xs flex items-center gap-1 mt-0.5" style={{ color: 'var(--text-secondary)' }}>
                                   <span>{section.status || 'draft'}</span>
-                                  {section.layout && (
-                                    <span className="px-1 py-0.5 text-xs rounded bg-blue-100 text-blue-700">
-                                      {LAYOUT_OPTIONS.find(l => l.id === section.layout)?.name.split(' ')[0] || 'Custom'}
+                                  {layoutBadgeLabel && (
+                                    <span
+                                      className="px-1.5 py-0.5 text-[10px] rounded font-medium uppercase tracking-wide"
+                                      style={layoutBadgeStyles}
+                                      title={layoutPreviewMeta
+                                        ? (layoutPreviewMeta.layoutName || 'Cigno AI Suggested Layout')
+                                        : layoutBadgeLabel || 'Custom'}
+                                    >
+                                      {layoutBadgeText || 'Custom'}
                                     </span>
                                   )}
                                   {hasSlides && (

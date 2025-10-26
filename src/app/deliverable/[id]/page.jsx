@@ -1,11 +1,30 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useMenuManager } from '../../../lib/hooks/useMenuManager';
 import ContentPart from '../../../components/layout/ContentPart';
 import RightSection from '../../../components/layout/RightSection';
 import LeftNav from '../../../components/layout/LeftNav';
+
+const normalizeDeliverableItem = (item) => {
+  if (!item) return item;
+
+  const originalType = item.type;
+  const originalMetadata = item.metadata || {};
+  const inferredDeliverableType = originalMetadata.deliverableType || originalMetadata.type || originalType;
+
+  return {
+    ...item,
+    type: 'deliverable',
+    deliverableType: inferredDeliverableType || 'deliverable',
+    metadata: {
+      ...originalMetadata,
+      originalType: originalMetadata.originalType || originalType,
+      deliverableType: inferredDeliverableType || originalMetadata.deliverableType,
+    },
+  };
+};
 
 export default function DeliverablePage() {
   const { id } = useParams();
@@ -13,6 +32,23 @@ export default function DeliverablePage() {
   const [deliverable, setDeliverable] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentView, setCurrentView] = useState('detailed');
+  const [selectedLayout, setSelectedLayout] = useState('default');
+  const [storyline, setStoryline] = useState(null);
+  const [layoutAISuggestion, setLayoutAISuggestion] = useState(null);
+  const layoutAISuggestionHandlerRef = useRef(null);
+
+  const handleLayoutAISuggestionChange = useCallback((suggestion, handler) => {
+    setLayoutAISuggestion(suggestion);
+    layoutAISuggestionHandlerRef.current = typeof handler === 'function' ? handler : null;
+  }, []);
+
+  const handleLayoutAISuggestionClick = useCallback(() => {
+    if (layoutAISuggestionHandlerRef.current) {
+      return layoutAISuggestionHandlerRef.current();
+    }
+    return null;
+  }, []);
 
   // Get menu structure for navigation
   const {
@@ -43,7 +79,7 @@ export default function DeliverablePage() {
       const deliverableData = findDeliverable(menuStructure);
       if (deliverableData) {
         console.log('✅ Found deliverable data:', deliverableData);
-        setDeliverable(deliverableData);
+        setDeliverable(normalizeDeliverableItem(deliverableData));
         setIsLoading(false);
       } else {
         console.error('❌ Deliverable not found in menu structure');
@@ -51,6 +87,11 @@ export default function DeliverablePage() {
       }
     }
   }, [id, menuStructure, router]);
+
+  const availableLayouts = useMemo(
+    () => ['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow'],
+    []
+  );
 
   if (isLoading) {
     return (
@@ -79,12 +120,34 @@ export default function DeliverablePage() {
     );
   }
 
+  const handleLayoutChange = (layoutId) => {
+    setSelectedLayout(layoutId);
+  };
+
+  const handleApplyLayoutToAll = (layoutId) => {
+    if (!storyline || !storyline.sections) {
+      return;
+    }
+
+    const updated = {
+      ...storyline,
+      sections: storyline.sections.map(section => ({
+        ...section,
+        layout: layoutId,
+        layoutAppliedAt: new Date().toISOString()
+      }))
+    };
+    setStoryline(updated);
+  };
+
+  const showLayoutOptions = currentView === 'layout';
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Left Navigation */}
       <LeftNav 
-        menuStructure={menuStructure}
-        isLoading={menuLoading}
+        menuStructure={menuStructure && menuStructure.length > 0 ? menuStructure : undefined}
+        isLoading={typeof menuLoading === 'boolean' ? menuLoading : undefined}
         refreshFromDatabase={refreshFromDatabase}
         toggleCollapse={toggleCollapse}
         expandItem={expandItem}
@@ -104,9 +167,11 @@ export default function DeliverablePage() {
             onItemDeleted={refreshFromDatabase}
             onDeliverableNavigate={() => {}}
             refreshFromDatabase={refreshFromDatabase}
-            onViewChange={() => {}}
-            selectedLayout="default"
-            onStorylineChange={() => {}}
+            onViewChange={setCurrentView}
+            selectedLayout={selectedLayout}
+            onStorylineChange={setStoryline}
+            onLayoutChange={handleLayoutChange}
+            onLayoutAISuggestionChange={handleLayoutAISuggestionChange}
           />
         </div>
 
@@ -114,12 +179,14 @@ export default function DeliverablePage() {
         <RightSection 
           isModalOpen={isModalOpen} 
           selectedItem={deliverable} 
-          showLayoutOptions={true}
-          selectedLayout="default"
-          onLayoutChange={() => {}}
-          storyline={null}
-          onApplyLayoutToAll={() => {}}
-          availableLayouts={['default', 'title-2-columns', 'bcg-matrix', 'three-columns', 'full-width', 'timeline', 'process-flow']}
+          showLayoutOptions={showLayoutOptions}
+          selectedLayout={selectedLayout}
+          onLayoutChange={handleLayoutChange}
+          storyline={storyline}
+          onApplyLayoutToAll={handleApplyLayoutToAll}
+          availableLayouts={availableLayouts}
+          layoutAISuggestion={layoutAISuggestion}
+          onAISuggestionClick={handleLayoutAISuggestionClick}
         />
       </div>
     </div>

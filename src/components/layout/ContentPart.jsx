@@ -496,7 +496,8 @@ export default function ContentPart({
   selectedLayout,
   onStorylineChange,
   onLayoutChange,
-  onLayoutOptionsChange
+  onLayoutOptionsChange,
+  onLayoutAISuggestionChange
 }) {
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -528,7 +529,6 @@ export default function ContentPart({
   const [isSavingDeliverable, setIsSavingDeliverable] = useState(false);
   const [currentView, setCurrentView] = useState('detailed'); // 'detailed' | 'storyline' | 'layout'
   const [generatedStoryline, setGeneratedStoryline] = useState(null);
-
   // Add state for actual fetched data
   const [actualClientData, setActualClientData] = useState(null);
   const [actualProjectData, setActualProjectData] = useState(null);
@@ -561,8 +561,17 @@ export default function ContentPart({
   useEffect(() => {
     if (currentView !== 'layout') {
       safeOnLayoutOptionsChange(ALL_LAYOUT_IDS);
+      if (typeof onLayoutAISuggestionChange === 'function') {
+        onLayoutAISuggestionChange(null, null);
+      }
     }
-  }, [currentView, safeOnLayoutOptionsChange]);
+  }, [currentView, safeOnLayoutOptionsChange, onLayoutAISuggestionChange]);
+
+  const handleAISuggestionChange = useCallback((suggestion, handler) => {
+    if (typeof onLayoutAISuggestionChange === 'function') {
+      onLayoutAISuggestionChange(suggestion, handler);
+    }
+  }, [onLayoutAISuggestionChange]);
 
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isGeneratingStoryline, setIsGeneratingStoryline] = useState(false);
@@ -5136,6 +5145,7 @@ export default function ContentPart({
             }}
           onLayoutChange={safeOnLayoutChange}
           onSupportedLayoutsChange={safeOnLayoutOptionsChange}
+          onAISuggestionChange={handleAISuggestionChange}
         />
       );
     }
